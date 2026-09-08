@@ -1,0 +1,14 @@
+{
+  "name": "Vision Player",
+  "short_name": "Vision Player",
+  "description": "Player de digital signage da Vision Mídia Digital",
+  "start_url": "./player.html",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "any",
+  "background_color": "#000000",
+  "theme_color": "#000000",
+  "icons": [
+    {"src": "./icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable"}
+  ]
+}

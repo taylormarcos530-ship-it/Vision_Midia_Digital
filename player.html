@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#000000" />
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="manifest" href="./player.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./player.css" />
+  <title>Vision Player</title>
+</head>
+<body>
+  <main id="player-root" class="player-root">
+    <section id="pairing-screen" class="pairing-screen hidden">
+      <div class="pairing-card">
+        <div class="player-brand"><span>V</span><div><strong>Vision Mídia Digital</strong><small>Vision Player</small></div></div>
+        <p class="eyebrow">PAREAR ESTA TELA</p>
+        <h1>Digite este código no painel</h1>
+        <div id="pairing-code" class="pairing-code">------</div>
+        <p>No painel Vision, abra <strong>TVs → Parear TV</strong> e informe o código acima.</p>
+        <div class="pairing-meta">
+          <span id="pairing-countdown">Código válido por 10:00</span>
+          <span id="pairing-status">Aguardando autorização…</span>
+        </div>
+        <button id="new-code-button" class="player-button ghost hidden" type="button">Gerar novo código</button>
+      </div>
+    </section>
+
+    <section id="playback-screen" class="playback-screen hidden">
+      <div id="media-stage" class="media-stage"></div>
+      <div id="idle-overlay" class="idle-overlay hidden">
+        <div class="idle-logo">V</div>
+        <h2 id="idle-title">Vision Player conectado</h2>
+        <p id="idle-message">Aguardando uma playlist ser atribuída a esta TV.</p>
+      </div>
+      <div id="player-status" class="player-status">Conectando…</div>
+      <div class="player-controls">
+        <button id="fullscreen-button" type="button" title="Tela cheia">⛶</button>
+        <button id="repair-button" type="button" title="Parear novamente">↺</button>
+      </div>
+    </section>
+  </main>
+
+  <script src="./config.js"></script>
+  <script src="./player.js" defer></script>
+</body>
+</html>

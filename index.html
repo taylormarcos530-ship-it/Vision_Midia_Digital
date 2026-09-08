@@ -1,0 +1,599 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./styles.css" />
+  <title>Vision Mídia Digital</title>
+</head>
+<body>
+  <div id="toast-root" class="toast-root" aria-live="polite"></div>
+
+  <section id="auth-screen" class="auth-screen">
+    <div class="auth-brand">
+      <div class="brand-mark">V</div>
+      <div>
+        <div class="brand-title">Vision Mídia Digital</div>
+        <div class="brand-subtitle">Digital Signage profissional</div>
+      </div>
+    </div>
+
+    <div class="auth-card">
+      <div class="auth-card-copy">
+        <span class="eyebrow">PAINEL DE CONTROLE</span>
+        <h1>Gerencie suas telas de qualquer lugar.</h1>
+        <p>Cadastre TVs, envie mídias, organize playlists e acompanhe tudo em um único painel.</p>
+      </div>
+
+      <div class="auth-tabs" role="tablist">
+        <button class="auth-tab active" data-auth-tab="login" type="button">Entrar</button>
+        <button class="auth-tab" data-auth-tab="signup" type="button">Criar conta</button>
+      </div>
+
+      <form id="login-form" class="auth-form">
+        <label>E-mail
+          <input id="login-email" type="email" autocomplete="email" required placeholder="seu@email.com" />
+        </label>
+        <label>Senha
+          <input id="login-password" type="password" autocomplete="current-password" minlength="6" required placeholder="••••••••" />
+        </label>
+        <button id="login-submit" class="button primary full" type="submit">Entrar</button>
+        <button id="forgot-password" class="link-button" type="button">Esqueci minha senha</button>
+      </form>
+
+      <form id="signup-form" class="auth-form hidden">
+        <label>Nome
+          <input id="signup-name" type="text" autocomplete="name" minlength="2" required placeholder="Seu nome" />
+        </label>
+        <label>E-mail
+          <input id="signup-email" type="email" autocomplete="email" required placeholder="seu@email.com" />
+        </label>
+        <label>Senha
+          <input id="signup-password" type="password" autocomplete="new-password" minlength="8" required placeholder="Mínimo 8 caracteres" />
+        </label>
+        <button id="signup-submit" class="button primary full" type="submit">Criar conta</button>
+        <p class="form-hint">Dependendo da configuração do projeto, pode ser necessário confirmar o e-mail antes do primeiro acesso.</p>
+      </form>
+      <p class="form-hint" style="margin-top:14px;text-align:center"><a href="./master.html" style="color:inherit">Acesso ao Painel Master</a></p>
+    </div>
+  </section>
+
+  <section id="onboarding-screen" class="center-screen hidden">
+    <div class="onboarding-card">
+      <div class="brand-mark large">V</div>
+      <span class="eyebrow">PRIMEIRO ACESSO</span>
+      <h2>Crie sua empresa</h2>
+      <p>Essa empresa será o espaço isolado onde ficarão suas TVs, mídias e playlists.</p>
+      <form id="company-form" class="stack-form">
+        <label>Nome da empresa
+          <input id="company-name" type="text" minlength="2" maxlength="120" required placeholder="Ex.: Loja Centro" />
+        </label>
+        <button id="company-submit" class="button primary full" type="submit">Criar empresa</button>
+      </form>
+    </div>
+  </section>
+
+  <div id="app-shell" class="app-shell hidden">
+    <aside id="sidebar" class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-mark small">V</div>
+        <div>
+          <strong>Vision</strong>
+          <span>Mídia Digital</span>
+        </div>
+      </div>
+
+      <nav class="nav-list" aria-label="Principal">
+        <button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard</button>
+        <button class="nav-item" data-view="devices"><span>▣</span> TVs</button>
+        <button class="nav-item" data-view="monitoring"><span>◉</span> Monitoramento</button>
+        <button class="nav-item" data-view="media"><span>▧</span> Mídias</button>
+        <button class="nav-item" data-view="playlists"><span>▶</span> Playlists</button>
+        <button class="nav-item" data-view="campaigns"><span>◷</span> Programação</button>
+        <button class="nav-item" data-view="reports"><span>▤</span> Relatórios</button>
+      </nav>
+
+      <div class="sidebar-footer">
+        <div class="company-pill">
+          <div class="company-avatar" id="company-avatar">V</div>
+          <div class="company-copy">
+            <strong id="sidebar-company-name">Empresa</strong>
+            <span id="sidebar-user-email">usuario@email.com</span>
+          </div>
+        </div>
+        <button id="logout-button" class="nav-item danger" type="button"><span>↪</span> Sair</button>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="topbar-left">
+          <button id="menu-button" class="icon-button mobile-only" type="button" aria-label="Abrir menu">☰</button>
+          <div>
+            <span class="topbar-kicker" id="view-kicker">VISÃO GERAL</span>
+            <h1 id="view-title">Dashboard</h1>
+          </div>
+        </div>
+        <div class="topbar-right">
+          <div id="connection-status" class="status-badge neutral">● Sincronização</div>
+          <button id="refresh-button" class="icon-button" type="button" aria-label="Atualizar">↻</button>
+        </div>
+      </header>
+
+      <div class="content-area">
+        <section id="view-dashboard" class="view-section">
+          <div class="hero-panel">
+            <div>
+              <span class="eyebrow">BEM-VINDO</span>
+              <h2 id="dashboard-company-title">Sua mídia, sob controle.</h2>
+              <p>Monitore sua estrutura e avance para a próxima etapa do seu digital signage.</p>
+            </div>
+            <button class="button primary" data-action="quick-device">+ Adicionar TV</button>
+          </div>
+
+          <div class="metrics-grid">
+            <article class="metric-card">
+              <span>TVs cadastradas</span>
+              <strong id="metric-devices">0</strong>
+              <small id="metric-devices-detail">Nenhuma TV cadastrada</small>
+            </article>
+            <article class="metric-card">
+              <span>Mídias</span>
+              <strong id="metric-media">0</strong>
+              <small id="metric-media-detail">Biblioteca vazia</small>
+            </article>
+            <article class="metric-card">
+              <span>Playlists</span>
+              <strong id="metric-playlists">0</strong>
+              <small id="metric-playlists-detail">Crie sua primeira playlist</small>
+            </article>
+            <article class="metric-card">
+              <span>TVs online</span>
+              <strong id="metric-online">0</strong>
+              <small id="metric-online-detail">Aguardando conexão</small>
+            </article>
+          </div>
+
+          <div class="two-column-grid">
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <span class="eyebrow">DISPOSITIVOS</span>
+                  <h3>Status das TVs</h3>
+                </div>
+                <button class="text-button" data-go-view="devices">Ver todas</button>
+              </div>
+              <div id="dashboard-devices-list" class="compact-list empty-state">Nenhuma TV cadastrada.</div>
+            </article>
+
+            <article class="panel">
+              <div class="panel-header">
+                <div>
+                  <span class="eyebrow">COMECE POR AQUI</span>
+                  <h3>Checklist inicial</h3>
+                </div>
+              </div>
+              <div class="check-list">
+                <div class="check-row" id="check-company"><span>✓</span><div><strong>Empresa criada</strong><small>Ambiente multiempresa ativo.</small></div></div>
+                <div class="check-row pending" id="check-device"><span>2</span><div><strong>Pareie uma TV</strong><small>Abra o Vision Player e vincule pelo código.</small></div></div>
+                <div class="check-row pending" id="check-media"><span>3</span><div><strong>Envie uma mídia</strong><small>Imagem ou vídeo para sua biblioteca.</small></div></div>
+                <div class="check-row pending" id="check-playlist"><span>4</span><div><strong>Monte uma playlist</strong><small>Organize o conteúdo que será exibido.</small></div></div>
+                <div class="check-row pending" id="check-campaign"><span>5</span><div><strong>Programe uma campanha</strong><small>Defina dias, horários, TVs e prioridade.</small></div></div>
+              </div>
+            </article>
+          </div>
+        </section>
+
+        <section id="view-devices" class="view-section hidden">
+          <div class="section-toolbar">
+            <div>
+              <h2>TVs</h2>
+              <p>Pareie e acompanhe os dispositivos vinculados à empresa.</p>
+            </div>
+            <button id="add-device-button" class="button primary">+ Parear TV</button>
+          </div>
+          <div id="devices-grid" class="cards-grid"></div>
+          <div id="devices-empty" class="empty-panel hidden">
+            <div class="empty-icon">▣</div>
+            <h3>Nenhuma TV pareada</h3>
+            <p>Abra o Vision Player na TV, veja o código e faça o pareamento por aqui.</p>
+            <button class="button primary" data-action="quick-device">Parear TV</button>
+          </div>
+        </section>
+
+        <section id="view-monitoring" class="view-section hidden">
+          <div class="section-toolbar">
+            <div>
+              <h2>Monitoramento operacional</h2>
+              <p>Acompanhe conexão, sincronização, cache e falhas das TVs em tempo quase real.</p>
+            </div>
+            <button id="monitor-refresh" class="button primary" type="button">Atualizar status</button>
+          </div>
+
+          <div class="metrics-grid monitoring-metrics">
+            <article class="metric-card"><span>TVs online</span><strong id="monitor-online">0</strong><small>Heartbeat nos últimos 90 segundos</small></article>
+            <article class="metric-card"><span>TVs offline</span><strong id="monitor-offline">0</strong><small>Sem comunicação recente</small></article>
+            <article class="metric-card"><span>Falhas ativas</span><strong id="monitor-issues">0</strong><small>Erro ainda sem recuperação registrada</small></article>
+            <article class="metric-card"><span>Sincronização atrasada</span><strong id="monitor-stale-sync">0</strong><small>Online, mas sem sincronizar há mais de 2 min</small></article>
+          </div>
+
+          <article class="panel monitor-panel">
+            <div class="panel-header">
+              <div><span class="eyebrow">SAÚDE DOS DISPOSITIVOS</span><h3>TVs monitoradas</h3></div>
+              <small>Atualização automática do painel a cada 30 segundos</small>
+            </div>
+            <div id="monitor-devices-grid" class="monitor-device-grid"></div>
+            <div id="monitor-devices-empty" class="empty-state hidden">Nenhuma TV pareada para monitorar.</div>
+          </article>
+
+          <article class="panel monitor-panel">
+            <div class="panel-header monitor-alert-header">
+              <div><span class="eyebrow">EVENTOS OPERACIONAIS</span><h3>Alertas e ocorrências recentes</h3></div>
+              <label class="compact-filter">Severidade
+                <select id="monitor-severity-filter">
+                  <option value="">Todas</option>
+                  <option value="critical">Críticas</option>
+                  <option value="error">Erros</option>
+                  <option value="warning">Avisos</option>
+                  <option value="info">Informações</option>
+                </select>
+              </label>
+            </div>
+            <div id="monitor-events-list" class="monitor-events-list"></div>
+            <div id="monitor-events-empty" class="empty-state hidden">Nenhuma ocorrência registrada.</div>
+          </article>
+        </section>
+
+        <section id="view-media" class="view-section hidden">
+          <div class="section-toolbar">
+            <div>
+              <h2>Biblioteca de mídias</h2>
+              <p>Envie imagens e vídeos para uso nas playlists.</p>
+            </div>
+            <label class="button primary upload-button">+ Enviar mídia
+              <input id="media-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden />
+            </label>
+          </div>
+          <div id="media-progress" class="progress-panel hidden">
+            <div class="spinner"></div>
+            <div><strong>Enviando mídia...</strong><span id="media-progress-text">Preparando arquivo</span></div>
+          </div>
+          <div id="media-grid" class="media-grid"></div>
+          <div id="media-empty" class="empty-panel hidden">
+            <div class="empty-icon">▧</div>
+            <h3>Sua biblioteca está vazia</h3>
+            <p>Envie uma imagem ou vídeo. Os arquivos ficam no Storage privado da sua empresa.</p>
+          </div>
+        </section>
+
+        <section id="view-playlists" class="view-section hidden">
+          <div class="section-toolbar">
+            <div>
+              <h2>Playlists</h2>
+              <p>Organize as mídias na ordem em que serão reproduzidas.</p>
+            </div>
+            <button id="add-playlist-button" class="button primary">+ Nova playlist</button>
+          </div>
+          <div id="playlists-grid" class="cards-grid"></div>
+          <div id="playlists-empty" class="empty-panel hidden">
+            <div class="empty-icon">▶</div>
+            <h3>Nenhuma playlist criada</h3>
+            <p>Crie uma playlist e adicione as mídias da sua biblioteca.</p>
+          </div>
+        </section>
+
+
+        <section id="view-campaigns" class="view-section hidden">
+          <div class="section-toolbar">
+            <div>
+              <h2>Programação e campanhas</h2>
+              <p>Programe playlists por data, horário, dia da semana e prioridade. A playlist padrão continua como fallback.</p>
+            </div>
+            <button id="add-campaign-button" class="button primary">+ Nova campanha</button>
+          </div>
+          <div class="schedule-help">
+            <div><strong>Prioridade maior vence.</strong><span>Se duas campanhas estiverem ativas ao mesmo tempo, a de maior prioridade assume a TV.</span></div>
+            <div><strong>Sem campanha ativa?</strong><span>A TV volta automaticamente para a playlist padrão atribuída em TVs.</span></div>
+          </div>
+          <div id="campaigns-grid" class="cards-grid"></div>
+          <div id="campaigns-empty" class="empty-panel hidden">
+            <div class="empty-icon">◷</div>
+            <h3>Nenhuma campanha programada</h3>
+            <p>Crie uma campanha para exibir uma playlist em horários específicos ou como conteúdo permanente.</p>
+            <button class="button primary" id="empty-add-campaign-button">Criar campanha</button>
+          </div>
+        </section>
+
+        <section id="view-reports" class="view-section hidden">
+          <div class="section-toolbar report-toolbar">
+            <div>
+              <h2>Prova de veiculação</h2>
+              <p>Comprove o que foi exibido por campanha, TV e mídia, com histórico detalhado de reprodução.</p>
+            </div>
+            <div class="report-actions">
+              <button id="report-export-csv" class="button ghost" type="button">Exportar CSV</button>
+              <button id="report-print" class="button ghost" type="button">Imprimir / PDF</button>
+              <button id="report-refresh" class="button primary" type="button">Atualizar relatório</button>
+            </div>
+          </div>
+
+          <div class="report-filters panel">
+            <div class="form-grid report-filter-grid">
+              <label>Data inicial
+                <input id="report-start-date" type="date" />
+              </label>
+              <label>Data final
+                <input id="report-end-date" type="date" />
+              </label>
+              <label>Campanha
+                <select id="report-campaign-filter"><option value="">Todas as campanhas</option></select>
+              </label>
+              <label>TV
+                <select id="report-device-filter"><option value="">Todas as TVs</option></select>
+              </label>
+            </div>
+            <div class="report-presets">
+              <button class="chip-button" data-report-preset="today" type="button">Hoje</button>
+              <button class="chip-button" data-report-preset="7" type="button">7 dias</button>
+              <button class="chip-button" data-report-preset="30" type="button">30 dias</button>
+              <span id="report-timezone-note">Fuso da empresa</span>
+            </div>
+          </div>
+
+          <div id="report-loading" class="progress-panel hidden">
+            <div class="spinner"></div>
+            <div><strong>Gerando prova de veiculação...</strong><span>Consolidando reproduções do período.</span></div>
+          </div>
+
+          <div id="report-empty" class="empty-panel hidden">
+            <div class="empty-icon">▤</div>
+            <h3>Nenhuma veiculação no período</h3>
+            <p>Quando o Vision Player reproduzir mídias, os eventos aparecerão aqui automaticamente.</p>
+          </div>
+
+          <div id="report-content" class="report-content hidden">
+            <div class="report-heading print-only">
+              <div class="brand-mark small">V</div>
+              <div><strong>Vision Mídia Digital — Prova de Veiculação</strong><span id="report-print-company"></span></div>
+            </div>
+            <div class="report-period-line">
+              <strong id="report-period-label">Período</strong>
+              <span id="report-generated-label"></span>
+            </div>
+
+            <div class="metrics-grid report-metrics">
+              <article class="metric-card"><span>Exibições iniciadas</span><strong id="report-started">0</strong><small>Eventos registrados</small></article>
+              <article class="metric-card"><span>Exibições concluídas</span><strong id="report-completed">0</strong><small>Reproduções finalizadas</small></article>
+              <article class="metric-card"><span>Taxa de conclusão</span><strong id="report-completion-rate">0%</strong><small>Concluídas ÷ iniciadas</small></article>
+              <article class="metric-card"><span>Tempo exibido</span><strong id="report-total-time">0 min</strong><small>Tempo somado das reproduções</small></article>
+              <article class="metric-card"><span>TVs com veiculação</span><strong id="report-device-count">0</strong><small>Dispositivos no período</small></article>
+              <article class="metric-card"><span>Mídias veiculadas</span><strong id="report-media-count">0</strong><small>Conteúdos distintos</small></article>
+            </div>
+
+            <div class="report-grid">
+              <article class="panel report-panel">
+                <div class="panel-header"><div><span class="eyebrow">CAMPANHAS</span><h3>Entrega por campanha</h3></div></div>
+                <div class="table-scroll"><table class="report-table"><thead><tr><th>Campanha</th><th>Exibições</th><th>Concluídas</th><th>Taxa</th><th>TVs</th><th>Tempo</th></tr></thead><tbody id="report-campaigns-body"></tbody></table></div>
+              </article>
+
+              <article class="panel report-panel">
+                <div class="panel-header"><div><span class="eyebrow">DISPOSITIVOS</span><h3>Entrega por TV</h3></div></div>
+                <div class="table-scroll"><table class="report-table"><thead><tr><th>TV</th><th>Exibições</th><th>Concluídas</th><th>Taxa</th><th>Mídias</th><th>Tempo</th></tr></thead><tbody id="report-devices-body"></tbody></table></div>
+              </article>
+            </div>
+
+            <article class="panel report-panel">
+              <div class="panel-header"><div><span class="eyebrow">CONTEÚDO</span><h3>Entrega por mídia</h3></div></div>
+              <div class="table-scroll"><table class="report-table"><thead><tr><th>Mídia</th><th>Exibições</th><th>Concluídas</th><th>Taxa</th><th>TVs</th><th>Tempo</th></tr></thead><tbody id="report-media-body"></tbody></table></div>
+            </article>
+
+            <article class="panel report-panel">
+              <div class="panel-header"><div><span class="eyebrow">AUDITORIA</span><h3>Últimos eventos de reprodução</h3></div><small>Até 250 eventos na tela; o CSV exporta todo o período.</small></div>
+              <div class="table-scroll"><table class="report-table report-events-table"><thead><tr><th>Data/hora</th><th>TV</th><th>Campanha</th><th>Mídia</th><th>Duração</th><th>Status</th></tr></thead><tbody id="report-events-body"></tbody></table></div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <div id="modal-backdrop" class="modal-backdrop hidden" role="presentation"></div>
+
+  <dialog id="pair-device-dialog" class="app-dialog">
+    <form id="pair-device-form" method="dialog" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">PAREAMENTO</span><h3>Parear uma TV</h3></div>
+        <button class="icon-button" data-close-dialog="pair-device-dialog" type="button">×</button>
+      </div>
+      <div class="pair-help">
+        <strong>1. Abra o Vision Player na TV.</strong>
+        <span>Ele exibirá um código de 6 dígitos válido por 10 minutos.</span>
+        <a href="./player.html" target="_blank" rel="noopener">Abrir Vision Player neste aparelho ↗</a>
+      </div>
+      <label>Código exibido na TV
+        <input id="pair-device-code" class="pair-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" />
+      </label>
+      <label>Nome da TV
+        <input id="pair-device-name" type="text" maxlength="120" required placeholder="Ex.: TV Recepção" />
+      </label>
+      <label>Orientação
+        <select id="pair-device-orientation">
+          <option value="auto">Automática</option>
+          <option value="landscape">Horizontal</option>
+          <option value="portrait">Vertical</option>
+        </select>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="pair-device-dialog" type="button">Cancelar</button>
+        <button id="pair-device-save" class="button primary" type="submit">Vincular TV</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="device-dialog" class="app-dialog">
+    <form id="device-form" method="dialog" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">DISPOSITIVO</span><h3 id="device-dialog-title">Editar TV</h3></div>
+        <button class="icon-button" data-close-dialog="device-dialog" type="button">×</button>
+      </div>
+      <input id="device-id" type="hidden" />
+      <label>Nome da TV
+        <input id="device-name" type="text" maxlength="120" required placeholder="Ex.: TV Recepção" />
+      </label>
+      <div class="form-grid two">
+        <label>Plataforma
+          <select id="device-platform">
+            <option value="android">Android / TV Box</option>
+            <option value="firetv">Fire TV</option>
+            <option value="windows">Windows</option>
+            <option value="web">Navegador</option>
+            <option value="smarttv">Smart TV</option>
+            <option value="other">Outro</option>
+          </select>
+        </label>
+        <label>Orientação
+          <select id="device-orientation">
+            <option value="auto">Automática</option>
+            <option value="landscape">Horizontal</option>
+            <option value="portrait">Vertical</option>
+          </select>
+        </label>
+      </div>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="device-dialog" type="button">Cancelar</button>
+        <button id="device-save" class="button primary" type="submit">Salvar TV</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="playlist-dialog" class="app-dialog">
+    <form id="playlist-form" method="dialog" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">PLAYLIST</span><h3>Nova playlist</h3></div>
+        <button class="icon-button" data-close-dialog="playlist-dialog" type="button">×</button>
+      </div>
+      <label>Nome
+        <input id="playlist-name" type="text" maxlength="120" required placeholder="Ex.: Ofertas da semana" />
+      </label>
+      <label>Descrição
+        <textarea id="playlist-description" rows="3" placeholder="Opcional"></textarea>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="playlist-dialog" type="button">Cancelar</button>
+        <button id="playlist-save" class="button primary" type="submit">Criar playlist</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="playlist-items-dialog" class="app-dialog large-dialog">
+    <div class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">CONTEÚDO</span><h3 id="playlist-items-title">Playlist</h3></div>
+        <button class="icon-button" data-close-dialog="playlist-items-dialog" type="button">×</button>
+      </div>
+      <div class="playlist-editor-grid">
+        <div>
+          <h4>Itens da playlist</h4>
+          <div id="playlist-items-list" class="sortable-list"></div>
+          <div id="playlist-items-empty" class="mini-empty hidden">Ainda não há mídias nesta playlist.</div>
+        </div>
+        <div>
+          <h4>Adicionar mídia</h4>
+          <div id="playlist-media-picker" class="media-picker"></div>
+          <div id="playlist-media-empty" class="mini-empty hidden">Envie uma mídia primeiro.</div>
+        </div>
+      </div>
+      <div class="dialog-actions">
+        <button class="button primary" data-close-dialog="playlist-items-dialog" type="button">Concluir</button>
+      </div>
+    </div>
+  </dialog>
+
+
+
+  <dialog id="campaign-dialog" class="app-dialog large-dialog">
+    <form id="campaign-form" method="dialog" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">PROGRAMAÇÃO</span><h3 id="campaign-dialog-title">Nova campanha</h3></div>
+        <button class="icon-button" data-close-dialog="campaign-dialog" type="button">×</button>
+      </div>
+      <input id="campaign-id" type="hidden" />
+      <div class="form-grid two">
+        <label>Nome da campanha
+          <input id="campaign-name" type="text" maxlength="140" required placeholder="Ex.: Promoção do almoço" />
+        </label>
+        <label>Playlist
+          <select id="campaign-playlist" required></select>
+        </label>
+      </div>
+      <label>Descrição
+        <textarea id="campaign-description" rows="2" maxlength="500" placeholder="Opcional"></textarea>
+      </label>
+
+      <div class="campaign-options-grid">
+        <label class="switch-row"><input id="campaign-active" type="checkbox" checked /><span><strong>Campanha ativa</strong><small>Pode entrar no ar quando as regras abaixo forem atendidas.</small></span></label>
+        <label class="switch-row"><input id="campaign-always" type="checkbox" /><span><strong>Exibir sempre</strong><small>Ignora datas, horários e dias da semana.</small></span></label>
+        <label class="switch-row"><input id="campaign-all-devices" type="checkbox" checked /><span><strong>Todas as TVs</strong><small>Se desligado, escolha as TVs específicas.</small></span></label>
+      </div>
+
+      <div id="campaign-targets-block" class="campaign-block hidden">
+        <div class="campaign-block-head"><strong>TVs da campanha</strong><small>Selecione pelo menos uma TV.</small></div>
+        <div id="campaign-device-picker" class="device-picker"></div>
+      </div>
+
+      <div id="campaign-schedule-block" class="campaign-block">
+        <div class="campaign-block-head"><strong>Período e recorrência</strong><small>Datas são opcionais. Sem data inicial/final, a regra pode repetir indefinidamente.</small></div>
+        <div class="form-grid two">
+          <label>Data inicial
+            <input id="campaign-start-date" type="date" />
+          </label>
+          <label>Data final
+            <input id="campaign-end-date" type="date" />
+          </label>
+        </div>
+        <label class="switch-row compact"><input id="campaign-all-day" type="checkbox" checked /><span><strong>Dia inteiro</strong><small>Desative para informar horário de início e fim.</small></span></label>
+        <div id="campaign-time-fields" class="form-grid two hidden">
+          <label>Horário inicial
+            <input id="campaign-start-time" type="time" step="60" />
+          </label>
+          <label>Horário final
+            <input id="campaign-end-time" type="time" step="60" />
+          </label>
+        </div>
+        <div>
+          <span class="field-caption">Dias da semana</span>
+          <div class="weekday-picker">
+            <label><input type="checkbox" data-campaign-weekday value="1" checked /><span>Seg</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="2" checked /><span>Ter</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="3" checked /><span>Qua</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="4" checked /><span>Qui</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="5" checked /><span>Sex</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="6" checked /><span>Sáb</span></label>
+            <label><input type="checkbox" data-campaign-weekday value="0" checked /><span>Dom</span></label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-grid two">
+        <label>Prioridade
+          <input id="campaign-priority" type="number" min="0" max="1000" value="50" required />
+          <small class="field-help">Quanto maior, maior a preferência quando houver conflito.</small>
+        </label>
+        <div class="priority-hint"><strong>Exemplo</strong><span>Campanha prioridade 100 substitui uma de prioridade 50 enquanto ambas estiverem ativas.</span></div>
+      </div>
+
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="campaign-dialog" type="button">Cancelar</button>
+        <button id="campaign-save" class="button primary" type="submit">Salvar campanha</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="./config.js"></script>
+  <script src="./app.js" defer></script>
+</body>
+</html>

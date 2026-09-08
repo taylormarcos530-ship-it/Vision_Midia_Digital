@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1020" />
+  <title>Vision Mídia Digital • Master</title>
+  <link rel="stylesheet" href="./master.css" />
+</head>
+<body>
+  <div id="master-toast-root" class="toast-root" aria-live="polite"></div>
+
+  <section id="master-auth" class="auth-screen">
+    <div class="auth-card">
+      <div class="brand"><span>V</span><div><strong>Vision Mídia Digital</strong><small>Painel SaaS Master</small></div></div>
+      <h1>Acesso Master</h1>
+      <p>Entre com uma conta autorizada como administrador da plataforma.</p><p class="helper">Primeiro acesso? <a href="./index.html">Crie e confirme sua conta pelo painel principal</a> e depois volte ao Master.</p>
+      <form id="master-login-form" class="stack">
+        <label>E-mail<input id="master-login-email" type="email" autocomplete="email" required /></label>
+        <label>Senha<input id="master-login-password" type="password" autocomplete="current-password" required /></label>
+        <button id="master-login-submit" class="button primary" type="submit">Entrar no Master</button>
+      </form>
+      <a class="back-link" href="./index.html">← Voltar ao painel do cliente</a>
+    </div>
+  </section>
+
+  <section id="master-denied" class="auth-screen hidden">
+    <div class="auth-card"><div class="deny-icon">!</div><h1>Acesso não autorizado</h1><p>Esta conta não possui permissão Master.</p><button id="master-denied-logout" class="button primary">Sair</button></div>
+  </section>
+
+  <div id="master-shell" class="master-shell hidden">
+    <aside class="master-sidebar">
+      <div class="brand sidebar-brand"><span>V</span><div><strong>Vision</strong><small>SaaS Master</small></div></div>
+      <nav>
+        <button class="nav-button active" data-master-view="dashboard">▦ Dashboard</button>
+        <button class="nav-button" data-master-view="clients">▣ Clientes</button>
+        <button class="nav-button" data-master-view="plans">◇ Planos</button>
+        <button class="nav-button" data-master-view="audit">≡ Auditoria</button>
+      </nav>
+      <div class="sidebar-foot"><small id="master-role-label">Master</small><strong id="master-email-label">—</strong><a href="./index.html">Painel do cliente ↗</a><button id="master-logout" class="nav-button danger">↪ Sair</button></div>
+    </aside>
+
+    <main class="master-main">
+      <header class="master-topbar">
+        <div><small id="master-kicker">PLATAFORMA</small><h1 id="master-title">Dashboard SaaS</h1></div>
+        <div class="top-actions"><span id="master-connection" class="pill neutral">● Sincronização</span><button id="master-refresh" class="icon-button">↻</button></div>
+      </header>
+
+      <div class="master-content">
+        <section id="master-view-dashboard" class="master-view">
+          <div class="hero"><div><span>CONTROLE DA PLATAFORMA</span><h2>Vision Mídia Digital como SaaS.</h2><p>Clientes, assinaturas, usuários e capacidade em um único painel.</p></div><button class="button primary" data-open-client>+ Novo cliente</button></div>
+          <div class="metrics">
+            <article><span>Clientes</span><strong id="mm-companies">0</strong><small id="mm-companies-detail">0 ativos</small></article>
+            <article><span>MRR estimado</span><strong id="mm-mrr">R$ 0</strong><small>Assinaturas ativas + trial</small></article>
+            <article><span>Usuários</span><strong id="mm-users">0</strong><small>Contas Auth</small></article>
+            <article><span>TVs</span><strong id="mm-devices">0</strong><small id="mm-devices-detail">0 online</small></article>
+            <article><span>Armazenamento</span><strong id="mm-storage">0 MB</strong><small>Total registrado</small></article>
+          </div>
+          <div class="dashboard-grid">
+            <article class="panel"><div class="panel-head"><div><small>CLIENTES</small><h3>Resumo de contas</h3></div><button class="text-button" data-go-master="clients">Ver todos</button></div><div id="master-dashboard-clients" class="mini-list"></div></article>
+            <article class="panel"><div class="panel-head"><div><small>AUDITORIA</small><h3>Últimas ações</h3></div><button class="text-button" data-go-master="audit">Ver histórico</button></div><div id="master-dashboard-audit" class="mini-list"></div></article>
+          </div>
+        </section>
+
+        <section id="master-view-clients" class="master-view hidden">
+          <div class="section-head"><div><span>CONTAS</span><h2>Clientes e empresas</h2><p>Cadastre, pesquise, suspenda e altere o plano de cada operação.</p></div><button class="button primary" data-open-client>+ Novo cliente</button></div>
+          <div class="toolbar"><input id="master-client-search" type="search" placeholder="Buscar empresa ou e-mail..." /><select id="master-client-filter"><option value="">Todos os status</option><option value="active">Ativos</option><option value="suspended">Suspensos</option></select></div>
+          <div id="master-clients-list" class="client-list"></div>
+          <div id="master-clients-empty" class="empty hidden">Nenhum cliente encontrado.</div>
+        </section>
+
+        <section id="master-view-plans" class="master-view hidden">
+          <div class="section-head"><div><span>COMERCIAL</span><h2>Planos e limites</h2><p>Preço, TVs, armazenamento, usuários e campanhas.</p></div><button id="open-plan-button" class="button primary">+ Novo plano</button></div>
+          <div id="master-plans-grid" class="plan-grid"></div>
+        </section>
+
+        <section id="master-view-audit" class="master-view hidden">
+          <div class="section-head"><div><span>SEGURANÇA</span><h2>Auditoria Master</h2><p>Ações administrativas recentes registradas no backend.</p></div></div>
+          <div class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Data</th><th>Ação</th><th>Empresa</th><th>Detalhes</th></tr></thead><tbody id="master-audit-body"></tbody></table></div></div>
+        </section>
+      </div>
+    </main>
+  </div>
+
+  <dialog id="master-client-dialog" class="master-dialog">
+    <form id="master-client-form" class="dialog-body">
+      <div class="dialog-head"><div><small>NOVO CLIENTE</small><h3>Criar conta SaaS</h3></div><button type="button" class="icon-button" data-close="master-client-dialog">×</button></div>
+      <div class="form-grid two"><label>Empresa<input id="mc-company-name" required maxlength="120" placeholder="Ex.: Mercado Central" /></label><label>Plano<select id="mc-plan" required></select></label></div>
+      <div class="form-grid two"><label>Nome do responsável<input id="mc-owner-name" maxlength="120" placeholder="Ex.: João Silva" /></label><label>E-mail do responsável<input id="mc-owner-email" type="email" required /></label></div>
+      <div class="form-grid two"><label>Dias de teste<input id="mc-trial-days" type="number" min="0" max="365" value="7" /></label><label>Senha temporária <small>(opcional)</small><input id="mc-temp-password" type="password" minlength="8" placeholder="Deixe vazio para convite por e-mail" /></label></div>
+      <p class="helper">Se a senha ficar vazia, o Supabase tentará enviar um convite por e-mail. Com senha temporária, a conta é confirmada e criada imediatamente.</p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-client-dialog">Cancelar</button><button id="mc-save" class="button primary" type="submit">Criar cliente</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="master-company-dialog" class="master-dialog large">
+    <form id="master-company-form" class="dialog-body">
+      <div class="dialog-head"><div><small>CLIENTE</small><h3 id="me-company-title">Gerenciar empresa</h3></div><button type="button" class="icon-button" data-close="master-company-dialog">×</button></div>
+      <input id="me-company-id" type="hidden" />
+      <div class="form-grid two"><label>Nome da empresa<input id="me-company-name" maxlength="120" required /></label><label>Status da empresa<select id="me-company-status"><option value="active">Ativa</option><option value="suspended">Suspensa</option></select></label></div>
+      <div class="form-grid two"><label>Plano<select id="me-plan"></select></label><label>Status da assinatura<select id="me-sub-status"><option value="trialing">Teste</option><option value="active">Ativa</option><option value="past_due">Pagamento pendente</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select></label></div>
+      <div class="form-grid two"><label>Preço manual mensal (R$)<input id="me-manual-price" inputmode="decimal" placeholder="Vazio = preço do plano" /></label><label>Observação de cobrança<input id="me-billing-notes" maxlength="500" /></label></div>
+      <div class="limit-box"><strong>Limites personalizados <small>(vazio = usar plano)</small></strong><div class="form-grid four"><label>TVs<input id="me-max-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="me-storage-mb" type="number" min="0" /></label><label>Usuários<input id="me-max-users" type="number" min="1" /></label><label>Campanhas<input id="me-max-campaigns" type="number" min="0" /></label></div></div>
+      <div class="danger-note">Suspender a empresa ou assinatura bloqueia novas operações e o player deixa de receber conteúdo.</div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-company-dialog">Cancelar</button><button id="me-save" class="button primary" type="submit">Salvar alterações</button></div>
+    </form>
+  </dialog>
+
+  <dialog id="master-users-dialog" class="master-dialog large">
+    <div class="dialog-body">
+      <div class="dialog-head"><div><small>ACESSOS</small><h3 id="mu-company-title">Usuários da empresa</h3></div><button type="button" class="icon-button" data-close="master-users-dialog">×</button></div>
+      <input id="mu-company-id" type="hidden" />
+      <div id="master-users-list" class="users-list"></div>
+      <form id="master-add-user-form" class="add-user-box">
+        <strong>Adicionar usuário</strong>
+        <div class="form-grid two"><label>Nome<input id="mu-name" maxlength="120" /></label><label>E-mail<input id="mu-email" type="email" required /></label></div>
+        <div class="form-grid two"><label>Permissão<select id="mu-role"><option value="admin">Administrador</option><option value="operator">Operador</option><option value="viewer">Visualizador</option></select></label><label>Senha temporária <small>(opcional)</small><input id="mu-password" type="password" minlength="8" /></label></div>
+        <button id="mu-add" class="button primary" type="submit">Adicionar usuário</button>
+      </form>
+    </div>
+  </dialog>
+
+  <dialog id="master-plan-dialog" class="master-dialog">
+    <form id="master-plan-form" class="dialog-body">
+      <div class="dialog-head"><div><small>PLANO</small><h3 id="mp-title">Novo plano</h3></div><button type="button" class="icon-button" data-close="master-plan-dialog">×</button></div>
+      <input id="mp-id" type="hidden" />
+      <div class="form-grid two"><label>Nome<input id="mp-name" required maxlength="80" /></label><label>Slug<input id="mp-slug" required maxlength="80" /></label></div>
+      <label>Descrição<input id="mp-description" maxlength="500" /></label>
+      <div class="form-grid two"><label>Preço mensal (R$)<input id="mp-price" inputmode="decimal" required /></label><label>Ordem<input id="mp-order" type="number" value="0" /></label></div>
+      <div class="form-grid four"><label>TVs<input id="mp-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="mp-storage" type="number" min="0" /></label><label>Usuários<input id="mp-users" type="number" min="1" /></label><label>Campanhas<input id="mp-campaigns" type="number" min="0" /></label></div>
+      <label class="switch-line"><input id="mp-active" type="checkbox" checked /> Plano disponível para novas assinaturas</label>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-plan-dialog">Cancelar</button><button id="mp-save" class="button primary" type="submit">Salvar plano</button></div>
+    </form>
+  </dialog>
+
+  <script src="./config.js"></script>
+  <script src="./master.js" defer></script>
+</body>
+</html>
