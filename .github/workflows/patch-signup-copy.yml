@@ -1,0 +1,30 @@
+name: Update Signup Copy
+on:
+  push:
+    branches: [main]
+    paths: ['.github/workflows/patch-signup-copy.yml']
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Remove obsolete email confirmation hint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('index.html')
+          s=p.read_text()
+          old='        <p class="form-hint">Dependendo da configuração do projeto, pode ser necessário confirmar o e-mail antes do primeiro acesso.</p>\n'
+          if old not in s: raise SystemExit('obsolete hint not found')
+          p.write_text(s.replace(old, '        <p class="form-hint">A conta é liberada imediatamente após o cadastro.</p>\n', 1))
+          PY
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add index.html
+          git diff --cached --check
+          git commit -m 'fix: remove obsolete email confirmation hint'
+          git push origin HEAD:main
