@@ -58,7 +58,28 @@
   function limitValue(c,key){ const o=c.subscription?.limit_overrides||{}; if(o[key]!==undefined&&o[key]!==null&&o[key]!=='') return Number(o[key]); return c.plan?.[key]??null; }
   function statusText(v){ return ({active:'Ativa',suspended:'Suspensa',trialing:'Teste',past_due:'Pendente',cancelled:'Cancelada'})[v]||v||'Sem assinatura'; }
 
-  function renderMetrics(){ const m=state.data.metrics||{}; $('#mm-companies').textContent=m.companies||0; $('#mm-companies-detail').textContent=`${m.active_companies||0} ativos • ${m.suspended_companies||0} suspensos`; $('#mm-mrr').textContent=money(m.mrr_cents); $('#mm-users').textContent=m.users||0; $('#mm-devices').textContent=m.devices||0; $('#mm-devices-detail').textContent=`${m.online_devices||0} online`; $('#mm-storage').textContent=bytes(m.storage_bytes); }
+  function renderMetrics(){
+    const m=state.data.metrics||{};
+    const maxCompanies=Number(m.max_companies||6);
+    const companies=Number(m.companies||0);
+    const capacityMb=Number(m.storage_capacity_mb||1024);
+    const reservedMb=Number(m.storage_reserved_mb||0);
+    const usedBytes=Number(m.storage_bytes||0);
+    const allocatableMb=Math.max(0,capacityMb-reservedMb);
+    $('#mm-companies').textContent=`${companies} / ${maxCompanies}`;
+    $('#mm-companies-detail').textContent=`${m.active_companies||0} ativos • ${Math.max(0,maxCompanies-companies)} vaga(s)`;
+    $('#mm-mrr').textContent=money(m.mrr_cents);
+    $('#mm-users').textContent=m.users||0;
+    $('#mm-devices').textContent=m.devices||0;
+    $('#mm-devices-detail').textContent=`${m.online_devices||0} online`;
+    $('#mm-storage').textContent=`${bytes(usedBytes)} / ${capacityMb.toLocaleString('pt-BR')} MB`;
+    $('#mm-storage-detail').textContent=`${reservedMb.toLocaleString('pt-BR')} MB reservados • ${allocatableMb.toLocaleString('pt-BR')} MB disponíveis para limites`;
+    $$('[data-open-client]').forEach(btn=>{
+      const full=companies>=maxCompanies;
+      btn.disabled=full;
+      btn.title=full?`Limite de ${maxCompanies} clientes atingido`:'';
+    });
+  }
   function renderDashboard(){ const companies=(state.data.companies||[]).slice(0,6); $('#master-dashboard-clients').innerHTML=companies.length?companies.map(c=>`<div class="mini-row"><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'')}</small></div><div><span>${esc(c.plan?.name||'Sem plano')}</span><small>${esc(statusText(c.subscription?.status||c.status))}</small></div></div>`).join(''):'<div class="empty">Nenhum cliente.</div>'; const audits=(state.data.audits||[]).slice(0,6); $('#master-dashboard-audit').innerHTML=audits.length?audits.map(a=>`<div class="mini-row"><div><strong>${esc(a.action)}</strong><small>${esc(companyById(a.company_id)?.name||'Plataforma')}</small></div><span>${esc(dt(a.created_at))}</span></div>`).join(''):'<div class="empty">Sem ações registradas.</div>'; }
   function renderClients(){ const q=($('#master-client-search')?.value||'').toLowerCase(); const f=$('#master-client-filter')?.value||''; const all=state.data.companies||[]; const rows=all.filter(c=>(!f||c.status===f)&&(!q||c.name.toLowerCase().includes(q)||(c.owner?.email||'').toLowerCase().includes(q))); $('#master-clients-empty').classList.toggle('hidden',rows.length>0); $('#master-clients-list').innerHTML=rows.map(c=>{ const subStatus=c.subscription?.status||'—'; const maxD=limitValue(c,'max_devices'), maxU=limitValue(c,'max_users'), maxS=limitValue(c,'storage_limit_mb'), maxC=limitValue(c,'max_campaigns'); return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button><button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`; }).join(''); }
   function renderPlans(){ const plans=state.data.plans||[]; $('#master-plans-grid').innerHTML=plans.map(p=>`<article class="plan-card"><div class="client-top"><div><strong>${esc(p.name)}</strong><small>${esc(p.is_active?'Disponível':'Inativo')}</small></div><span class="status ${p.is_active?'active':'suspended'}">${p.is_active?'Ativo':'Inativo'}</span></div><div class="plan-price">${esc(money(p.monthly_price_cents))}<small>/mês</small></div><p>${esc(p.description||'')}</p><ul><li>${p.max_devices??'∞'} TV(s)</li><li>${p.storage_limit_mb==null?'Ilimitado':`${p.storage_limit_mb} MB`} de mídia</li><li>${p.max_users??'∞'} usuário(s)</li><li>${p.max_campaigns??'∞'} campanha(s)</li></ul><div class="client-actions"><button class="small-button" data-edit-plan="${p.id}">Editar plano</button></div></article>`).join(''); $('#open-plan-button').classList.toggle('hidden',state.role!=='super_admin'); }
@@ -72,8 +93,13 @@
   function openDialog(id){const d=$(`#${id}`); if(d?.showModal)d.showModal()}
   function closeDialog(id){const d=$(`#${id}`); if(d?.close)d.close()}
   function fillPlanSelects(){ const opts=(state.data.plans||[]).filter(p=>p.is_active).map(p=>`<option value="${p.id}">${esc(p.name)} • ${esc(money(p.monthly_price_cents))}</option>`).join(''); $('#mc-plan').innerHTML=opts; $('#me-plan').innerHTML=(state.data.plans||[]).map(p=>`<option value="${p.id}">${esc(p.name)}${p.is_active?'':' (inativo)'}</option>`).join(''); }
-  function openNewClient(){ fillPlanSelects(); $('#master-client-form').reset(); $('#mc-trial-days').value='7'; openDialog('master-client-dialog'); }
-  async function createClient(ev){ev.preventDefault();const b=$('#mc-save');busy(b,true,'Criando...');try{const d=await master({action:'create_client',company_name:$('#mc-company-name').value.trim(),owner_name:$('#mc-owner-name').value.trim(),owner_email:$('#mc-owner-email').value.trim(),plan_id:$('#mc-plan').value,trial_days:Number($('#mc-trial-days').value||0),temporary_password:$('#mc-temp-password').value});closeDialog('master-client-dialog');toast('Cliente criado',d.delivery==='invite'?'Convite enviado por e-mail.':d.delivery==='temporary_password'?'Acesso criado com senha temporária.':'Usuário existente vinculado.');await load();}catch(e){toast('Erro ao criar cliente',e.message,'error')}finally{busy(b,false)}}
+  function openNewClient(){
+    const m=state.data?.metrics||{};
+    const max=Number(m.max_companies||6);
+    if(Number(m.companies||0)>=max){toast('Limite de clientes atingido',`A plataforma está em ${max}/${max} clientes. Para cadastrar outro, libere capacidade ou altere a infraestrutura.`,'error');return}
+    fillPlanSelects(); $('#master-client-form').reset(); $('#mc-trial-days').value='7'; openDialog('master-client-dialog');
+  }
+  async function createClient(ev){ev.preventDefault();const b=$('#mc-save');busy(b,true,'Criando...');try{const d=await master({action:'create_client',company_name:$('#mc-company-name').value.trim(),owner_name:$('#mc-owner-name').value.trim(),owner_email:$('#mc-owner-email').value.trim(),plan_id:$('#mc-plan').value,trial_days:Number($('#mc-trial-days').value||0),temporary_password:$('#mc-temp-password').value});closeDialog('master-client-dialog');toast('Cliente criado',d.delivery==='invite'?'Convite enviado por e-mail.':d.delivery==='temporary_password'?'Acesso criado com senha temporária.':'Usuário existente vinculado.');await load();}catch(e){const msg=/platform_client_limit_reached/i.test(String(e.message))?'O limite de 6 clientes desta infraestrutura foi atingido.':e.message;toast('Erro ao criar cliente',msg,'error')}finally{busy(b,false)}}
   function openCompany(id){ const c=companyById(id); if(!c)return; fillPlanSelects(); formStatus('#me-status'); $('#me-company-id').value=c.id; $('#me-company-title').textContent=c.name; $('#me-company-name').value=c.name; $('#me-company-status').value=c.status; $('#me-plan').value=c.subscription?.plan_id||''; $('#me-sub-status').value=c.subscription?.status||'active'; $('#me-manual-price').value=c.subscription?.manual_price_cents==null?'':(Number(c.subscription.manual_price_cents)/100).toFixed(2).replace('.',','); $('#me-billing-notes').value=c.subscription?.billing_notes||''; const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns); openDialog('master-company-dialog'); }
   function overrideObj(){ const o={}; [['max_devices','#me-max-devices'],['storage_limit_mb','#me-storage-mb'],['max_users','#me-max-users'],['max_campaigns','#me-max-campaigns']].forEach(([k,s])=>{const v=$(s).value.trim();if(v!=='')o[k]=Number(v)}); return o; }
   async function saveCompany(ev){
@@ -103,8 +129,12 @@
       formStatus('#me-status',`✅ Salvo com sucesso. Plano ${planName} aplicado.`,'success');
       toast('Salvo com sucesso',`Plano ${planName} e dados da assinatura atualizados.`);
     }catch(e){
-      formStatus('#me-status',`❌ ${e.message}`,'error');
-      toast('Erro ao salvar',e.message,'error');
+      const raw=String(e?.message||'Erro ao salvar');
+      const msg=/platform_storage_allocation_exceeded/i.test(raw)
+        ? 'A soma dos limites de armazenamento dos clientes não pode ultrapassar 1.024 MB. Reduza o limite deste ou de outro cliente.'
+        : raw;
+      formStatus('#me-status',`❌ ${msg}`,'error');
+      toast('Erro ao salvar',msg,'error');
     }finally{busy(b,false)}
   }
   async function toggleCompany(id,next){const c=companyById(id);if(!c)return;if(!confirm(`${next==='suspended'?'Suspender':'Reativar'} a conta “${c.name}”?`))return;try{await master({action:'update_company',company_id:id,company_status:next,subscription_status:next==='suspended'?'suspended':'active'});toast(next==='suspended'?'Conta suspensa':'Conta reativada');await load()}catch(e){toast('Não foi possível alterar a conta',e.message,'error')}}
