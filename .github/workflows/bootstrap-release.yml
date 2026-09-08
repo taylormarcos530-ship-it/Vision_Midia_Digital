@@ -18,15 +18,43 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Repair transferred chunks
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          import hashlib
+
+          def git_blob_sha(data: bytes) -> str:
+              header = f"blob {len(data)}\0".encode()
+              return hashlib.sha1(header + data).hexdigest()
+
+          def repair(path: str, expected_size: int, expected_sha: str, remove_len: int):
+              p = Path(path)
+              data = p.read_bytes()
+              if len(data) == expected_size and git_blob_sha(data) == expected_sha:
+                  print(path, 'already correct')
+                  return
+              if len(data) != expected_size + remove_len:
+                  raise SystemExit(f'{path}: unexpected size {len(data)}')
+              for i in range(len(data) - remove_len + 1):
+                  candidate = data[:i] + data[i + remove_len:]
+                  if git_blob_sha(candidate) == expected_sha:
+                      p.write_bytes(candidate)
+                      print(path, f'repaired by removing {remove_len} byte(s) at offset {i}')
+                      return
+              raise SystemExit(f'{path}: could not repair against expected git blob sha')
+
+          repair('.bootstrap/part-04', 18000, 'a8f3753e772df846702519c10b2f6603be51aa4b', 1)
+          repair('.bootstrap/part-06', 240, 'b7ee4d52e13bd20ed2d231fcb0d1d26096ed8cea', 16)
+          PY
+
       - name: Rebuild release archive
         shell: bash
         run: |
           set -euo pipefail
-          : > /tmp/vision.b64
-          cat .bootstrap/part-00 .bootstrap/part-01 .bootstrap/part-02 .bootstrap/part-03 >> /tmp/vision.b64
-          head -c 18000 .bootstrap/part-04 >> /tmp/vision.b64
-          cat .bootstrap/part-05 >> /tmp/vision.b64
-          head -c 240 .bootstrap/part-06 >> /tmp/vision.b64
+          cat .bootstrap/part-00 .bootstrap/part-01 .bootstrap/part-02 .bootstrap/part-03 .bootstrap/part-04 .bootstrap/part-05 .bootstrap/part-06 > /tmp/vision.b64
           test "$(wc -c < /tmp/vision.b64)" -eq 108240
           echo 'b3594131c197fe761d9a1118d450da86a02f88d615121326d8e0d0d895c0f40c  /tmp/vision.b64' | sha256sum -c -
           base64 --decode /tmp/vision.b64 > /tmp/vision-src.tgz
