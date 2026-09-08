@@ -382,7 +382,7 @@
     const companyId = encodeURIComponent(state.company.id);
     try {
       const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents] = await Promise.all([
-        restRequest('devices', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
+        restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlist_items', { query: `select=*&company_id=eq.${companyId}&order=position.asc` }),
@@ -526,6 +526,7 @@
           <div class="device-card-title"><strong>${escapeHtml(device.name)}</strong><span>${escapeHtml(platformLabel(device.platform))}</span></div>
           <div class="card-menu">
             <button class="small-icon-button capture-button" data-capture-device="${device.id}" title="Capturar o que está passando agora">📷 Capturar</button>
+            <button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>
             <button class="small-icon-button" data-edit-device="${device.id}" title="Editar">✎</button>
             <button class="small-icon-button" data-delete-device="${device.id}" title="Excluir">×</button>
           </div>
@@ -1532,6 +1533,48 @@
     setTimeout(() => $('#pair-device-code')?.focus(), 50);
   }
 
+  function openReplaceDeviceDialog(deviceId) {
+    const device = state.devices.find(d => d.id === deviceId);
+    if (!device) return;
+    $('#replace-device-old-id').value = device.id;
+    $('#replace-device-old-name').textContent = device.name;
+    $('#replace-device-code').value = '';
+    $('#replace-device-name').value = device.name;
+    $('#replace-device-orientation').value = device.orientation || 'auto';
+    openDialog('replace-device-dialog');
+    setTimeout(() => $('#replace-device-code')?.focus(), 50);
+  }
+
+  async function handleReplaceDevice(event) {
+    event.preventDefault();
+    const button = $('#replace-device-save');
+    const oldDeviceId = $('#replace-device-old-id').value;
+    const code = $('#replace-device-code').value.replace(/\D/g, '');
+    const name = $('#replace-device-name').value.trim();
+    if (!oldDeviceId || code.length !== 6 || !name) {
+      toast('Confira os dados', 'Informe os 6 dígitos da nova TV e um nome para ela.', 'error');
+      return;
+    }
+    setBusy(button, true, 'Substituindo...');
+    try {
+      await functionRequest('replace-device', {
+        body: {
+          company_id: state.company.id,
+          old_device_id: oldDeviceId,
+          code,
+          name,
+          orientation: $('#replace-device-orientation').value,
+        },
+      });
+      closeDialog('replace-device-dialog');
+      $('#replace-device-form').reset();
+      toast('TV substituída com sucesso', 'A vaga do plano foi mantida e a programação foi transferida para a nova TV.');
+      await loadAllData();
+    } catch (error) {
+      toast('Não foi possível substituir a TV', error.message, 'error');
+    } finally { setBusy(button, false); }
+  }
+
   async function handleAssignPlaylist(deviceId, playlistId) {
     const existing = state.deviceAssignments.find(a => a.device_id === deviceId);
     try {
@@ -2148,6 +2191,7 @@
     });
     $('#monitor-severity-filter').addEventListener('change', renderMonitoring);
     $('#pair-device-form').addEventListener('submit', handlePairDevice);
+    $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
@@ -2180,6 +2224,8 @@
     document.addEventListener('click', event => {
       const captureDevice = event.target.closest('[data-capture-device]');
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
+      const replaceDevice = event.target.closest('[data-replace-device]');
+      if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
       if (editDevice) return openEditDeviceDialog(editDevice.dataset.editDevice);
       const deleteDeviceButton = event.target.closest('[data-delete-device]');

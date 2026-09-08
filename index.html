@@ -497,6 +497,35 @@
     </form>
   </dialog>
 
+
+  <dialog id="replace-device-dialog" class="app-dialog">
+    <form id="replace-device-form" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">SUBSTITUIR TV</span><h3>Trocar dispositivo</h3></div>
+        <button class="icon-button" data-close-dialog="replace-device-dialog" type="button">×</button>
+      </div>
+      <input id="replace-device-old-id" type="hidden" />
+      <div class="pair-help">
+        <strong>TV atual: <span id="replace-device-old-name">—</span></strong>
+        <span>Abra o Vision Player na nova TV e informe o código de 6 dígitos. A TV antiga só será desativada depois que a nova for vinculada com sucesso.</span>
+        <span>A playlist padrão e as programações direcionadas serão transferidas automaticamente. A troca reutiliza a mesma vaga do plano.</span>
+      </div>
+      <label>Código exibido na nova TV
+        <input id="replace-device-code" class="pair-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" />
+      </label>
+      <label>Nome da nova TV
+        <input id="replace-device-name" type="text" maxlength="120" required placeholder="Ex.: TV Recepção" />
+      </label>
+      <label>Orientação
+        <select id="replace-device-orientation"><option value="auto">Automática</option><option value="landscape">Horizontal</option><option value="portrait">Vertical</option></select>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="replace-device-dialog" type="button">Cancelar</button>
+        <button id="replace-device-save" class="button primary" type="submit">Substituir TV</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="device-dialog" class="app-dialog">
     <form id="device-form" method="dialog" class="dialog-body">
       <div class="dialog-header">

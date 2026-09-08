@@ -121,6 +121,22 @@
     </form>
   </dialog>
 
+
+  <dialog id="master-replace-device-dialog" class="master-dialog">
+    <form id="master-replace-device-form" class="dialog-body">
+      <div class="dialog-head"><div><small>DISPOSITIVO</small><h3 id="mr-title">Substituir TV do cliente</h3></div><button type="button" class="icon-button" data-close="master-replace-device-dialog">×</button></div>
+      <input id="mr-company-id" type="hidden" />
+      <label>TV que será substituída<select id="mr-old-device" required></select></label>
+      <p id="mr-plan-slot" class="helper">A substituição reutiliza a vaga atual do plano.</p>
+      <label>Código da nova TV<input id="mr-code" class="pair-code-input" inputmode="numeric" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" /></label>
+      <label>Nome da nova TV<input id="mr-name" maxlength="120" required /></label>
+      <label>Orientação<select id="mr-orientation"><option value="auto">Automática</option><option value="landscape">Horizontal</option><option value="portrait">Vertical</option></select></label>
+      <p class="helper">A TV antiga só será desativada quando a nova for vinculada com sucesso. Playlist e programações direcionadas serão transferidas.</p>
+      <div id="mr-status" class="form-status hidden" role="status" aria-live="polite"></div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-replace-device-dialog">Cancelar</button><button id="mr-save" class="button primary" type="submit">Substituir TV</button></div>
+    </form>
+  </dialog>
+
   <dialog id="master-users-dialog" class="master-dialog large">
     <div class="dialog-body">
       <div class="dialog-head"><div><small>ACESSOS</small><h3 id="mu-company-title">Usuários da empresa</h3></div><button type="button" class="icon-button" data-close="master-users-dialog">×</button></div>
