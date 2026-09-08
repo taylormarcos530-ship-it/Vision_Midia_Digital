@@ -1,0 +1,78 @@
+name: Fix Plan Save Feedback
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-plan-save-feedback.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Patch plan saving and feedback only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          js = Path('master.js')
+          s = js.read_text()
+
+          rpc_code = """  async function rpc(name, body, retry=true){ const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/rpc/${name}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}); if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return rpc(name,body,false)} return parse(res); }\n"""
+          pattern = r"(  async function master\(body, retry=true\)\{[^\n]+\}\n)"
+          if 'async function rpc(name, body' not in s:
+              s, n = re.subn(pattern, r"\1" + rpc_code, s, count=1)
+              if n != 1: raise SystemExit('master helper insertion failed')
+
+          helper = """  function planStatus(message='',type=''){const el=$('#mp-status');if(!el)return;el.textContent=message;el.className=`form-status ${type}`.trim();el.classList.toggle('hidden',!message)}\n  function planIntOrNull(selector){const v=$(selector).value.trim();return v===''?null:Number(v)}\n  function friendlyPlanError(error){const m=String(error?.message||'Erro desconhecido');if(/super_admin_required/i.test(m))return 'Sua sessão não tem permissão de Super Master.';if(/plans_slug_key|duplicate key.*slug/i.test(m))return 'Já existe um plano com esse slug.';if(/invalid_plan_slug/i.test(m))return 'O slug deve usar apenas letras minúsculas, números e hífen.';if(/invalid_plan_name/i.test(m))return 'Informe um nome de plano válido.';if(/invalid_plan_price/i.test(m))return 'Informe um preço mensal válido.';if(/plan_not_found/i.test(m))return 'Este plano não foi encontrado. Atualize a página e tente novamente.';return m}\n"""
+          if 'function planStatus(' not in s:
+              s = s.replace('  function openPlan(id=null){', helper + '  function openPlan(id=null){', 1)
+
+          open_plan = """  function openPlan(id=null){ if(state.role!=='super_admin'){toast('Somente o Super Master pode editar planos.','','error');return} const p=id?planById(id):null; $('#master-plan-form').reset(); planStatus(); $('#mp-id').value=p?.id||''; $('#mp-title').textContent=p?'Editar plano':'Novo plano'; $('#mp-name').value=p?.name||''; $('#mp-slug').value=p?.slug||''; $('#mp-description').value=p?.description||''; $('#mp-price').value=p?(p.monthly_price_cents/100).toFixed(2).replace('.',','):''; $('#mp-order').value=p?.sort_order||0; $('#mp-devices').value=numOrBlank(p?.max_devices); $('#mp-storage').value=numOrBlank(p?.storage_limit_mb); $('#mp-users').value=numOrBlank(p?.max_users); $('#mp-campaigns').value=numOrBlank(p?.max_campaigns); $('#mp-active').checked=p?.is_active!==false; openDialog('master-plan-dialog'); }\n"""
+          s, n = re.subn(r"  function openPlan\(id=null\)\{[^\n]+\}\n", open_plan, s, count=1)
+          if n != 1: raise SystemExit('openPlan replacement failed')
+
+          save_plan = """  async function savePlan(ev){ev.preventDefault();const b=$('#mp-save');const price=reaisToCents($('#mp-price').value);if(price===null){planStatus('❌ Informe um preço mensal válido.','error');return}busy(b,true,'Salvando...');planStatus('Salvando...','pending');try{await rpc('save_platform_plan',{p_id:$('#mp-id').value||null,p_name:$('#mp-name').value.trim(),p_slug:$('#mp-slug').value.trim(),p_description:$('#mp-description').value.trim(),p_monthly_price_cents:price,p_max_devices:planIntOrNull('#mp-devices'),p_storage_limit_mb:planIntOrNull('#mp-storage'),p_max_users:planIntOrNull('#mp-users'),p_max_campaigns:planIntOrNull('#mp-campaigns'),p_is_active:$('#mp-active').checked,p_sort_order:Number($('#mp-order').value||0)});planStatus('✅ Plano salvo com sucesso.','success');closeDialog('master-plan-dialog');toast('Plano salvo','Alterações aplicadas com sucesso.');await load().catch(e=>toast('Plano salvo, mas a lista não atualizou',e.message,'error'))}catch(e){const msg=friendlyPlanError(e);planStatus(`❌ ${msg}`,'error');toast('Erro ao salvar plano',msg,'error')}finally{busy(b,false)}}\n"""
+          s, n = re.subn(r"  async function savePlan\(ev\)\{[^\n]+\}\n", save_plan, s, count=1)
+          if n != 1: raise SystemExit('savePlan replacement failed')
+          js.write_text(s)
+
+          html = Path('master.html')
+          h = html.read_text()
+          marker = '      <label class="switch-line"><input id="mp-active" type="checkbox" checked /> Plano disponível para novas assinaturas</label>\n'
+          status = '      <div id="mp-status" class="form-status hidden" role="status" aria-live="polite"></div>\n'
+          if 'id="mp-status"' not in h:
+              if marker not in h: raise SystemExit('plan status insertion point missing')
+              h = h.replace(marker, marker + status, 1)
+          html.write_text(h)
+
+          css = Path('master.css')
+          c = css.read_text()
+          if '.form-status{' not in c:
+              c += "\n.form-status{border:1px solid #30405f;background:#111a2c;color:#b8c6dc;border-radius:10px;padding:10px 12px;font-size:12px;font-weight:700}.form-status.pending{border-color:#4a5d86;color:#b9c9ff}.form-status.success{border-color:#275944;background:#10281f;color:#7ee0b8}.form-status.error{border-color:#6a3340;background:#2b171c;color:#ff9daa}\n"
+          css.write_text(c)
+          PY
+
+          node --check master.js
+          grep -q "save_platform_plan" master.js
+          grep -q 'id="mp-status"' master.html
+          grep -q '.form-status{' master.css
+
+      - name: Commit isolated fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add master.js master.html master.css
+          git diff --cached --check
+          git commit -m 'fix: save master plans with visible feedback'
+          git push origin HEAD:main
