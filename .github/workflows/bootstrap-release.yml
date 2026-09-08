@@ -22,8 +22,16 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          cat .bootstrap/part-* > /tmp/vision.b64
+          : > /tmp/vision.b64
+          cat .bootstrap/part-00 .bootstrap/part-01 .bootstrap/part-02 .bootstrap/part-03 >> /tmp/vision.b64
+          head -c 18000 .bootstrap/part-04 >> /tmp/vision.b64
+          cat .bootstrap/part-05 >> /tmp/vision.b64
+          head -c 240 .bootstrap/part-06 >> /tmp/vision.b64
+          test "$(wc -c < /tmp/vision.b64)" -eq 108240
+          echo 'b3594131c197fe761d9a1118d450da86a02f88d615121326d8e0d0d895c0f40c  /tmp/vision.b64' | sha256sum -c -
           base64 --decode /tmp/vision.b64 > /tmp/vision-src.tgz
+          test "$(wc -c < /tmp/vision-src.tgz)" -eq 81178
+          echo 'be28dc6f5e6bf1eb94c13d44d8299d38f8ae26f7f3596aeb98c7575e34919dd9  /tmp/vision-src.tgz' | sha256sum -c -
           tar -xzf /tmp/vision-src.tgz -C .
           rm -rf .bootstrap
           rm -f .github/workflows/bootstrap-release.yml
