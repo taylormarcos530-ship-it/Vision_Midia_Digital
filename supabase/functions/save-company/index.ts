@@ -30,8 +30,12 @@ Deno.serve(async(req)=>{
     const body=await req.json().catch(()=>({}))
     const companyId=String(body.company_id||'').trim()
     if(!companyId)return J({error:'company_required'},400)
-    const {data:current,error:currentError}=await admin.from('company_subscriptions').select('*').eq('company_id',companyId).maybeSingle()
+    const [{data:current,error:currentError},{data:currentCompany,error:companyError}]=await Promise.all([
+      admin.from('company_subscriptions').select('*').eq('company_id',companyId).maybeSingle(),
+      admin.from('companies').select('settings').eq('id',companyId).maybeSingle(),
+    ])
     if(currentError)throw currentError
+    if(companyError)throw companyError
 
     const companyName=String(body.company_name||'').trim()
     const companyStatus=String(body.company_status||'').trim()
@@ -48,6 +52,11 @@ Deno.serve(async(req)=>{
     if(manualPrice!==null&&!Number.isFinite(manualPrice))return J({error:'invalid_manual_price'},400)
     const overrides=body.limit_overrides&&typeof body.limit_overrides==='object'&&!Array.isArray(body.limit_overrides)?body.limit_overrides:{}
     const notes=String(body.billing_notes||'').trim()
+    const previousSettings=(currentCompany?.settings&&typeof currentCompany.settings==='object')?currentCompany.settings:{}
+    const audioEnabled=body.player_audio_enabled===undefined?previousSettings.player_audio_enabled!==false:body.player_audio_enabled!==false
+    const autostartEnabled=body.player_autostart_enabled===undefined?previousSettings.player_autostart_enabled!==false:body.player_autostart_enabled!==false
+    const previousRevision=Math.max(0,Number(previousSettings.player_cache_revision||0))
+    const cacheRevision=body.clear_cache===true?previousRevision+1:previousRevision
 
     const {data,error}=await admin.rpc('master_save_company_billing_v2',{
       p_company_id:companyId,
@@ -63,13 +72,39 @@ Deno.serve(async(req)=>{
       p_actor_user_id:userData.user.id,
     })
     if(error)throw error
+
+    const companySettings={
+      ...previousSettings,
+      player_audio_enabled:audioEnabled,
+      player_autostart_enabled:autostartEnabled,
+      player_cache_revision:cacheRevision,
+    }
+    const {error:settingsError}=await admin.from('companies').update({settings:companySettings}).eq('id',companyId)
+    if(settingsError)throw settingsError
+
+    const dueOk=!dueDate||new Date(`${dueDate}T23:59:59`).getTime()>Date.now()
+    const licenseAllowed=companyStatus==='active'&&(
+      (subscriptionStatus==='trialing')||
+      (subscriptionStatus==='active'&&['paid','waived'].includes(paymentStatus)&&dueOk)
+    )
+    if(licenseAllowed){
+      const {data:devices,error:devicesError}=await admin.from('devices').select('id,settings').eq('company_id',companyId)
+      if(devicesError)throw devicesError
+      for(const device of devices||[]){
+        const deviceSettings=(device.settings&&typeof device.settings==='object')?device.settings:{}
+        const merged={...deviceSettings,audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}
+        const {error:deviceError}=await admin.from('devices').update({settings:merged}).eq('id',device.id).eq('company_id',companyId)
+        if(deviceError)throw deviceError
+      }
+    }
+
     await admin.from('master_audit_logs').insert({
       actor_user_id:userData.user.id,
-      action:'company_billing_updated',
+      action:body.clear_cache===true?'company_player_cache_clear_requested':'company_billing_updated',
       company_id:companyId,
-      details:{plan_id:data?.subscription?.plan_id||planId,subscription_status:data?.subscription?.status||subscriptionStatus,payment_status:data?.subscription?.payment_status||paymentStatus,due_date:dueDate,source:'save-company-v2'},
+      details:{plan_id:data?.subscription?.plan_id||planId,subscription_status:data?.subscription?.status||subscriptionStatus,payment_status:data?.subscription?.payment_status||paymentStatus,due_date:dueDate,audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision,source:'save-company-v3'},
     }).catch(()=>null)
-    return J(data||{ok:true})
+    return J({...data,player_settings:{audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}})
   }catch(error){
     console.error('save-company',error)
     const msg=String(error?.message||'internal_error')
