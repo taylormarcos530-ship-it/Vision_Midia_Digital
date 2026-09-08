@@ -87,10 +87,28 @@ jobs:
           python -m json.tool manifest.webmanifest >/dev/null
           python -m json.tool player.webmanifest >/dev/null
           python -m json.tool vercel.json >/dev/null
-          if grep -RIlE 'sb_secret_[A-Za-z0-9_-]+|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*[:=][[:space:]]*["'"'][^"'"']+' --exclude-dir=.git .; then
-            echo 'Potential secret value found in source.' >&2
-            exit 1
-          fi
+          python - <<'PY'
+          from pathlib import Path
+          import re
+
+          patterns = [
+              re.compile(rb'sb_secret_[A-Za-z0-9_-]+'),
+              re.compile(rb'SUPABASE_SERVICE_ROLE_KEY\s*[:=]\s*["\'][^"\']+["\']'),
+          ]
+          hits = []
+          for p in Path('.').rglob('*'):
+              if not p.is_file() or '.git' in p.parts:
+                  continue
+              try:
+                  data = p.read_bytes()
+              except OSError:
+                  continue
+              if any(rx.search(data) for rx in patterns):
+                  hits.append(str(p))
+          if hits:
+              raise SystemExit('Potential secret value found in: ' + ', '.join(hits))
+          print('Secret scan: OK')
+          PY
 
       - name: Commit reconstructed release
         shell: bash
