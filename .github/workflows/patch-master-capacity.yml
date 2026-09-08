@@ -1,0 +1,36 @@
+name: Apply Master Capacity
+on:
+  push:
+    branches: [stage-signage-v2]
+    paths:
+      - '.github/scripts/patch_master_capacity.py'
+      - '.github/workflows/patch-master-capacity.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: stage-signage-v2
+      - name: Apply patch
+        run: python .github/scripts/patch_master_capacity.py
+      - name: Validate JavaScript
+        run: node --check master.js
+      - name: Validate required markers
+        run: |
+          grep -q 'mm-storage-detail' master.html
+          grep -q 'get_master_platform_capacity' supabase/functions/master-admin/index.ts
+          grep -q 'platform_storage_allocation_exceeded' master.js
+      - name: Commit changes
+        run: |
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add master.html master.js supabase/functions/master-admin/index.ts
+          if git diff --cached --quiet; then
+            echo 'No changes to commit'
+          else
+            git commit -m 'feat: show global SaaS client and storage capacity'
+            git push origin stage-signage-v2
+          fi
