@@ -1440,6 +1440,52 @@ function friendlyAuthError(error) {
     } finally { setTimeout(() => URL.revokeObjectURL(url), 0); }
   }
 
+  async function optimizeImageForUpload(file) {
+    const original = { file, name: file.name, optimized: false, originalSize: file.size };
+    if (!['image/jpeg','image/png','image/webp'].includes(file.type)) return original;
+    let url = null;
+    try {
+      url = URL.createObjectURL(file);
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        const timeout = setTimeout(() => reject(new Error('Tempo excedido ao otimizar imagem.')), 15000);
+        el.onload = () => { clearTimeout(timeout); resolve(el); };
+        el.onerror = () => { clearTimeout(timeout); reject(new Error('Não foi possível abrir a imagem para otimização.')); };
+        el.src = url;
+      });
+      const sourceWidth = img.naturalWidth || img.width;
+      const sourceHeight = img.naturalHeight || img.height;
+      if (!sourceWidth || !sourceHeight) return original;
+
+      // Mantém a resolução original quando já está dentro de 4K e nunca amplia imagem pequena.
+      const maxEdge = 3840;
+      const scale = Math.min(1, maxEdge / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * scale));
+      const height = Math.max(1, Math.round(sourceHeight * scale));
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d', { alpha: true });
+      if (!ctx) return original;
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(img, 0, 0, width, height);
+
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.92));
+      if (!blob || !blob.size) return original;
+      // Se não houver ganho de tamanho, preserva o arquivo original e sua qualidade original.
+      if (blob.size >= file.size) return original;
+      const baseName = file.name.replace(/\.[^.]+$/, '').slice(0, 110) || 'imagem';
+      const optimizedFile = new File([blob], `${baseName}.webp`, { type: 'image/webp', lastModified: Date.now() });
+      return { file: optimizedFile, name: optimizedFile.name, optimized: true, originalSize: file.size, width, height };
+    } catch (error) {
+      console.warn('Otimização WebP ignorada; usando arquivo original.', error);
+      return original;
+    } finally {
+      if (url) URL.revokeObjectURL(url);
+    }
+  }
+
   async function handleMediaUpload(file) {
     if (!file) return;
     if (!['image/', 'video/'].some(prefix => file.type.startsWith(prefix))) {
@@ -1454,18 +1500,27 @@ function friendlyAuthError(error) {
     const progress = $('#media-progress');
     const progressText = $('#media-progress-text');
     let uploadedPath = null;
+    let uploadFile = file;
+    let uploadName = file.name;
+    let optimization = null;
     progress.classList.remove('hidden');
     try {
+      if (file.type.startsWith('image/')) {
+        progressText.textContent = 'Otimizando imagem em alta qualidade para WebP';
+        optimization = await optimizeImageForUpload(file);
+        uploadFile = optimization.file;
+        uploadName = optimization.name;
+      }
       progressText.textContent = 'Lendo informações do arquivo';
-      const meta = await getMediaMetadata(file);
-      const safeName = file.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120);
+      const meta = await getMediaMetadata(uploadFile);
+      const safeName = uploadName.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120);
       const objectPath = `${state.company.id}/${crypto.randomUUID()}-${safeName}`;
       const encodedPath = objectPath.split('/').map(encodeURIComponent).join('/');
 
-      progressText.textContent = `Enviando ${formatBytes(file.size)}`;
+      progressText.textContent = `Enviando ${formatBytes(uploadFile.size)}`;
       await storageRequest(`/object/${CONFIG.storageBucket}/${encodedPath}`, {
-        body: file,
-        contentType: file.type || 'application/octet-stream',
+        body: uploadFile,
+        contentType: uploadFile.type || 'application/octet-stream',
         extraHeaders: { 'x-upsert': 'false' },
       });
       uploadedPath = objectPath;
@@ -1475,13 +1530,13 @@ function friendlyAuthError(error) {
         method: 'POST',
         body: {
           company_id: state.company.id,
-          name: file.name,
-          media_type: file.type.startsWith('video/') ? 'video' : 'image',
-          mime_type: file.type || null,
+          name: uploadName,
+          media_type: uploadFile.type.startsWith('video/') ? 'video' : 'image',
+          mime_type: uploadFile.type || null,
           storage_path: objectPath,
           source_url: null,
           duration_seconds: meta.duration,
-          size_bytes: file.size,
+          size_bytes: uploadFile.size,
           width: meta.width,
           height: meta.height,
           processing_status: 'ready',
@@ -1490,7 +1545,10 @@ function friendlyAuthError(error) {
         prefer: 'return=minimal',
       });
       uploadedPath = null;
-      toast('Mídia enviada', file.name);
+      const detail = optimization?.optimized
+        ? `${uploadName} • otimizada ${formatBytes(optimization.originalSize)} → ${formatBytes(uploadFile.size)} sem ampliar a imagem`
+        : uploadName;
+      toast('Mídia enviada', detail);
       await loadAllData();
     } catch (error) {
       if (uploadedPath) {

@@ -122,13 +122,14 @@
   </dialog>
 
   <dialog id="master-plan-dialog" class="master-dialog">
-    <form id="master-plan-form" class="dialog-body">
+    <form id="master-plan-form" class="dialog-body" novalidate>
       <div class="dialog-head"><div><small>PLANO</small><h3 id="mp-title">Novo plano</h3></div><button type="button" class="icon-button" data-close="master-plan-dialog">×</button></div>
       <input id="mp-id" type="hidden" />
       <div class="form-grid two"><label>Nome<input id="mp-name" required maxlength="80" /></label><label>Slug<input id="mp-slug" required maxlength="80" /></label></div>
-      <label>Descrição<input id="mp-description" maxlength="500" /></label>
-      <div class="form-grid two"><label>Preço mensal (R$)<input id="mp-price" inputmode="decimal" required /></label><label>Ordem<input id="mp-order" type="number" value="0" /></label></div>
-      <div class="form-grid four"><label>TVs<input id="mp-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="mp-storage" type="number" min="0" /></label><label>Usuários<input id="mp-users" type="number" min="1" /></label><label>Campanhas<input id="mp-campaigns" type="number" min="0" /></label></div>
+      <label>Descrição<input id="mp-description" required maxlength="500" /></label>
+      <div class="form-grid two"><label>Preço mensal (R$)<input id="mp-price" inputmode="decimal" required /></label><label>Ordem<input id="mp-order" type="number" min="0" step="1" value="0" required /></label></div>
+      <div class="form-grid four"><label>TVs<input id="mp-devices" type="number" min="0" required /></label><label>Armazenamento MB<input id="mp-storage" type="number" min="0" required /></label><label>Usuários<input id="mp-users" type="number" min="1" required /></label><label>Campanhas<input id="mp-campaigns" type="number" min="0" required /></label></div>
+      <p class="helper">Todos os campos do plano são obrigatórios. O sistema não salva enquanto houver campo vazio ou inválido.</p>
       <label class="switch-line"><input id="mp-active" type="checkbox" checked /> Plano disponível para novas assinaturas</label>
       <div id="mp-status" class="form-status hidden" role="status" aria-live="polite"></div>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-plan-dialog">Cancelar</button><button id="mp-save" class="button primary" type="submit">Salvar plano</button></div>

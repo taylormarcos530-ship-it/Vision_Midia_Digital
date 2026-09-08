@@ -117,7 +117,44 @@
   function planIntOrNull(selector){const v=$(selector).value.trim();return v===''?null:Number(v)}
   function friendlyPlanError(error){const m=String(error?.message||'Erro desconhecido');if(/super_admin_required/i.test(m))return 'Sua sessão não tem permissão de Super Master.';if(/plan_slug_already_exists|plans_slug_key|duplicate key.*slug/i.test(m))return 'Já existe um plano com esse slug.';if(/invalid_plan_slug/i.test(m))return 'O slug deve usar apenas letras minúsculas, números e hífen.';if(/invalid_plan_name/i.test(m))return 'Informe um nome de plano válido.';if(/invalid_plan_price/i.test(m))return 'Informe um preço mensal válido.';if(/plan_not_found/i.test(m))return 'Este plano não foi encontrado. Atualize a página e tente novamente.';if(/plan_save_failed|plan_save_unexpected_error/i.test(m))return 'Não foi possível salvar o plano no servidor. Tente novamente.';return m}
   function openPlan(id=null){ if(state.role!=='super_admin'){toast('Somente o Super Master pode editar planos.','','error');return} const p=id?planById(id):null; $('#master-plan-form').reset(); planStatus(); $('#mp-id').value=p?.id||''; $('#mp-title').textContent=p?'Editar plano':'Novo plano'; $('#mp-name').value=p?.name||''; $('#mp-slug').value=p?.slug||''; $('#mp-description').value=p?.description||''; $('#mp-price').value=p?(p.monthly_price_cents/100).toFixed(2).replace('.',','):''; $('#mp-order').value=p?.sort_order||0; $('#mp-devices').value=numOrBlank(p?.max_devices); $('#mp-storage').value=numOrBlank(p?.storage_limit_mb); $('#mp-users').value=numOrBlank(p?.max_users); $('#mp-campaigns').value=numOrBlank(p?.max_campaigns); $('#mp-active').checked=p?.is_active!==false; openDialog('master-plan-dialog'); }
-  async function savePlan(ev){ev.preventDefault();const b=$('#mp-save');const price=reaisToCents($('#mp-price').value);if(price===null){planStatus('❌ Informe um preço mensal válido.','error');return}busy(b,true,'Salvando...');planStatus('Salvando...','pending');try{await savePlanRequest({id:$('#mp-id').value||null,name:$('#mp-name').value.trim(),slug:$('#mp-slug').value.trim(),description:$('#mp-description').value.trim(),monthly_price_cents:price,max_devices:planIntOrNull('#mp-devices'),storage_limit_mb:planIntOrNull('#mp-storage'),max_users:planIntOrNull('#mp-users'),max_campaigns:planIntOrNull('#mp-campaigns'),is_active:$('#mp-active').checked,sort_order:Number($('#mp-order').value||0)});planStatus('✅ Plano salvo com sucesso.','success');closeDialog('master-plan-dialog');toast('Plano salvo','Alterações aplicadas com sucesso.');await load().catch(e=>toast('Plano salvo, mas a lista não atualizou',e.message,'error'))}catch(e){const msg=friendlyPlanError(e);planStatus(`❌ ${msg}`,'error');toast('Erro ao salvar plano',msg,'error')}finally{busy(b,false)}}
+  function validatePlanForm(){
+    const required=[['#mp-name','Nome'],['#mp-slug','Slug'],['#mp-description','Descrição'],['#mp-price','Preço mensal'],['#mp-order','Ordem'],['#mp-devices','TVs'],['#mp-storage','Armazenamento MB'],['#mp-users','Usuários'],['#mp-campaigns','Campanhas']];
+    const missing=required.filter(([selector])=>String($(selector)?.value??'').trim()==='');
+    if(missing.length){planStatus(`❌ Preencha todos os campos obrigatórios. Falta: ${missing.map(([,label])=>label).join(', ')}.`,'error');$(missing[0][0])?.focus();return null}
+    const name=$('#mp-name').value.trim(),slug=$('#mp-slug').value.trim(),description=$('#mp-description').value.trim();
+    const price=reaisToCents($('#mp-price').value),sortOrder=Number($('#mp-order').value),maxDevices=Number($('#mp-devices').value),storageMb=Number($('#mp-storage').value),maxUsers=Number($('#mp-users').value),maxCampaigns=Number($('#mp-campaigns').value);
+    if(name.length<2){planStatus('❌ Informe um nome de plano válido.','error');$('#mp-name').focus();return null}
+    if(!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(slug)){planStatus('❌ O slug deve usar apenas letras minúsculas, números e hífen.','error');$('#mp-slug').focus();return null}
+    if(description.length<2){planStatus('❌ Preencha a descrição do plano.','error');$('#mp-description').focus();return null}
+    if(price===null||price<0){planStatus('❌ Informe um preço mensal válido.','error');$('#mp-price').focus();return null}
+    if(!Number.isInteger(sortOrder)||sortOrder<0){planStatus('❌ Informe uma ordem válida.','error');$('#mp-order').focus();return null}
+    if(!Number.isInteger(maxDevices)||maxDevices<0){planStatus('❌ Informe a quantidade de TVs.','error');$('#mp-devices').focus();return null}
+    if(!Number.isInteger(storageMb)||storageMb<0){planStatus('❌ Informe o armazenamento em MB.','error');$('#mp-storage').focus();return null}
+    if(!Number.isInteger(maxUsers)||maxUsers<1){planStatus('❌ O plano deve permitir pelo menos 1 usuário.','error');$('#mp-users').focus();return null}
+    if(!Number.isInteger(maxCampaigns)||maxCampaigns<0){planStatus('❌ Informe a quantidade de campanhas.','error');$('#mp-campaigns').focus();return null}
+    return {id:$('#mp-id').value||null,name,slug,description,monthly_price_cents:price,max_devices:maxDevices,storage_limit_mb:storageMb,max_users:maxUsers,max_campaigns:maxCampaigns,is_active:$('#mp-active').checked,sort_order:sortOrder};
+  }
+  async function savePlan(ev){
+    ev.preventDefault();
+    const payload=validatePlanForm();
+    if(!payload)return;
+    const b=$('#mp-save');
+    busy(b,true,'Salvando...');
+    planStatus('Salvando...','pending');
+    try{
+      const result=await savePlanRequest(payload);
+      if(!result?.ok||!result?.plan?.id)throw new Error('O servidor não confirmou o salvamento do plano.');
+      $('#mp-id').value=result.plan.id;
+      $('#mp-title').textContent='Editar plano';
+      planStatus('✅ Salvo com sucesso. As alterações foram aplicadas.','success');
+      toast('Salvo com sucesso',`Plano ${result.plan.name||payload.name} atualizado.`);
+      await load().catch(e=>toast('Plano salvo, mas a lista não atualizou',e.message,'error'));
+    }catch(e){
+      const msg=friendlyPlanError(e);
+      planStatus(`❌ Erro ao salvar: ${msg}`,'error');
+      toast('Erro ao salvar plano',msg,'error');
+    }finally{busy(b,false)}
+  }
 
   function bind(){ $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
