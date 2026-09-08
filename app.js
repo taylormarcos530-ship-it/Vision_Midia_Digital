@@ -283,7 +283,7 @@
       link.href = `https://wa.me/${phone}?text=${encodeURIComponent(message || 'Olá! Preciso de ajuda com meu acesso à Vision Mídia Digital.')}`;
       link.classList.remove('hidden');
     } else link.classList.add('hidden');
-    if (Notification?.permission === 'granted') notifyAccessState(reason);
+    if ('Notification' in window && Notification.permission === 'granted') notifyAccessState(reason);
   }
 
   async function notifyAccessState(reason) {
