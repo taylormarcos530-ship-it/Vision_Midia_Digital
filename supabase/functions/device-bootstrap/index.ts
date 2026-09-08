@@ -48,7 +48,7 @@ function pairingCode() {
 }
 
 async function playerBranding(admin, setupCode) {
-  const code = String(setupCode || '').trim().slice(0, 128)
+  const code = String(setupCode || '').trim().toUpperCase().slice(0, 12)
   if (!code) return null
   const { data, error } = await admin.from('company_player_branding').select('company_id,title,message,splash_path').eq('setup_code', code).maybeSingle()
   if (error) throw error
