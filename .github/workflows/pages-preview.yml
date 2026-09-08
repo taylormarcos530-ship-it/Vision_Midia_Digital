@@ -1,0 +1,49 @@
+name: Publish Vision Midia Digital Preview
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Prepare static preview
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p _site
+          cp index.html 404.html styles.css app.js config.js icon.svg manifest.webmanifest sw.js _site/
+          cp master.html master.css master.js _site/
+          cp player.html player.css player.js player.webmanifest _site/
+          printf '' > _site/.nojekyll
+
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v4
+        with:
+          path: _site
+
+      - name: Deploy preview
+        id: deployment
+        uses: actions/deploy-pages@v4
