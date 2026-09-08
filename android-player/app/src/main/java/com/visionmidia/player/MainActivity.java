@@ -13,6 +13,7 @@ import android.text.InputType;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.webkit.JavascriptInterface;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -30,6 +31,7 @@ import java.util.Locale;
 public class MainActivity extends Activity {
     private static final String PREFS = "vision_player_prefs";
     private static final String KEY_SETUP_CODE = "company_setup_code";
+    public static final String KEY_AUTOSTART = "autostart_enabled";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
 
     private WebView webView;
@@ -81,6 +83,7 @@ public class MainActivity extends Activity {
         settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.setSafeBrowsingEnabled(true);
 
+        webView.addJavascriptInterface(new PlayerBridge(), "VisionAndroid");
         webView.setWebChromeClient(new WebChromeClient());
         webView.setWebViewClient(new WebViewClientCompat() {
             @Nullable
@@ -157,6 +160,14 @@ public class MainActivity extends Activity {
                 .setNeutralButton("Recarregar", (d, which) -> loadPlayer(prefs.getString(KEY_SETUP_CODE, "")))
                 .setNegativeButton("Voltar ao Player", null)
                 .show();
+    }
+
+
+    private class PlayerBridge {
+        @JavascriptInterface
+        public void setAutostart(boolean enabled) {
+            prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
+        }
     }
 
     private void enterImmersiveMode() {

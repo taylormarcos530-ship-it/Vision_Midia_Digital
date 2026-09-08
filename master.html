@@ -60,11 +60,23 @@
             <article class="panel"><div class="panel-head"><div><small>CLIENTES</small><h3>Resumo de contas</h3></div><button class="text-button" data-go-master="clients">Ver todos</button></div><div id="master-dashboard-clients" class="mini-list"></div></article>
             <article class="panel"><div class="panel-head"><div><small>AUDITORIA</small><h3>Últimas ações</h3></div><button class="text-button" data-go-master="audit">Ver histórico</button></div><div id="master-dashboard-audit" class="mini-list"></div></article>
           </div>
+
+          <article class="panel platform-settings-panel">
+            <div class="panel-head"><div><small>COMERCIAL</small><h3>Cadastro público e WhatsApp</h3></div></div>
+            <form id="platform-settings-form" class="stack">
+              <label>WhatsApp do suporte <input id="ps-whatsapp" inputmode="tel" placeholder="Ex.: 5562999999999" /></label>
+              <label>Mensagem após cadastro <textarea id="ps-signup-message" rows="2" maxlength="500"></textarea></label>
+              <label>Mensagem de renovação <textarea id="ps-renewal-message" rows="2" maxlength="500"></textarea></label>
+              <label class="switch-line"><input id="ps-signup-enabled" type="checkbox" checked /> Permitir novos cadastros públicos</label>
+              <div id="ps-status" class="form-status hidden" role="status" aria-live="polite"></div>
+              <button id="ps-save" class="button primary" type="submit">Salvar configurações</button>
+            </form>
+          </article>
         </section>
 
         <section id="master-view-clients" class="master-view hidden">
           <div class="section-head"><div><span>CONTAS</span><h2>Clientes e empresas</h2><p>Cadastre, pesquise, suspenda e altere o plano de cada operação.</p></div><button class="button primary" data-open-client>+ Novo cliente</button></div>
-          <div class="toolbar"><input id="master-client-search" type="search" placeholder="Buscar empresa ou e-mail..." /><select id="master-client-filter"><option value="">Todos os status</option><option value="active">Ativos</option><option value="suspended">Suspensos</option></select></div>
+          <div class="toolbar"><input id="master-client-search" type="search" placeholder="Buscar empresa ou e-mail..." /><select id="master-client-filter"><option value="">Todos os status</option><option value="active">Ativos</option><option value="pending_approval">Aguardando aprovação</option><option value="past_due">Pagamento pendente</option><option value="overdue">Vencidos</option><option value="suspended">Suspensos</option></select></div>
           <div id="master-clients-list" class="client-list"></div>
           <div id="master-clients-empty" class="empty hidden">Nenhum cliente encontrado.</div>
         </section>
@@ -98,10 +110,12 @@
       <div class="dialog-head"><div><small>CLIENTE</small><h3 id="me-company-title">Gerenciar empresa</h3></div><button type="button" class="icon-button" data-close="master-company-dialog">×</button></div>
       <input id="me-company-id" type="hidden" />
       <div class="form-grid two"><label>Nome da empresa<input id="me-company-name" maxlength="120" required /></label><label>Status da empresa<select id="me-company-status"><option value="active">Ativa</option><option value="suspended">Suspensa</option></select></label></div>
-      <div class="form-grid two"><label>Plano<select id="me-plan"></select></label><label>Status da assinatura<select id="me-sub-status"><option value="trialing">Teste</option><option value="active">Ativa</option><option value="past_due">Pagamento pendente</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select></label></div>
+      <div class="form-grid two"><label>Plano<select id="me-plan"></select></label><label>Status da assinatura<select id="me-sub-status"><option value="pending_approval">Aguardando aprovação</option><option value="trialing">Teste</option><option value="active">Ativa</option><option value="past_due">Pagamento pendente</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select></label></div>
+      <div class="form-grid two"><label>Situação do pagamento<select id="me-payment-status"><option value="pending">Pendente</option><option value="paid">Pago</option><option value="overdue">Vencido</option><option value="waived">Liberado manualmente</option></select></label><label>Vencimento<input id="me-due-date" type="date" /></label></div>
       <div class="form-grid two"><label>Preço manual mensal (R$)<input id="me-manual-price" inputmode="decimal" placeholder="Vazio = preço do plano" /></label><label>Observação de cobrança<input id="me-billing-notes" maxlength="500" /></label></div>
       <div class="limit-box"><strong>Limites personalizados <small>(vazio = usar plano)</small></strong><div class="form-grid four"><label>TVs<input id="me-max-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="me-storage-mb" type="number" min="0" /></label><label>Usuários<input id="me-max-users" type="number" min="1" /></label><label>Campanhas<input id="me-max-campaigns" type="number" min="0" /></label></div></div>
-      <div class="danger-note">Suspender a empresa ou assinatura bloqueia novas operações e o player deixa de receber conteúdo.</div>
+      <div class="limit-box"><strong>Controles do Player desta conta</strong><div class="form-grid two"><label class="switch-line"><input id="me-player-audio" type="checkbox" checked /> Áudio da TV ativado</label><label class="switch-line"><input id="me-player-autostart" type="checkbox" checked /> Iniciar Player ao ligar o TV Box</label></div><div class="dialog-actions compact-actions"><button id="me-clear-cache" class="button ghost" type="button">Limpar cache das TVs</button></div><small>Limpar cache aumenta a revisão da conta; na próxima sincronização os Players baixam novamente as mídias.</small></div>
+      <div class="danger-note">Aguardando aprovação, pagamento vencido, suspensão ou cancelamento bloqueiam o painel e o Player.</div>
       <div id="me-status" class="form-status hidden" role="status" aria-live="polite"></div>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-company-dialog">Cancelar</button><button id="me-save" class="button primary" type="submit">Salvar alterações</button></div>
     </form>

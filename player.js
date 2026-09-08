@@ -7,7 +7,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.3.0';
+  const APP_VERSION = 'vision-player-web-1.4.0';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -15,6 +15,7 @@
   const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
   const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
   const SETUP_CODE_KEY = 'vision_player_setup_code_v1';
+  const CACHE_REV_KEY = 'vision_player_cache_revision_v1';
   const querySetupCode = new URLSearchParams(location.search).get('setup');
   if (querySetupCode) localStorage.setItem(SETUP_CODE_KEY, String(querySetupCode).slice(0,128));
 
@@ -34,6 +35,7 @@
     currentMediaId: null,
     cacheItems: 0,
     cacheBytes: 0,
+    audioEnabled: true,
     syncHadError: false,
     playbackHadError: false,
     lastEventTimes: {},
@@ -323,6 +325,20 @@
     return new Request(`${location.origin}/__vision_media_cache__/${encodeURIComponent(item.media.id)}/${checksum}`);
   }
 
+
+  async function applyDeviceSettings(settings = {}) {
+    state.audioEnabled = settings.audio_enabled !== false;
+    const revision = Number(settings.cache_revision || 0);
+    const previous = Number(localStorage.getItem(CACHE_REV_KEY) || 0);
+    if (revision !== previous) {
+      await caches.delete(MEDIA_CACHE).catch(() => false);
+      localStorage.setItem(CACHE_REV_KEY, String(revision));
+      state.cacheItems = 0; state.cacheBytes = 0;
+      queueDeviceEvent('cache_revision_applied','info','Cache local renovado por solicitação do painel.',{revision},30000);
+    }
+    try { window.VisionAndroid?.setAutostart?.(settings.autostart_enabled !== false); } catch {}
+  }
+
   async function cacheManifestAssets(manifest) {
     const cache = await caches.open(MEDIA_CACHE);
     const keep = new Set();
@@ -373,6 +389,7 @@
     try {
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
+      await applyDeviceSettings(manifest?.device?.settings || {});
       await cacheManifestAssets(manifest);
       state.manifest = manifest;
       state.lastSyncAt = new Date().toISOString();
@@ -465,6 +482,7 @@
         const url = URL.createObjectURL(blob);
         state.currentObjectUrl = url;
         const video = document.createElement('video');
+        video.muted = !state.audioEnabled;
         video.src = url;
         video.autoplay = true;
         video.playsInline = true;

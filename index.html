@@ -49,6 +49,12 @@
         <label>Nome
           <input id="signup-name" type="text" autocomplete="name" minlength="2" required placeholder="Seu nome" />
         </label>
+        <label>Empresa
+          <input id="signup-company" type="text" minlength="2" maxlength="120" required placeholder="Ex.: Mercado Central" />
+        </label>
+        <label>Plano de interesse
+          <select id="signup-plan" required><option value="">Carregando planos...</option></select>
+        </label>
         <label>E-mail
           <input id="signup-email" type="email" autocomplete="email" required placeholder="seu@email.com" />
         </label>
@@ -56,9 +62,31 @@
           <input id="signup-password" type="password" autocomplete="new-password" minlength="8" required placeholder="Mínimo 8 caracteres" />
         </label>
         <button id="signup-submit" class="button primary full" type="submit">Criar conta</button>
-        <p class="form-hint">A conta é liberada imediatamente após o cadastro.</p>
+        <p class="form-hint">Após o cadastro, sua conta ficará aguardando aprovação do administrador. Você poderá falar com o suporte pelo WhatsApp.</p>
       </form>
       <p class="form-hint" style="margin-top:14px;text-align:center"><a href="./master.html" style="color:inherit">Acesso ao Painel Master</a></p>
+    </div>
+  </section>
+
+
+  <section id="access-screen" class="center-screen hidden">
+    <div class="onboarding-card access-card">
+      <div class="brand-mark large">V</div>
+      <span class="eyebrow" id="access-kicker">ACESSO</span>
+      <h2 id="access-title">Aguardando aprovação</h2>
+      <p id="access-message">Seu cadastro foi recebido e está aguardando liberação.</p>
+      <div class="access-summary">
+        <div><span>Empresa</span><strong id="access-company">—</strong></div>
+        <div><span>Plano</span><strong id="access-plan">—</strong></div>
+        <div><span>Vencimento</span><strong id="access-due">—</strong></div>
+      </div>
+      <div class="access-actions">
+        <a id="access-whatsapp" class="button primary full hidden" href="#" target="_blank" rel="noopener">Falar com suporte no WhatsApp</a>
+        <button id="access-refresh" class="button ghost full" type="button">Verificar liberação</button>
+        <button id="access-notifications" class="button ghost full" type="button">Ativar notificações</button>
+        <button id="access-logout" class="link-button" type="button">Sair desta conta</button>
+      </div>
+      <p class="form-hint">Quando o administrador liberar seu plano, basta tocar em “Verificar liberação”.</p>
     </div>
   </section>
 

@@ -16,6 +16,8 @@
     user: null,
     companies: [],
     company: null,
+    subscription: null,
+    publicConfig: null,
     devices: [],
     media: [],
     playlists: [],
@@ -224,19 +226,101 @@
     return data;
   }
 
+
+  function formatPlanMoney(cents) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100);
+  }
+
+  async function loadPublicConfig() {
+    const data = await functionRequest('public-config', { authenticated: false, body: {} });
+    state.publicConfig = data || { config: {}, plans: [] };
+    const select = $('#signup-plan');
+    if (select) {
+      const plans = state.publicConfig.plans || [];
+      select.innerHTML = plans.length
+        ? '<option value="">Selecione um plano</option>' + plans.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} • ${escapeHtml(formatPlanMoney(p.monthly_price_cents))}/mês</option>`).join('')
+        : '<option value="">Nenhum plano disponível</option>';
+    }
+    return state.publicConfig;
+  }
+
+  function accessReason(subscription = state.subscription) {
+    if (!subscription) return { key: 'pending', title: 'Aguardando aprovação', message: 'Seu cadastro ainda não possui uma assinatura liberada.' };
+    const now = Date.now();
+    const status = subscription.status;
+    if (status === 'pending_approval') return { key: 'pending', title: 'Aguardando aprovação', message: 'Seu cadastro foi recebido. O administrador precisa definir o plano, vencimento e liberar o acesso.' };
+    if (status === 'past_due') return { key: 'renewal', title: 'Pagamento pendente', message: 'Sua assinatura está com pagamento pendente. Regularize para voltar a usar o painel.' };
+    if (status === 'suspended') return { key: 'renewal', title: 'Acesso suspenso', message: 'Sua assinatura está suspensa. Fale com o suporte para regularizar.' };
+    if (status === 'cancelled') return { key: 'renewal', title: 'Assinatura cancelada', message: 'Esta assinatura foi cancelada. Fale com o suporte para reativar.' };
+    if (status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= now) return { key: 'renewal', title: 'Período de teste encerrado', message: 'Seu período de teste terminou. Escolha um plano para continuar.' };
+    if (status === 'active') {
+      if (!['paid','waived'].includes(subscription.payment_status || 'pending')) return { key: 'renewal', title: 'Aguardando pagamento', message: 'O plano foi definido, mas o pagamento ainda não foi liberado.' };
+      if (subscription.current_period_end && new Date(subscription.current_period_end).getTime() <= now) return { key: 'renewal', title: 'Assinatura vencida', message: 'Sua assinatura venceu. Regularize o pagamento para reativar o acesso.' };
+    }
+    if (state.company?.status === 'suspended') return { key: 'renewal', title: 'Acesso suspenso', message: 'Esta empresa está suspensa pelo administrador.' };
+    return null;
+  }
+
+  function formatAccessDate(value) {
+    if (!value) return 'Não definido';
+    try { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(value)); }
+    catch { return '—'; }
+  }
+
+  function renderAccessScreen(reason = accessReason()) {
+    reason = reason || { key:'pending', title:'Aguardando aprovação', message:'Aguarde a liberação do administrador.' };
+    $('#access-title').textContent = reason.title;
+    $('#access-message').textContent = reason.message;
+    $('#access-company').textContent = state.company?.name || 'Cadastro ainda não vinculado';
+    const plan = (state.publicConfig?.plans || []).find(p => p.id === state.subscription?.plan_id);
+    $('#access-plan').textContent = plan?.name || 'A definir';
+    $('#access-due').textContent = formatAccessDate(state.subscription?.current_period_end);
+    const cfg = state.publicConfig?.config || {};
+    const phone = String(cfg.support_whatsapp || '').replace(/\D/g, '');
+    const message = reason.key === 'renewal' ? cfg.renewal_whatsapp_message : cfg.signup_whatsapp_message;
+    const link = $('#access-whatsapp');
+    if (phone) {
+      link.href = `https://wa.me/${phone}?text=${encodeURIComponent(message || 'Olá! Preciso de ajuda com meu acesso à Vision Mídia Digital.')}`;
+      link.classList.remove('hidden');
+    } else link.classList.add('hidden');
+    if (Notification?.permission === 'granted') notifyAccessState(reason);
+  }
+
+  async function notifyAccessState(reason) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const key = `vision_access_notice_${reason.key}_${state.subscription?.updated_at || ''}`;
+    if (localStorage.getItem(key)) return;
+    try {
+      const reg = await navigator.serviceWorker?.ready;
+      if (reg?.showNotification) await reg.showNotification(`Vision Mídia Digital • ${reason.title}`, { body: reason.message, icon: './icon.svg', tag: `vision-${reason.key}` });
+      else new Notification(`Vision Mídia Digital • ${reason.title}`, { body: reason.message });
+      localStorage.setItem(key, '1');
+    } catch {}
+  }
+
+  async function enableAccessNotifications() {
+    if (!('Notification' in window)) return toast('Notificações indisponíveis', 'Este navegador não oferece suporte.', 'error');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
+    toast('Notificações ativadas', 'Você verá avisos do acesso quando o app estiver sincronizando.');
+    const reason = accessReason(); if (reason) notifyAccessState(reason);
+  }
+
   function showScreen(name) {
     $('#auth-screen').classList.toggle('hidden', name !== 'auth');
+    $('#access-screen').classList.toggle('hidden', name !== 'access');
     $('#onboarding-screen').classList.toggle('hidden', name !== 'onboarding');
     $('#app-shell').classList.toggle('hidden', name !== 'app');
   }
 
   async function bootstrap() {
     bindEvents();
+    await loadPublicConfig().catch(() => null);
     updateConnectionStatus();
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
     setInterval(() => {
-      if (state.company?.id && !document.hidden) loadAllData().catch(() => updateConnectionStatus(false));
+      if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
     }, 30_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -263,17 +347,30 @@
 
   async function enterAuthenticatedApp() {
     state.companies = await restRequest('companies', {
-      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at&order=created_at.asc',
+      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings&order=created_at.asc',
     }) || [];
 
     if (!state.companies.length) {
-      showScreen('onboarding');
+      state.company = null;
+      state.subscription = null;
+      showScreen('access');
+      renderAccessScreen({ key:'pending', title:'Cadastro aguardando vínculo', message:'Sua conta existe, mas ainda não está vinculada a uma empresa liberada. Fale com o suporte.' });
       return;
     }
 
     const savedCompanyId = localStorage.getItem(COMPANY_KEY);
     state.company = state.companies.find(c => c.id === savedCompanyId) || state.companies[0];
     localStorage.setItem(COMPANY_KEY, state.company.id);
+    const rows = await restRequest('company_subscriptions', {
+      query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1`,
+    });
+    state.subscription = rows?.[0] || null;
+    const reason = accessReason(state.subscription);
+    if (reason) {
+      showScreen('access');
+      renderAccessScreen(reason);
+      return;
+    }
     showScreen('app');
     renderIdentity();
     await loadAllData();
@@ -770,7 +867,7 @@
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
           <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span></div></div>
           ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
-          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
 
@@ -1328,39 +1425,31 @@
   }
 
   async function handleSignup(event) {
-  event.preventDefault();
-  const button = $('#signup-submit');
-  const email = $('#signup-email').value.trim();
-  const password = $('#signup-password').value;
-  const displayName = $('#signup-name').value.trim();
-  setBusy(button, true, 'Criando conta...');
-  try {
-    await functionRequest('public-signup', {
-      authenticated: false,
-      body: { email, password, display_name: displayName },
-    });
-    const data = await authRequest('/token?grant_type=password', {
-      body: { email, password },
-    });
-    if (!data?.access_token) throw new Error('Login não retornou uma sessão válida.');
-    saveSession(data);
-    await enterAuthenticatedApp();
-    toast('Conta criada', 'Seu acesso já está liberado. Agora crie sua empresa.');
-  } catch (error) {
-    toast('Não foi possível criar a conta', friendlyAuthError(error), 'error');
-  } finally { setBusy(button, false); }
-}
-
-function friendlyAuthError(error) {
-    const msg = String(error?.message || 'Erro de autenticação.');
-    if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha inválidos.';
-    if (/email not confirmed/i.test(msg)) return 'Esta conta antiga ainda não está liberada. Crie uma nova conta ou fale com o administrador.';
-    if (/email_already_registered|user already registered/i.test(msg)) return 'Este e-mail já está cadastrado.';
-    if (/signup_rate_limited/i.test(msg)) return 'Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.';
-    if (/invalid_email/i.test(msg)) return 'Informe um e-mail válido.';
-    if (/invalid_password/i.test(msg)) return 'A senha deve ter entre 8 e 72 caracteres.';
-    if (/invalid_display_name/i.test(msg)) return 'Informe seu nome.';
-    return msg;
+    event.preventDefault();
+    const button = $('#signup-submit');
+    const email = $('#signup-email').value.trim();
+    const password = $('#signup-password').value;
+    const displayName = $('#signup-name').value.trim();
+    const companyName = $('#signup-company').value.trim();
+    const planId = $('#signup-plan').value;
+    if (!companyName || !planId) return toast('Complete o cadastro', 'Informe a empresa e selecione o plano de interesse.', 'error');
+    setBusy(button, true, 'Criando cadastro...');
+    try {
+      await functionRequest('public-signup-v2', { authenticated:false, body:{ email, password, display_name:displayName, company_name:companyName, plan_id:planId } });
+      const data = await authRequest('/token?grant_type=password', { body:{ email, password } });
+      saveSession(data);
+      await loadPublicConfig().catch(() => null);
+      await enterAuthenticatedApp();
+      toast('Cadastro recebido', 'Seu acesso está aguardando aprovação do administrador.');
+    } catch (error) {
+      const code = String(error?.message || '');
+      const friendly = /email_already_registered/i.test(code) ? 'Este e-mail já está cadastrado.'
+        : /platform_client_limit_reached/i.test(code) ? 'No momento não há novas vagas de clientes nesta infraestrutura.'
+        : /plan_not_available/i.test(code) ? 'O plano selecionado não está mais disponível.'
+        : /signup_rate_limited/i.test(code) ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+        : friendlyAuthError(error);
+      toast('Não foi possível criar o cadastro', friendly, 'error');
+    } finally { setBusy(button, false); }
   }
 
   async function handleForgotPassword() {
@@ -2036,6 +2125,9 @@ function friendlyAuthError(error) {
     $('#signup-form').addEventListener('submit', handleSignup);
     $('#forgot-password').addEventListener('click', handleForgotPassword);
     $('#company-form').addEventListener('submit', handleCreateCompany);
+    $('#access-refresh').addEventListener('click', () => enterAuthenticatedApp().catch(error => toast('Falha ao verificar acesso', error.message, 'error')));
+    $('#access-logout').addEventListener('click', logout);
+    $('#access-notifications').addEventListener('click', enableAccessNotifications);
     $('#logout-button').addEventListener('click', logout);
     $('#refresh-button').addEventListener('click', async () => {
       try { await loadAllData(); toast('Dados atualizados'); }
