@@ -1,0 +1,36 @@
+name: Patch Device Plan Usage
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/patch_device_plan_usage.py'
+      - '.github/workflows/patch-device-plan-usage.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: Apply patch
+        run: python .github/patch_device_plan_usage.py
+      - name: Validate JavaScript
+        run: node --check app.js
+      - name: Validate markers
+        run: |
+          grep -q 'device-plan-usage' index.html
+          grep -q 'currentDevicePlanUsage' app.js
+          grep -q 'friendlyPairDeviceError' app.js
+          grep -q 'DEVICE_PLAN_USAGE_V1' styles.css
+      - name: Commit changes
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add app.js index.html styles.css
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m 'feat: show TV plan usage and friendly limit message'
+          git push origin main
