@@ -1,0 +1,199 @@
+name: Fix Player Playlist Report
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/fix-player-playlist-report.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Apply isolated fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+
+          # 1) Player: fit full media without cropping, including stubborn Android/WebView caches.
+          pc = Path('player.css')
+          s = pc.read_text()
+          s = s.replace(
+            '.media-stage { position: absolute; inset: 0; display: grid; place-items: center; background: #000; }\n.media-stage img, .media-stage video { width: 100%; height: 100%; object-fit: contain; background: #000; }',
+            '.media-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; background: #000; }\n.media-stage img, .media-stage video { display:block; width:100%; height:100%; max-width:100vw; max-height:100vh; object-fit:contain !important; object-position:center center !important; background:#000; transform:none !important; }'
+          )
+          pc.write_text(s)
+
+          pj = Path('player.js')
+          s = pj.read_text()
+          if "img.style.objectFit = 'contain';" not in s:
+            s = s.replace("        img.src = url;\n        stage.appendChild(img);", "        img.src = url;\n        img.style.width = '100%';\n        img.style.height = '100%';\n        img.style.objectFit = 'contain';\n        img.style.objectPosition = 'center';\n        stage.appendChild(img);", 1)
+          if "video.style.objectFit = 'contain';" not in s:
+            s = s.replace("        video.preload = 'auto';\n        stage.appendChild(video);", "        video.preload = 'auto';\n        video.style.width = '100%';\n        video.style.height = '100%';\n        video.style.objectFit = 'contain';\n        video.style.objectPosition = 'center';\n        stage.appendChild(video);", 1)
+          pj.write_text(s)
+
+          sw = Path('sw.js')
+          s = sw.read_text().replace("const CACHE = 'vision-midia-shell-v5';", "const CACHE = 'vision-midia-shell-v6';")
+          sw.write_text(s)
+
+          # 2) Playlist editor: thumbnails, order state and per-image duration control.
+          app = Path('app.js')
+          s = app.read_text()
+          replacement = r'''  function renderPlaylistEditor() {
+    const playlist = state.playlists.find(p => p.id === state.editingPlaylistId);
+    if (!playlist) return;
+    $('#playlist-items-title').textContent = playlist.name;
+    const items = state.playlistItems
+      .filter(i => i.playlist_id === playlist.id)
+      .sort((a,b) => a.position - b.position);
+    const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
+
+    const list = $('#playlist-items-list');
+    $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
+    list.innerHTML = items.map((item, index) => {
+      const media = mediaById[item.media_id];
+      const isImage = media?.media_type === 'image';
+      const imageSeconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
+      const details = [media?.media_type || '', media?.width && media?.height ? `${media.width}×${media.height}` : ''].filter(Boolean).join(' • ');
+      return `
+        <div class="sortable-row playlist-item-row">
+          <span class="playlist-order-badge">${index + 1}</span>
+          <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
+          <div class="grow"><strong>${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(details)}</small><span class="playlist-selection-state selected">Na playlist • ordem ${index + 1}</span></div>
+          ${isImage ? `<label class="playlist-duration-control">Tempo <span><input type="number" min="1" max="86400" step="1" value="${imageSeconds}" data-item-duration-input="${item.id}" /> s</span></label><button class="small-icon-button duration-save-button" data-save-item-duration="${item.id}">Salvar tempo</button>` : `<span class="playlist-video-duration">${media?.duration_seconds ? `Vídeo ${escapeHtml(formatDuration(media.duration_seconds))}` : 'Tempo do vídeo'}</span>`}
+          <div class="order-buttons">
+            <button class="small-icon-button" data-move-item="${item.id}" data-direction="up" ${index === 0 ? 'disabled' : ''}>↑</button>
+            <button class="small-icon-button" data-move-item="${item.id}" data-direction="down" ${index === items.length - 1 ? 'disabled' : ''}>↓</button>
+            <button class="small-icon-button" data-remove-item="${item.id}">×</button>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const picker = $('#playlist-media-picker');
+    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
+    const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
+    picker.innerHTML = state.media.map(media => {
+      const order = included.get(media.id);
+      return `
+        <div class="picker-row ${order ? 'already-selected' : ''}">
+          <div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span></div>
+          <div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}</small><span class="playlist-selection-state ${order ? 'selected' : ''}">${order ? `Já adicionada • ordem ${order}` : 'Ainda não selecionada'}</span></div>
+          <button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order ? 'disabled' : ''}>${order ? 'Adicionada' : '+ Adicionar'}</button>
+        </div>`;
+    }).join('');
+    hydratePlaylistPreviews();
+  }
+
+  async function hydratePlaylistPreviews() {
+    const visibleIds = new Set($$('[data-playlist-media-preview]').map(el => el.dataset.playlistMediaPreview).filter(Boolean));
+    for (const media of state.media.filter(item => visibleIds.has(item.id))) {
+      const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
+      if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
+      try {
+        const url = await getSignedMediaUrl(media.storage_path);
+        targets.forEach(target => {
+          if (target.dataset.loaded === '1') return;
+          target.dataset.loaded = '1';
+          if (media.media_type === 'image') {
+            const img = document.createElement('img'); img.alt = media.name; img.loading = 'lazy'; img.src = url; target.prepend(img);
+          } else {
+            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'metadata'; video.src = url; target.prepend(video);
+            video.addEventListener('loadedmetadata', () => { try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {} }, { once:true });
+          }
+        });
+      } catch { /* keep placeholder */ }
+    }
+  }
+
+'''
+          s, n = re.subn(r"  function renderPlaylistEditor\(\) \{.*?\n  const WEEKDAY_NAMES", replacement + '  const WEEKDAY_NAMES', s, count=1, flags=re.S)
+          if n != 1: raise SystemExit('renderPlaylistEditor patch failed')
+
+          duration_fn = r'''  async function savePlaylistItemDuration(itemId) {
+    const input = $(`[data-item-duration-input="${CSS.escape(itemId)}"]`);
+    const seconds = Number(input?.value || 0);
+    if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) return toast('Tempo inválido', 'Use de 1 a 86400 segundos.', 'error');
+    try {
+      await restRequest('playlist_items', {
+        method: 'PATCH',
+        query: `id=eq.${encodeURIComponent(itemId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body: { duration_override_seconds: Math.round(seconds) },
+        prefer: 'return=minimal',
+      });
+      const local = state.playlistItems.find(item => item.id === itemId);
+      if (local) local.duration_override_seconds = Math.round(seconds);
+      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
+      renderPlaylistEditor();
+    } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
+  }
+
+'''
+          marker = '  async function removePlaylistItem(itemId) {'
+          if 'async function savePlaylistItemDuration' not in s:
+            if marker not in s: raise SystemExit('duration insertion marker missing')
+            s = s.replace(marker, duration_fn + marker, 1)
+
+          # New images enter with an explicit 10-second default, videos keep their natural duration.
+          old = "          media_id: mediaId,\n          position: nextPosition,\n          enabled: true,"
+          new = "          media_id: mediaId,\n          position: nextPosition,\n          duration_override_seconds: state.media.find(m => m.id === mediaId)?.media_type === 'image' ? 10 : null,\n          enabled: true,"
+          if old in s: s = s.replace(old, new, 1)
+
+          click_marker = "      const removeItem = event.target.closest('[data-remove-item]');"
+          click_code = "      const saveDuration = event.target.closest('[data-save-item-duration]');\n      if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);\n"
+          if click_code.strip() not in s:
+            if click_marker not in s: raise SystemExit('click insertion marker missing')
+            s = s.replace(click_marker, click_code + click_marker, 1)
+          app.write_text(s)
+
+          # 3) Playlist visual styles and previews should fit, never crop.
+          css = Path('styles.css')
+          c = css.read_text()
+          if '.playlist-thumb{' not in c:
+            c += r'''
+
+/* Playlist editor: preview, ordering and per-image duration */
+.playlist-item-row,.picker-row{min-height:68px}.playlist-order-badge{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#20304a;color:#dce8ff;font-weight:800}.playlist-thumb{position:relative;flex:0 0 88px;width:88px;height:52px;display:grid;place-items:center;overflow:hidden;border:1px solid #31445f;border-radius:9px;background:#05080d;color:#71829c}.playlist-thumb img,.playlist-thumb video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain!important;object-position:center;background:#000}.playlist-selection-state{display:block;margin-top:4px;font-size:9px;color:#7f91ae}.playlist-selection-state.selected{color:#72d8ae}.picker-row.already-selected{border-color:#285b49;background:#10241f}.picker-add-button{min-width:90px}.playlist-duration-control{display:grid!important;gap:4px!important;min-width:82px;font-size:9px!important;color:#8fa1bb!important}.playlist-duration-control>span{display:flex;align-items:center;gap:4px}.playlist-duration-control input{width:64px;padding:7px 8px;text-align:center}.duration-save-button{white-space:nowrap}.playlist-video-duration{font-size:9px;color:#8799b3;white-space:nowrap}@media(max-width:720px){.playlist-item-row,.picker-row{align-items:flex-start;flex-wrap:wrap}.playlist-thumb{flex-basis:72px;width:72px;height:46px}.playlist-item-row .grow,.picker-row .grow{min-width:calc(100% - 120px)}.playlist-duration-control{margin-left:38px}.order-buttons{margin-left:auto}.picker-add-button{margin-left:auto}}
+'''
+          css.write_text(c)
+
+          # 4) Report copy: make source and repeated-exhibition counting explicit.
+          index = Path('index.html')
+          h = index.read_text()
+          h = h.replace('<article class="metric-card"><span>Exibições iniciadas</span><strong id="report-started">0</strong><small>Eventos registrados</small></article>', '<article class="metric-card"><span>Exibições registradas</span><strong id="report-started">0</strong><small>Eventos reais recebidos do Player</small></article>')
+          period = '<div class="report-period-line">\n              <strong id="report-period-label">Período</strong>\n              <span id="report-generated-label"></span>\n            </div>'
+          if 'id="report-source-note"' not in h and period in h:
+            h = h.replace(period, period + '\n            <div id="report-source-note" class="report-source-note">Fonte: eventos reais enviados pelo Vision Player. Cada repetição da mídia conta como uma exibição.</div>', 1)
+          index.write_text(h)
+
+          c = css.read_text()
+          if '.report-source-note{' not in c:
+            c += '\n.report-source-note{margin:-2px 0 14px;padding:10px 12px;border:1px solid #263b58;border-radius:10px;background:#0d1727;color:#8fa1bc;font-size:11px}.report-source-note strong{color:#cbd8eb}\n'
+          css.write_text(c)
+          PY
+
+          node --check app.js
+          node --check player.js
+          grep -q "vision-midia-shell-v6" sw.js
+          grep -q "data-save-item-duration" app.js
+          grep -q "data-playlist-media-preview" app.js
+          grep -q "object-fit:contain !important" player.css
+          grep -q "report-source-note" index.html
+
+      - name: Commit targeted fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add app.js styles.css player.css player.js sw.js index.html
+          git diff --cached --check
+          git commit -m 'fix: fit media, control image time, preview playlist and clarify reports'
+          git push origin HEAD:main
