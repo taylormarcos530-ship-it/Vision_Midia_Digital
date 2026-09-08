@@ -1,6 +1,10 @@
 {
-  "cleanUrls": true,
+  "cleanUrls": false,
   "trailingSlash": false,
+  "rewrites": [
+    { "source": "/player", "destination": "/player.html" },
+    { "source": "/master", "destination": "/master.html" }
+  ],
   "headers": [
     {
       "source": "/(.*)",
@@ -17,6 +21,10 @@
     },
     {
       "source": "/master.html",
+      "headers": [{"key":"Cache-Control","value":"no-store"}]
+    },
+    {
+      "source": "/master",
       "headers": [{"key":"Cache-Control","value":"no-store"}]
     }
   ]
