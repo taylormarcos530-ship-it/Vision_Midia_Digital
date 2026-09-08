@@ -1,0 +1,49 @@
+name: QA Public Signup Without Email Confirmation
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/qa-public-signup.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  qa:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Create account and login immediately
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE="$(sed -n "s/.*supabaseUrl: '\([^']*\)'.*/\1/p" config.js)"
+          KEY="$(sed -n "s/.*supabasePublishableKey: '\([^']*\)'.*/\1/p" config.js)"
+          test -n "$BASE"
+          test -n "$KEY"
+
+          EMAIL="qa-autoconfirm-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}@example.com"
+          PASSWORD="QaAuto-${GITHUB_RUN_ID}-9x!"
+          echo "QA_EMAIL=$EMAIL" >> "$GITHUB_ENV"
+
+          SIGNUP_CODE="$(curl -sS -o /tmp/signup.json -w '%{http_code}' \
+            -X POST "$BASE/functions/v1/public-signup" \
+            -H "apikey: $KEY" \
+            -H 'Content-Type: application/json' \
+            --data "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\",\"display_name\":\"QA Autoconfirm\"}")"
+          cat /tmp/signup.json
+          test "$SIGNUP_CODE" = "201"
+          jq -e '.ok == true and (.user_id | type == "string")' /tmp/signup.json >/dev/null
+
+          LOGIN_CODE="$(curl -sS -o /tmp/login.json -w '%{http_code}' \
+            -X POST "$BASE/auth/v1/token?grant_type=password" \
+            -H "apikey: $KEY" \
+            -H 'Content-Type: application/json' \
+            --data "{\"email\":\"$EMAIL\",\"password\":\"$PASSWORD\"}")"
+          test "$LOGIN_CODE" = "200"
+          jq -e --arg email "$EMAIL" '.access_token and .refresh_token and .user.email == $email and .user.email_confirmed_at' /tmp/login.json >/dev/null
+          echo "PASS: account created, email auto-confirmed, and password login returned a session immediately."
