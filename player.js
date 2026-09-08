@@ -427,6 +427,10 @@
         const img = new Image();
         img.alt = item.media.name || '';
         img.src = url;
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.style.objectPosition = 'center';
         stage.appendChild(img);
         await Promise.race([
           new Promise(resolve => { img.onload = resolve; img.onerror = resolve; }),
@@ -444,6 +448,10 @@
         video.autoplay = true;
         video.playsInline = true;
         video.preload = 'auto';
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'contain';
+        video.style.objectPosition = 'center';
         stage.appendChild(video);
         let playbackStarted = false;
         try {

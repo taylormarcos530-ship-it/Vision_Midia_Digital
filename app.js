@@ -625,10 +625,15 @@
     $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
     list.innerHTML = items.map((item, index) => {
       const media = mediaById[item.media_id];
+      const isImage = media?.media_type === 'image';
+      const imageSeconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
+      const details = [media?.media_type || '', media?.width && media?.height ? `${media.width}×${media.height}` : ''].filter(Boolean).join(' • ');
       return `
-        <div class="sortable-row">
-          <span>${index + 1}</span>
-          <div class="grow"><strong>${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}</small></div>
+        <div class="sortable-row playlist-item-row">
+          <span class="playlist-order-badge">${index + 1}</span>
+          <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
+          <div class="grow"><strong>${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(details)}</small><span class="playlist-selection-state selected">Na playlist • ordem ${index + 1}</span></div>
+          ${isImage ? `<label class="playlist-duration-control">Tempo <span><input type="number" min="1" max="86400" step="1" value="${imageSeconds}" data-item-duration-input="${item.id}" /> s</span></label><button class="small-icon-button duration-save-button" data-save-item-duration="${item.id}">Salvar tempo</button>` : `<span class="playlist-video-duration">${media?.duration_seconds ? `Vídeo ${escapeHtml(formatDuration(media.duration_seconds))}` : 'Tempo do vídeo'}</span>`}
           <div class="order-buttons">
             <button class="small-icon-button" data-move-item="${item.id}" data-direction="up" ${index === 0 ? 'disabled' : ''}>↑</button>
             <button class="small-icon-button" data-move-item="${item.id}" data-direction="down" ${index === items.length - 1 ? 'disabled' : ''}>↓</button>
@@ -640,14 +645,38 @@
 
     const picker = $('#playlist-media-picker');
     $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
-    const included = new Set(items.map(i => i.media_id));
-    picker.innerHTML = state.media.map(media => `
-      <div class="picker-row">
-        <span>${media.media_type === 'video' ? '▶' : '▧'}</span>
-        <div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small></div>
-        <button class="small-icon-button" data-add-media-to-playlist="${media.id}" ${included.has(media.id) ? 'disabled' : ''}>${included.has(media.id) ? '✓' : '+'}</button>
-      </div>
-    `).join('');
+    const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
+    picker.innerHTML = state.media.map(media => {
+      const order = included.get(media.id);
+      return `
+        <div class="picker-row ${order ? 'already-selected' : ''}">
+          <div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span></div>
+          <div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}</small><span class="playlist-selection-state ${order ? 'selected' : ''}">${order ? `Já adicionada • ordem ${order}` : 'Ainda não selecionada'}</span></div>
+          <button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order ? 'disabled' : ''}>${order ? 'Adicionada' : '+ Adicionar'}</button>
+        </div>`;
+    }).join('');
+    hydratePlaylistPreviews();
+  }
+
+  async function hydratePlaylistPreviews() {
+    const visibleIds = new Set($$('[data-playlist-media-preview]').map(el => el.dataset.playlistMediaPreview).filter(Boolean));
+    for (const media of state.media.filter(item => visibleIds.has(item.id))) {
+      const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
+      if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
+      try {
+        const url = await getSignedMediaUrl(media.storage_path);
+        targets.forEach(target => {
+          if (target.dataset.loaded === '1') return;
+          target.dataset.loaded = '1';
+          if (media.media_type === 'image') {
+            const img = document.createElement('img'); img.alt = media.name; img.loading = 'lazy'; img.src = url; target.prepend(img);
+          } else {
+            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'metadata'; video.src = url; target.prepend(video);
+            video.addEventListener('loadedmetadata', () => { try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {} }, { once:true });
+          }
+        });
+      } catch { /* keep placeholder */ }
+    }
   }
 
   const WEEKDAY_NAMES = { 0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb' };
@@ -1581,6 +1610,7 @@ function friendlyAuthError(error) {
           playlist_id: state.editingPlaylistId,
           media_id: mediaId,
           position: nextPosition,
+          duration_override_seconds: state.media.find(m => m.id === mediaId)?.media_type === 'image' ? 10 : null,
           enabled: true,
         },
         prefer: 'return=minimal',
@@ -1588,6 +1618,24 @@ function friendlyAuthError(error) {
       await loadAllData();
       renderPlaylistEditor();
     } catch (error) { toast('Erro ao adicionar mídia', error.message, 'error'); }
+  }
+
+  async function savePlaylistItemDuration(itemId) {
+    const input = $(`[data-item-duration-input="${CSS.escape(itemId)}"]`);
+    const seconds = Number(input?.value || 0);
+    if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) return toast('Tempo inválido', 'Use de 1 a 86400 segundos.', 'error');
+    try {
+      await restRequest('playlist_items', {
+        method: 'PATCH',
+        query: `id=eq.${encodeURIComponent(itemId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body: { duration_override_seconds: Math.round(seconds) },
+        prefer: 'return=minimal',
+      });
+      const local = state.playlistItems.find(item => item.id === itemId);
+      if (local) local.duration_override_seconds = Math.round(seconds);
+      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
+      renderPlaylistEditor();
+    } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
   }
 
   async function removePlaylistItem(itemId) {
@@ -1719,6 +1767,8 @@ function friendlyAuthError(error) {
       if (deleteCampaignButton) return deleteCampaign(deleteCampaignButton.dataset.deleteCampaign);
       const addMedia = event.target.closest('[data-add-media-to-playlist]');
       if (addMedia) return addMediaToPlaylist(addMedia.dataset.addMediaToPlaylist);
+      const saveDuration = event.target.closest('[data-save-item-duration]');
+      if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
       const removeItem = event.target.closest('[data-remove-item]');
       if (removeItem) return removePlaylistItem(removeItem.dataset.removeItem);
       const moveItem = event.target.closest('[data-move-item]');

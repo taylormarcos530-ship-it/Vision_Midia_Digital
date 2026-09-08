@@ -428,3 +428,9 @@ textarea { resize: vertical; min-height: 90px; }
   .monitor-data-grid { grid-template-columns: 1fr; }
   .monitor-current-media { grid-column: auto; }
 }
+
+
+/* Playlist editor: preview, ordering and per-image duration */
+.playlist-item-row,.picker-row{min-height:68px}.playlist-order-badge{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#20304a;color:#dce8ff;font-weight:800}.playlist-thumb{position:relative;flex:0 0 88px;width:88px;height:52px;display:grid;place-items:center;overflow:hidden;border:1px solid #31445f;border-radius:9px;background:#05080d;color:#71829c}.playlist-thumb img,.playlist-thumb video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain!important;object-position:center;background:#000}.playlist-selection-state{display:block;margin-top:4px;font-size:9px;color:#7f91ae}.playlist-selection-state.selected{color:#72d8ae}.picker-row.already-selected{border-color:#285b49;background:#10241f}.picker-add-button{min-width:90px}.playlist-duration-control{display:grid!important;gap:4px!important;min-width:82px;font-size:9px!important;color:#8fa1bb!important}.playlist-duration-control>span{display:flex;align-items:center;gap:4px}.playlist-duration-control input{width:64px;padding:7px 8px;text-align:center}.duration-save-button{white-space:nowrap}.playlist-video-duration{font-size:9px;color:#8799b3;white-space:nowrap}@media(max-width:720px){.playlist-item-row,.picker-row{align-items:flex-start;flex-wrap:wrap}.playlist-thumb{flex-basis:72px;width:72px;height:46px}.playlist-item-row .grow,.picker-row .grow{min-width:calc(100% - 120px)}.playlist-duration-control{margin-left:38px}.order-buttons{margin-left:auto}.picker-add-button{margin-left:auto}}
+
+.report-source-note{margin:-2px 0 14px;padding:10px 12px;border:1px solid #263b58;border-radius:10px;background:#0d1727;color:#8fa1bc;font-size:11px}
