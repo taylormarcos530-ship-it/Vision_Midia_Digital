@@ -49,6 +49,12 @@
         <label>Nome
           <input id="signup-name" type="text" autocomplete="name" minlength="2" required placeholder="Seu nome" />
         </label>
+        <label>Empresa
+          <input id="signup-company" type="text" minlength="2" maxlength="120" required placeholder="Ex.: Mercado Central" />
+        </label>
+        <label>Plano de interesse
+          <select id="signup-plan" required><option value="">Carregando planos...</option></select>
+        </label>
         <label>E-mail
           <input id="signup-email" type="email" autocomplete="email" required placeholder="seu@email.com" />
         </label>
@@ -56,9 +62,31 @@
           <input id="signup-password" type="password" autocomplete="new-password" minlength="8" required placeholder="Mínimo 8 caracteres" />
         </label>
         <button id="signup-submit" class="button primary full" type="submit">Criar conta</button>
-        <p class="form-hint">A conta é liberada imediatamente após o cadastro.</p>
+        <p class="form-hint">Após o cadastro, sua conta ficará aguardando aprovação do administrador. Você poderá falar com o suporte pelo WhatsApp.</p>
       </form>
       <p class="form-hint" style="margin-top:14px;text-align:center"><a href="./master.html" style="color:inherit">Acesso ao Painel Master</a></p>
+    </div>
+  </section>
+
+
+  <section id="access-screen" class="center-screen hidden">
+    <div class="onboarding-card access-card">
+      <div class="brand-mark large">V</div>
+      <span class="eyebrow" id="access-kicker">ACESSO</span>
+      <h2 id="access-title">Aguardando aprovação</h2>
+      <p id="access-message">Seu cadastro foi recebido e está aguardando liberação.</p>
+      <div class="access-summary">
+        <div><span>Empresa</span><strong id="access-company">—</strong></div>
+        <div><span>Plano</span><strong id="access-plan">—</strong></div>
+        <div><span>Vencimento</span><strong id="access-due">—</strong></div>
+      </div>
+      <div class="access-actions">
+        <a id="access-whatsapp" class="button primary full hidden" href="#" target="_blank" rel="noopener">Falar com suporte no WhatsApp</a>
+        <button id="access-refresh" class="button ghost full" type="button">Verificar liberação</button>
+        <button id="access-notifications" class="button ghost full" type="button">Ativar notificações</button>
+        <button id="access-logout" class="link-button" type="button">Sair desta conta</button>
+      </div>
+      <p class="form-hint">Quando o administrador liberar seu plano, basta tocar em “Verificar liberação”.</p>
     </div>
   </section>
 
@@ -93,7 +121,7 @@
         <button class="nav-item" data-view="monitoring"><span>◉</span> Monitoramento</button>
         <button class="nav-item" data-view="media"><span>▧</span> Mídias</button>
         <button class="nav-item" data-view="playlists"><span>▶</span> Playlists</button>
-        <button class="nav-item" data-view="campaigns"><span>◷</span> Programação</button>
+        <button class="nav-item hidden" data-view="campaigns"><span>◷</span> Programação avançada</button>
         <button class="nav-item" data-view="reports"><span>▤</span> Relatórios</button>
       </nav>
 
@@ -196,6 +224,40 @@
             </div>
             <button id="add-device-button" class="button primary">+ Parear TV</button>
           </div>
+
+          <article class="panel player-branding-panel">
+            <div class="panel-header">
+              <div><span class="eyebrow">PLAYER / TV BOX</span><h3>Tela de instalação e vinculação</h3></div>
+              <small>Configuração exclusiva desta empresa</small>
+            </div>
+            <div class="branding-layout">
+              <div id="player-branding-preview" class="branding-preview">
+                <div class="branding-preview-placeholder">V</div>
+                <strong id="branding-preview-title">Vision Player</strong>
+                <span id="branding-preview-message">Instale o Player e vincule a TV pelo código.</span>
+              </div>
+              <form id="player-branding-form" class="branding-form">
+                <label>Título da tela de vinculação
+                  <input id="branding-title" type="text" maxlength="120" placeholder="Ex.: Mercado Central" />
+                </label>
+                <label>Mensagem
+                  <input id="branding-message" type="text" maxlength="240" placeholder="Ex.: Digite o código no painel para vincular esta TV." />
+                </label>
+                <label>Imagem de fundo / capa
+                  <input id="branding-file" type="file" accept="image/jpeg,image/png,image/webp" />
+                </label>
+                <div class="branding-code-box">
+                  <span>Código interno da instalação</span>
+                  <strong id="branding-setup-code">Será gerado ao salvar</strong>
+                </div>
+                <label>Link personalizado do Player
+                  <div class="copy-line"><input id="branding-player-url" type="text" readonly /><button id="branding-copy-url" class="small-icon-button" type="button">Copiar</button></div>
+                </label>
+                <div class="branding-actions"><button id="branding-open-player" class="button ghost" type="button">Abrir Player</button><button id="branding-save" class="button primary" type="submit">Salvar tela</button></div>
+                <p class="form-hint">A imagem e os textos pertencem somente a esta conta. O Player continuará exibindo o código de 6 dígitos para vincular a TV.</p>
+              </form>
+            </div>
+          </article>
           <div id="devices-grid" class="cards-grid"></div>
           <div id="devices-empty" class="empty-panel hidden">
             <div class="empty-icon">▣</div>
@@ -367,12 +429,12 @@
             <div id="report-source-note" class="report-source-note">Fonte: eventos reais enviados pelo Vision Player. Cada repetição da mídia conta como uma exibição.</div>
 
             <div class="metrics-grid report-metrics">
-              <article class="metric-card"><span>Exibições registradas</span><strong id="report-started">0</strong><small>Eventos reais recebidos do Player</small></article>
-              <article class="metric-card"><span>Exibições concluídas</span><strong id="report-completed">0</strong><small>Reproduções finalizadas</small></article>
-              <article class="metric-card"><span>Taxa de conclusão</span><strong id="report-completion-rate">0%</strong><small>Concluídas ÷ iniciadas</small></article>
-              <article class="metric-card"><span>Tempo exibido</span><strong id="report-total-time">0 min</strong><small>Tempo somado das reproduções</small></article>
-              <article class="metric-card"><span>TVs com veiculação</span><strong id="report-device-count">0</strong><small>Dispositivos no período</small></article>
-              <article class="metric-card"><span>Mídias veiculadas</span><strong id="report-media-count">0</strong><small>Conteúdos distintos</small></article>
+              <article class="metric-card"><span>Exibições registradas</span><strong id="report-started">—</strong><small>Eventos reais recebidos do Player</small></article>
+              <article class="metric-card"><span>Exibições concluídas</span><strong id="report-completed">—</strong><small>Reproduções finalizadas</small></article>
+              <article class="metric-card"><span>Taxa de conclusão</span><strong id="report-completion-rate">—</strong><small>Concluídas ÷ iniciadas</small></article>
+              <article class="metric-card"><span>Tempo exibido</span><strong id="report-total-time">—</strong><small>Tempo somado das reproduções</small></article>
+              <article class="metric-card"><span>TVs com veiculação</span><strong id="report-device-count">—</strong><small>Dispositivos no período</small></article>
+              <article class="metric-card"><span>Mídias veiculadas</span><strong id="report-media-count">—</strong><small>Conteúdos distintos</small></article>
             </div>
 
             <div class="report-grid">
@@ -435,6 +497,35 @@
     </form>
   </dialog>
 
+
+  <dialog id="replace-device-dialog" class="app-dialog">
+    <form id="replace-device-form" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">SUBSTITUIR TV</span><h3>Trocar dispositivo</h3></div>
+        <button class="icon-button" data-close-dialog="replace-device-dialog" type="button">×</button>
+      </div>
+      <input id="replace-device-old-id" type="hidden" />
+      <div class="pair-help">
+        <strong>TV atual: <span id="replace-device-old-name">—</span></strong>
+        <span>Abra o Vision Player na nova TV e informe o código de 6 dígitos. A TV antiga só será desativada depois que a nova for vinculada com sucesso.</span>
+        <span>A playlist padrão e as programações direcionadas serão transferidas automaticamente. A troca reutiliza a mesma vaga do plano.</span>
+      </div>
+      <label>Código exibido na nova TV
+        <input id="replace-device-code" class="pair-code-input" type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" pattern="[0-9]{6}" required placeholder="000000" />
+      </label>
+      <label>Nome da nova TV
+        <input id="replace-device-name" type="text" maxlength="120" required placeholder="Ex.: TV Recepção" />
+      </label>
+      <label>Orientação
+        <select id="replace-device-orientation"><option value="auto">Automática</option><option value="landscape">Horizontal</option><option value="portrait">Vertical</option></select>
+      </label>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="replace-device-dialog" type="button">Cancelar</button>
+        <button id="replace-device-save" class="button primary" type="submit">Substituir TV</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="device-dialog" class="app-dialog">
     <form id="device-form" method="dialog" class="dialog-body">
       <div class="dialog-header">
@@ -490,21 +581,33 @@
     </form>
   </dialog>
 
-  <dialog id="playlist-items-dialog" class="app-dialog large-dialog">
-    <div class="dialog-body">
+  <dialog id="playlist-items-dialog" class="app-dialog extra-large-dialog">
+    <div class="dialog-body playlist-dialog-body">
       <div class="dialog-header">
-        <div><span class="eyebrow">CONTEÚDO</span><h3 id="playlist-items-title">Playlist</h3></div>
+        <div><span class="eyebrow">PLAYLIST E PROGRAMAÇÃO</span><h3 id="playlist-items-title">Playlist</h3><p class="dialog-subtitle">Arraste para ordenar no computador ou use as setas no celular. Selecione várias mídias para editar juntas.</p></div>
         <button class="icon-button" data-close-dialog="playlist-items-dialog" type="button">×</button>
       </div>
-      <div class="playlist-editor-grid">
+
+      <div class="playlist-bulk-toolbar">
+        <label class="selection-check"><input id="playlist-select-all" type="checkbox" /> Selecionar todas</label>
+        <strong id="playlist-selected-count">0 selecionadas</strong>
+        <button class="small-icon-button" id="playlist-bulk-schedule" type="button">◷ Programar</button>
+        <button class="small-icon-button" id="playlist-bulk-enable" type="button">Ativar</button>
+        <button class="small-icon-button" id="playlist-bulk-disable" type="button">Desativar</button>
+        <select id="playlist-bulk-replace-media"><option value="">Substituir por...</option></select>
+        <button class="small-icon-button" id="playlist-bulk-replace" type="button">Substituir</button>
+        <button class="small-icon-button danger-inline" id="playlist-bulk-delete" type="button">Excluir</button>
+      </div>
+
+      <div class="playlist-editor-grid compact-playlist-editor">
         <div>
-          <h4>Itens da playlist</h4>
-          <div id="playlist-items-list" class="sortable-list"></div>
+          <h4>Sequência de reprodução</h4>
+          <div id="playlist-items-list" class="sortable-list compact-sortable-list"></div>
           <div id="playlist-items-empty" class="mini-empty hidden">Ainda não há mídias nesta playlist.</div>
         </div>
         <div>
-          <h4>Adicionar mídia</h4>
-          <div id="playlist-media-picker" class="media-picker"></div>
+          <h4>Biblioteca</h4>
+          <div id="playlist-media-picker" class="media-picker compact-media-picker"></div>
           <div id="playlist-media-empty" class="mini-empty hidden">Envie uma mídia primeiro.</div>
         </div>
       </div>
@@ -512,6 +615,33 @@
         <button class="button primary" data-close-dialog="playlist-items-dialog" type="button">Concluir</button>
       </div>
     </div>
+  </dialog>
+
+  <dialog id="playlist-schedule-dialog" class="app-dialog">
+    <form id="playlist-schedule-form" class="dialog-body" method="dialog">
+      <div class="dialog-header"><div><span class="eyebrow">PROGRAMAÇÃO</span><h3>Quando estas mídias aparecem?</h3><p class="dialog-subtitle"><span id="playlist-schedule-count">1 mídia</span> selecionada(s).</p></div><button class="icon-button" data-close-dialog="playlist-schedule-dialog" type="button">×</button></div>
+      <label class="switch-line"><input id="playlist-schedule-enabled" type="checkbox" checked /> Usar programação para as mídias selecionadas</label>
+      <div class="form-grid two schedule-date-fields">
+        <label>Data inicial <input id="playlist-schedule-start-date" type="date" /></label>
+        <label>Data final <input id="playlist-schedule-end-date" type="date" /></label>
+      </div>
+      <label class="switch-line"><input id="playlist-schedule-all-day" type="checkbox" checked /> Dia inteiro</label>
+      <div id="playlist-schedule-time-fields" class="form-grid two hidden">
+        <label>Hora inicial <input id="playlist-schedule-start-time" type="time" /></label>
+        <label>Hora final <input id="playlist-schedule-end-time" type="time" /></label>
+      </div>
+      <fieldset class="weekday-fieldset"><legend>Dias da semana</legend><div class="weekday-grid">
+        <label><input type="checkbox" data-playlist-weekday="1" checked /> Seg</label>
+        <label><input type="checkbox" data-playlist-weekday="2" checked /> Ter</label>
+        <label><input type="checkbox" data-playlist-weekday="3" checked /> Qua</label>
+        <label><input type="checkbox" data-playlist-weekday="4" checked /> Qui</label>
+        <label><input type="checkbox" data-playlist-weekday="5" checked /> Sex</label>
+        <label><input type="checkbox" data-playlist-weekday="6" checked /> Sáb</label>
+        <label><input type="checkbox" data-playlist-weekday="0" checked /> Dom</label>
+      </div></fieldset>
+      <div id="playlist-schedule-status" class="form-status hidden" role="status" aria-live="polite"></div>
+      <div class="dialog-actions"><button id="playlist-schedule-clear" class="button ghost" type="button">Remover programação</button><button class="button ghost" data-close-dialog="playlist-schedule-dialog" type="button">Cancelar</button><button id="playlist-schedule-save" class="button primary" type="submit">Aplicar programação</button></div>
+    </form>
   </dialog>
 
 

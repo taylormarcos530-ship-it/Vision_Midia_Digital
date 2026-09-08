@@ -80,7 +80,7 @@ Deno.serve(async (req) => {
     const codeHash = await sha256Hex(code)
     const { data: pairing, error: pairingError } = await admin
       .from('device_pairing_requests')
-      .select('id,status,expires_at,platform')
+      .select('id,status,expires_at,platform,setup_company_id')
       .eq('code_hash', codeHash)
       .eq('status', 'pending')
       .maybeSingle()
@@ -89,6 +89,11 @@ Deno.serve(async (req) => {
     if (!pairing) {
       await admin.from('device_claim_attempts').insert({ user_id: user.id, success: false })
       return json({ error: 'invalid_code', message: 'Código inválido ou já utilizado.' }, 404)
+    }
+
+    if (pairing.setup_company_id && pairing.setup_company_id !== companyId) {
+      await admin.from('device_claim_attempts').insert({ user_id: user.id, success: false })
+      return json({ error: 'branded_player_company_mismatch', message: 'Este Player foi configurado para outra empresa.' }, 403)
     }
 
     if (new Date(pairing.expires_at).getTime() <= Date.now()) {

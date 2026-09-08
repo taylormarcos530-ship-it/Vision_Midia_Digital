@@ -47,6 +47,20 @@ function pairingCode() {
   return String(randomInt(1_000_000)).padStart(6, '0')
 }
 
+async function playerBranding(admin, setupCode) {
+  const code = String(setupCode || '').trim().toUpperCase().slice(0, 12)
+  if (!code) return null
+  const { data, error } = await admin.from('company_player_branding').select('company_id,title,message,splash_path').eq('setup_code', code).maybeSingle()
+  if (error) throw error
+  if (!data) return null
+  let splashUrl = null
+  if (data.splash_path) {
+    const { data: signed, error: signedError } = await admin.storage.from('vision-media').createSignedUrl(data.splash_path, 60 * 60)
+    if (!signedError) splashUrl = signed?.signedUrl || null
+  }
+  return { company_id: data.company_id, title: data.title || null, message: data.message || null, splash_url: splashUrl }
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   if (req.method !== 'POST') return json({ error: 'method_not_allowed' }, 405)
@@ -85,6 +99,7 @@ Deno.serve(async (req) => {
         ? body.platform
         : 'web'
       const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString()
+      const branding = await playerBranding(admin, body?.setup_code)
 
       for (let attempt = 0; attempt < 6; attempt++) {
         const code = pairingCode()
@@ -97,6 +112,7 @@ Deno.serve(async (req) => {
             request_source_hash: sourceHash,
             platform,
             user_agent: String(req.headers.get('user-agent') || '').slice(0, 500),
+            setup_company_id: branding?.company_id || null,
             expires_at: expiresAt,
           })
           .select('id,expires_at')
@@ -109,6 +125,7 @@ Deno.serve(async (req) => {
             request_secret: requestSecret,
             pairing_code: code,
             expires_at: data.expires_at,
+            branding: branding ? { title: branding.title, message: branding.message, splash_url: branding.splash_url } : null,
           })
         }
         if (error?.code !== '23505') throw error

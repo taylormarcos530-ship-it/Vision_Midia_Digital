@@ -16,6 +16,9 @@
     user: null,
     companies: [],
     company: null,
+    subscription: null,
+    publicConfig: null,
+    companyRole: null,
     devices: [],
     media: [],
     playlists: [],
@@ -24,6 +27,11 @@
     campaigns: [],
     campaignDevices: [],
     deviceEvents: [],
+    deviceScreenshots: [],
+    playerBranding: null,
+    selectedPlaylistItemIds: new Set(),
+    scheduleTargetItemIds: [],
+    draggingPlaylistItemId: null,
     report: null,
     reportLoading: false,
     activeView: 'dashboard',
@@ -219,19 +227,101 @@
     return data;
   }
 
+
+  function formatPlanMoney(cents) {
+    return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(Number(cents || 0) / 100);
+  }
+
+  async function loadPublicConfig() {
+    const data = await functionRequest('public-config', { authenticated: false, body: {} });
+    state.publicConfig = data || { config: {}, plans: [] };
+    const select = $('#signup-plan');
+    if (select) {
+      const plans = state.publicConfig.plans || [];
+      select.innerHTML = plans.length
+        ? '<option value="">Selecione um plano</option>' + plans.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.name)} • ${escapeHtml(formatPlanMoney(p.monthly_price_cents))}/mês</option>`).join('')
+        : '<option value="">Nenhum plano disponível</option>';
+    }
+    return state.publicConfig;
+  }
+
+  function accessReason(subscription = state.subscription) {
+    if (!subscription) return { key: 'pending', title: 'Aguardando aprovação', message: 'Seu cadastro ainda não possui uma assinatura liberada.' };
+    const now = Date.now();
+    const status = subscription.status;
+    if (status === 'pending_approval') return { key: 'pending', title: 'Aguardando aprovação', message: 'Seu cadastro foi recebido. O administrador precisa definir o plano, vencimento e liberar o acesso.' };
+    if (status === 'past_due') return { key: 'renewal', title: 'Pagamento pendente', message: 'Sua assinatura está com pagamento pendente. Regularize para voltar a usar o painel.' };
+    if (status === 'suspended') return { key: 'renewal', title: 'Acesso suspenso', message: 'Sua assinatura está suspensa. Fale com o suporte para regularizar.' };
+    if (status === 'cancelled') return { key: 'renewal', title: 'Assinatura cancelada', message: 'Esta assinatura foi cancelada. Fale com o suporte para reativar.' };
+    if (status === 'trialing' && subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= now) return { key: 'renewal', title: 'Período de teste encerrado', message: 'Seu período de teste terminou. Escolha um plano para continuar.' };
+    if (status === 'active') {
+      if (!['paid','waived'].includes(subscription.payment_status || 'pending')) return { key: 'renewal', title: 'Aguardando pagamento', message: 'O plano foi definido, mas o pagamento ainda não foi liberado.' };
+      if (subscription.current_period_end && new Date(subscription.current_period_end).getTime() <= now) return { key: 'renewal', title: 'Assinatura vencida', message: 'Sua assinatura venceu. Regularize o pagamento para reativar o acesso.' };
+    }
+    if (state.company?.status === 'suspended') return { key: 'renewal', title: 'Acesso suspenso', message: 'Esta empresa está suspensa pelo administrador.' };
+    return null;
+  }
+
+  function formatAccessDate(value) {
+    if (!value) return 'Não definido';
+    try { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short' }).format(new Date(value)); }
+    catch { return '—'; }
+  }
+
+  function renderAccessScreen(reason = accessReason()) {
+    reason = reason || { key:'pending', title:'Aguardando aprovação', message:'Aguarde a liberação do administrador.' };
+    $('#access-title').textContent = reason.title;
+    $('#access-message').textContent = reason.message;
+    $('#access-company').textContent = state.company?.name || 'Cadastro ainda não vinculado';
+    const plan = (state.publicConfig?.plans || []).find(p => p.id === state.subscription?.plan_id);
+    $('#access-plan').textContent = plan?.name || 'A definir';
+    $('#access-due').textContent = formatAccessDate(state.subscription?.current_period_end);
+    const cfg = state.publicConfig?.config || {};
+    const phone = String(cfg.support_whatsapp || '').replace(/\D/g, '');
+    const message = reason.key === 'renewal' ? cfg.renewal_whatsapp_message : cfg.signup_whatsapp_message;
+    const link = $('#access-whatsapp');
+    if (phone) {
+      link.href = `https://wa.me/${phone}?text=${encodeURIComponent(message || 'Olá! Preciso de ajuda com meu acesso à Vision Mídia Digital.')}`;
+      link.classList.remove('hidden');
+    } else link.classList.add('hidden');
+    if ('Notification' in window && Notification.permission === 'granted') notifyAccessState(reason);
+  }
+
+  async function notifyAccessState(reason) {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const key = `vision_access_notice_${reason.key}_${state.subscription?.updated_at || ''}`;
+    if (localStorage.getItem(key)) return;
+    try {
+      const reg = await navigator.serviceWorker?.ready;
+      if (reg?.showNotification) await reg.showNotification(`Vision Mídia Digital • ${reason.title}`, { body: reason.message, icon: './icon.svg', tag: `vision-${reason.key}` });
+      else new Notification(`Vision Mídia Digital • ${reason.title}`, { body: reason.message });
+      localStorage.setItem(key, '1');
+    } catch {}
+  }
+
+  async function enableAccessNotifications() {
+    if (!('Notification' in window)) return toast('Notificações indisponíveis', 'Este navegador não oferece suporte.', 'error');
+    const permission = await Notification.requestPermission();
+    if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
+    toast('Notificações ativadas', 'Você verá avisos do acesso quando o app estiver sincronizando.');
+    const reason = accessReason(); if (reason) notifyAccessState(reason);
+  }
+
   function showScreen(name) {
     $('#auth-screen').classList.toggle('hidden', name !== 'auth');
+    $('#access-screen').classList.toggle('hidden', name !== 'access');
     $('#onboarding-screen').classList.toggle('hidden', name !== 'onboarding');
     $('#app-shell').classList.toggle('hidden', name !== 'app');
   }
 
   async function bootstrap() {
     bindEvents();
+    await loadPublicConfig().catch(() => null);
     updateConnectionStatus();
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
     setInterval(() => {
-      if (state.company?.id && !document.hidden) loadAllData().catch(() => updateConnectionStatus(false));
+      if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
     }, 30_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
@@ -258,17 +348,32 @@
 
   async function enterAuthenticatedApp() {
     state.companies = await restRequest('companies', {
-      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at&order=created_at.asc',
+      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings&order=created_at.asc',
     }) || [];
 
     if (!state.companies.length) {
-      showScreen('onboarding');
+      state.company = null;
+      state.subscription = null;
+      showScreen('access');
+      renderAccessScreen({ key:'pending', title:'Cadastro aguardando vínculo', message:'Sua conta existe, mas ainda não está vinculada a uma empresa liberada. Fale com o suporte.' });
       return;
     }
 
     const savedCompanyId = localStorage.getItem(COMPANY_KEY);
     state.company = state.companies.find(c => c.id === savedCompanyId) || state.companies[0];
     localStorage.setItem(COMPANY_KEY, state.company.id);
+    const [rows, memberRows] = await Promise.all([
+      restRequest('company_subscriptions', { query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1` }),
+      restRequest('company_members', { query: `select=role,status&company_id=eq.${encodeURIComponent(state.company.id)}&user_id=eq.${encodeURIComponent(state.user.id)}&limit=1` }),
+    ]);
+    state.subscription = rows?.[0] || null;
+    state.companyRole = memberRows?.[0]?.status === 'active' ? memberRows[0].role : null;
+    const reason = accessReason(state.subscription);
+    if (reason) {
+      showScreen('access');
+      renderAccessScreen(reason);
+      return;
+    }
     showScreen('app');
     renderIdentity();
     await loadAllData();
@@ -280,7 +385,7 @@
     const companyId = encodeURIComponent(state.company.id);
     try {
       const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents] = await Promise.all([
-        restRequest('devices', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
+        restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlist_items', { query: `select=*&company_id=eq.${companyId}&order=position.asc` }),
@@ -297,6 +402,12 @@
       state.campaigns = campaigns || [];
       state.campaignDevices = campaignDevices || [];
       state.deviceEvents = deviceEvents || [];
+      const [screenshots, brandingRows] = await Promise.all([
+        restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` }),
+        restRequest('company_player_branding', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
+      ]);
+      state.deviceScreenshots = screenshots || [];
+      state.playerBranding = brandingRows?.[0] || null;
       renderAll();
       updateConnectionStatus(true);
     } catch (error) {
@@ -316,6 +427,7 @@
   function renderAll() {
     renderDashboard();
     renderDevices();
+    renderPlayerBranding();
     renderMonitoring();
     renderMedia();
     renderPlaylists();
@@ -394,6 +506,10 @@
     return `Visto há ${Math.floor(hours / 24)} dia(s)`;
   }
 
+  function latestScreenshotForDevice(deviceId) {
+    return state.deviceScreenshots.find(row => row.device_id === deviceId) || null;
+  }
+
   function renderDevices() {
     const grid = $('#devices-grid');
     const empty = $('#devices-empty');
@@ -405,23 +521,27 @@
     grid.innerHTML = state.devices.map(device => {
       const status = effectiveDeviceStatus(device);
       const assignment = state.deviceAssignments.find(a => a.device_id === device.id);
+      const shot = latestScreenshotForDevice(device.id);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
       return `
       <article class="device-card">
         <div class="device-card-head">
           <div class="device-card-title"><strong>${escapeHtml(device.name)}</strong><span>${escapeHtml(platformLabel(device.platform))}</span></div>
           <div class="card-menu">
+            <button class="small-icon-button capture-button" data-capture-device="${device.id}" title="Capturar o que está passando agora">📷 Capturar</button>
+            ${['owner','admin'].includes(state.companyRole) ? `<button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>` : ''}
             <button class="small-icon-button" data-edit-device="${device.id}" title="Editar">✎</button>
             <button class="small-icon-button" data-delete-device="${device.id}" title="Excluir">×</button>
           </div>
         </div>
-        <div class="device-screen">▣</div>
+        <div class="device-screen ${shot ? 'has-screenshot' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}">${shot ? '<span>Carregando captura…</span>' : '▣'}</div>
+        ${shot ? `<div class="screenshot-meta">Última captura: ${escapeHtml(formatMonitorDateTime(shot.captured_at))}</div>` : ''}
         <div class="device-meta">
           <span class="status-dot ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
           <span>${escapeHtml(orientationLabel(device.orientation))}</span>
         </div>
         <div class="device-last-seen">${escapeHtml(formatLastSeen(device.last_seen_at))}${device.app_version ? ` • ${escapeHtml(device.app_version)}` : ''}</div>
-        <label class="device-assignment">Playlist padrão (fallback)
+        <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
             <option value="">${state.playlists.length ? 'Nenhuma playlist' : 'Crie uma playlist primeiro'}</option>
             ${options}
@@ -429,6 +549,119 @@
         </label>
       </article>`;
     }).join('');
+    hydrateDeviceScreenshots();
+  }
+
+  async function hydrateDeviceScreenshots() {
+    for (const shot of state.deviceScreenshots) {
+      const target = $(`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`);
+      if (!target || target.dataset.loaded === '1' || !shot.storage_path) continue;
+      try {
+        const url = await getSignedMediaUrl(shot.storage_path);
+        const img = new Image();
+        img.alt = 'Captura da TV';
+        img.src = url;
+        target.replaceChildren(img);
+        target.dataset.loaded = '1';
+      } catch { target.textContent = 'Captura indisponível'; }
+    }
+  }
+
+  async function requestDeviceScreenshot(deviceId) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    try {
+      const rows = await restRequest('device_commands', {
+        method: 'POST',
+        body: { company_id: state.company.id, device_id: deviceId, command_type: 'screenshot', requested_by: state.user.id },
+        prefer: 'return=representation',
+      });
+      const command = rows?.[0];
+      if (!command?.id) throw new Error('O servidor não confirmou o pedido de captura.');
+      toast('Captura solicitada', `${device.name}: aguardando o Player responder.`);
+      const deadline = Date.now() + 25000;
+      while (Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 1800));
+        const result = await restRequest('device_commands', { query: `select=id,status,error_message&company_id=eq.${encodeURIComponent(state.company.id)}&id=eq.${encodeURIComponent(command.id)}&limit=1` });
+        const row = result?.[0];
+        if (row?.status === 'completed') {
+          await loadAllData();
+          toast('Captura concluída', `A imagem atual da ${device.name} foi recebida.`);
+          return;
+        }
+        if (row?.status === 'failed') throw new Error(row.error_message || 'O Player não conseguiu capturar a tela.');
+      }
+      toast('Captura ainda pendente', 'A TV pode estar offline. O pedido ficará aguardando o Player.', 'error', 6000);
+    } catch (error) { toast('Erro ao capturar TV', error.message, 'error', 6000); }
+  }
+
+  function renderPlayerBranding() {
+    const b = state.playerBranding;
+    const title = b?.title || state.company?.name || 'Vision Player';
+    const message = b?.message || 'Instale o Player e vincule a TV pelo código.';
+    if ($('#branding-title')) $('#branding-title').value = b?.title || '';
+    if ($('#branding-message')) $('#branding-message').value = b?.message || '';
+    if ($('#branding-preview-title')) $('#branding-preview-title').textContent = title;
+    if ($('#branding-preview-message')) $('#branding-preview-message').textContent = message;
+    if ($('#branding-setup-code')) $('#branding-setup-code').textContent = b?.setup_code || 'Será gerado ao salvar';
+    const playerUrl = b?.setup_code ? `${location.origin}/player.html?setup=${encodeURIComponent(b.setup_code)}` : `${location.origin}/player.html`;
+    if ($('#branding-player-url')) $('#branding-player-url').value = playerUrl;
+    const preview = $('#player-branding-preview');
+    if (preview) { preview.style.backgroundImage = ''; preview.dataset.loaded = ''; }
+    hydratePlayerBrandingPreview();
+  }
+
+  async function hydratePlayerBrandingPreview() {
+    const preview = $('#player-branding-preview');
+    if (!preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
+    try {
+      const url = await getSignedMediaUrl(state.playerBranding.splash_path);
+      preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${url}")`;
+      preview.dataset.loaded = '1';
+    } catch { /* generic preview remains */ }
+  }
+
+  async function savePlayerBranding(event) {
+    event.preventDefault();
+    const button = $('#branding-save');
+    const file = $('#branding-file')?.files?.[0] || null;
+    let newPath = null;
+    let oldPath = state.playerBranding?.splash_path || null;
+    setBusy(button, true, 'Salvando...');
+    try {
+      if (file) {
+        const optimized = await optimizeImageForUpload(file);
+        const upload = optimized.file;
+        const safeName = optimized.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100);
+        newPath = `${state.company.id}/branding/${crypto.randomUUID()}-${safeName}`;
+        const encodedPath = newPath.split('/').map(encodeURIComponent).join('/');
+        await storageRequest(`/object/${CONFIG.storageBucket}/${encodedPath}`, { body: upload, contentType: upload.type || 'image/webp', extraHeaders: { 'x-upsert': 'false' } });
+      }
+      const payload = {
+        company_id: state.company.id,
+        title: $('#branding-title').value.trim() || null,
+        message: $('#branding-message').value.trim() || null,
+        splash_path: newPath || oldPath,
+        updated_by: state.user.id,
+      };
+      let rows;
+      if (state.playerBranding) {
+        rows = await restRequest('company_player_branding', { method: 'PATCH', query: `company_id=eq.${encodeURIComponent(state.company.id)}`, body: payload, prefer: 'return=representation' });
+      } else {
+        rows = await restRequest('company_player_branding', { method: 'POST', body: payload, prefer: 'return=representation' });
+      }
+      state.playerBranding = rows?.[0] || state.playerBranding;
+      if (!state.playerBranding) throw new Error('A configuração foi enviada, mas não retornou do servidor.');
+      if (newPath && oldPath && oldPath !== newPath) {
+        storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [oldPath] } }).catch(() => {});
+      }
+      $('#branding-file').value = '';
+      renderPlayerBranding();
+      toast('Salvo com sucesso', 'Tela de instalação do Player atualizada.');
+    } catch (error) {
+      if (newPath) storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [newPath] } }).catch(() => {});
+      toast('Erro ao salvar tela do Player', error.message, 'error', 6000);
+    } finally { setBusy(button, false); }
   }
 
   function deviceHasActiveIssue(device) {
@@ -548,44 +781,27 @@
     const has = state.media.length > 0;
     empty.classList.toggle('hidden', has);
     grid.classList.toggle('hidden', !has);
+    grid.className = 'media-list-compact';
     if (!has) { grid.innerHTML = ''; return; }
 
-    grid.innerHTML = state.media.map(media => `
-      <article class="media-card" data-media-card="${media.id}">
-        <div class="media-preview" data-media-preview="${media.id}">
-          <span>${media.media_type === 'video' ? '▶' : '▧'}</span>
-          <span class="media-type-tag">${escapeHtml(media.media_type)}</span>
-        </div>
-        <div class="media-body">
-          <strong title="${escapeHtml(media.name)}">${escapeHtml(media.name)}</strong>
-          <small>${escapeHtml(formatBytes(media.size_bytes))}${media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : ''}</small>
-          <div class="media-actions">
-            <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
-            <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
-          </div>
-        </div>
-      </article>
-    `).join('');
+    grid.innerHTML = state.media.map(media => {
+      const used = state.playlistItems.filter(item => item.media_id === media.id).length;
+      return `
+      <article class="media-row-compact" data-media-card="${media.id}">
+        <div class="media-preview" data-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span><span class="media-type-tag">${escapeHtml(media.media_type)}</span></div>
+        <div class="media-body"><strong title="${escapeHtml(media.name)}">${escapeHtml(media.name)}</strong><small>${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}${media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : ''} • em ${used} item(ns) de playlist</small></div>
+        <div class="media-actions"><button class="small-icon-button" data-open-media="${media.id}">Visualizar</button><button class="small-icon-button" data-delete-media="${media.id}">Excluir</button></div>
+      </article>`;
+    }).join('');
 
     state.media.filter(m => m.storage_path && ['image','video'].includes(m.media_type)).forEach(async media => {
       try {
         const url = await getSignedMediaUrl(media.storage_path);
         const preview = $(`[data-media-preview="${CSS.escape(media.id)}"]`);
         if (!preview || !url) return;
-        if (media.media_type === 'image') {
-          const img = document.createElement('img');
-          img.loading = 'lazy';
-          img.alt = media.name;
-          img.src = url;
-          preview.prepend(img);
-        } else {
-          const video = document.createElement('video');
-          video.muted = true;
-          video.preload = 'metadata';
-          video.src = url;
-          preview.prepend(video);
-        }
-      } catch { /* keep placeholder */ }
+        if (media.media_type === 'image') { const img = document.createElement('img'); img.loading='lazy'; img.alt=media.name; img.src=url; preview.prepend(img); }
+        else { const video=document.createElement('video'); video.muted=true; video.preload='metadata'; video.playsInline=true; video.src=url; preview.prepend(video); }
+      } catch { /* placeholder */ }
     });
   }
 
@@ -612,13 +828,33 @@
     }).join('');
   }
 
+  function playlistItemScheduleLabel(item) {
+    if (!item?.schedule_enabled) return 'Sempre';
+    const days = Array.isArray(item.weekdays) ? item.weekdays.map(Number).sort((a,b)=>a-b) : [0,1,2,3,4,5,6];
+    const dayText = days.length === 7 ? 'Todos os dias' : days.map(day => WEEKDAY_NAMES[day]).filter(Boolean).join(', ');
+    const timeText = item.start_time && item.end_time ? `${normalizeTime(item.start_time)}–${normalizeTime(item.end_time)}` : 'dia inteiro';
+    const dateText = item.start_date || item.end_date ? `${item.start_date ? formatDateShort(item.start_date) : 'agora'} → ${item.end_date ? formatDateShort(item.end_date) : 'sem fim'}` : '';
+    return [dayText, timeText, dateText].filter(Boolean).join(' • ');
+  }
+
+  function syncPlaylistBulkUi() {
+    const selected = state.selectedPlaylistItemIds;
+    const count = selected.size;
+    const countEl = $('#playlist-selected-count');
+    if (countEl) countEl.textContent = `${count} selecionada${count === 1 ? '' : 's'}`;
+    const items = state.playlistItems.filter(i => i.playlist_id === state.editingPlaylistId);
+    const all = $('#playlist-select-all');
+    if (all) { all.checked = items.length > 0 && count === items.length; all.indeterminate = count > 0 && count < items.length; }
+    ['#playlist-bulk-schedule','#playlist-bulk-enable','#playlist-bulk-disable','#playlist-bulk-replace','#playlist-bulk-delete'].forEach(selector => { const el=$(selector); if(el) el.disabled=count===0; });
+  }
+
   function renderPlaylistEditor() {
     const playlist = state.playlists.find(p => p.id === state.editingPlaylistId);
     if (!playlist) return;
     $('#playlist-items-title').textContent = playlist.name;
-    const items = state.playlistItems
-      .filter(i => i.playlist_id === playlist.id)
-      .sort((a,b) => a.position - b.position);
+    const items = state.playlistItems.filter(i => i.playlist_id === playlist.id).sort((a,b) => a.position - b.position);
+    const validIds = new Set(items.map(item => item.id));
+    state.selectedPlaylistItemIds = new Set([...state.selectedPlaylistItemIds].filter(id => validIds.has(id)));
     const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
 
     const list = $('#playlist-items-list');
@@ -626,35 +862,27 @@
     list.innerHTML = items.map((item, index) => {
       const media = mediaById[item.media_id];
       const isImage = media?.media_type === 'image';
-      const imageSeconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
-      const details = [media?.media_type || '', media?.width && media?.height ? `${media.width}×${media.height}` : ''].filter(Boolean).join(' • ');
+      const seconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
+      const checked = state.selectedPlaylistItemIds.has(item.id);
       return `
-        <div class="sortable-row playlist-item-row">
-          <span class="playlist-order-badge">${index + 1}</span>
+        <div class="sortable-row playlist-item-row" draggable="true" data-playlist-drag-item="${item.id}">
+          <input class="playlist-select-box" type="checkbox" data-select-playlist-item="${item.id}" ${checked ? 'checked' : ''} aria-label="Selecionar ${escapeHtml(media?.name || 'mídia')}" />
+          <span class="drag-handle" title="Arrastar para ordenar">⋮⋮</span>
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="grow"><strong>${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(details)}</small><span class="playlist-selection-state selected">Na playlist • ordem ${index + 1}</span></div>
-          ${isImage ? `<label class="playlist-duration-control">Tempo <span><input type="number" min="1" max="86400" step="1" value="${imageSeconds}" data-item-duration-input="${item.id}" /> s</span></label><button class="small-icon-button duration-save-button" data-save-item-duration="${item.id}">Salvar tempo</button>` : `<span class="playlist-video-duration">${media?.duration_seconds ? `Vídeo ${escapeHtml(formatDuration(media.duration_seconds))}` : 'Tempo do vídeo'}</span>`}
-          <div class="order-buttons">
-            <button class="small-icon-button" data-move-item="${item.id}" data-direction="up" ${index === 0 ? 'disabled' : ''}>↑</button>
-            <button class="small-icon-button" data-move-item="${item.id}" data-direction="down" ${index === items.length - 1 ? 'disabled' : ''}>↓</button>
-            <button class="small-icon-button" data-remove-item="${item.id}">×</button>
-          </div>
-        </div>
-      `;
+          <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span></div></div>
+          ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+        </div>`;
     }).join('');
 
     const picker = $('#playlist-media-picker');
     $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
     const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
-    picker.innerHTML = state.media.map(media => {
-      const order = included.get(media.id);
-      return `
-        <div class="picker-row ${order ? 'already-selected' : ''}">
-          <div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}</small><span class="playlist-selection-state ${order ? 'selected' : ''}">${order ? `Já adicionada • ordem ${order}` : 'Ainda não selecionada'}</span></div>
-          <button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order ? 'disabled' : ''}>${order ? 'Adicionada' : '+ Adicionar'}</button>
-        </div>`;
-    }).join('');
+    picker.innerHTML = state.media.map(media => { const order=included.get(media.id); return `<div class="picker-row ${order?'already-selected':''}"><div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type==='video'?'▶':'▧'}</span></div><div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small><span class="playlist-selection-state ${order?'selected':''}">${order?`Já adicionada • ordem ${order}`:'Ainda não selecionada'}</span></div><button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order?'disabled':''}>${order?'Adicionada':'+ Adicionar'}</button></div>`; }).join('');
+
+    const replace = $('#playlist-bulk-replace-media');
+    if (replace) replace.innerHTML = '<option value="">Substituir por...</option>' + state.media.map(media => `<option value="${media.id}">${escapeHtml(media.name)}</option>`).join('');
+    syncPlaylistBulkUi();
     hydratePlaylistPreviews();
   }
 
@@ -955,9 +1183,17 @@
     };
   }
 
+  function resetReportVisuals() {
+    ['#report-started','#report-completed','#report-completion-rate','#report-total-time','#report-device-count','#report-media-count'].forEach(selector => { const el=$(selector); if(el) el.textContent='—'; });
+    ['#report-campaigns-body','#report-devices-body','#report-media-body','#report-events-body'].forEach(selector => { const el=$(selector); if(el) el.innerHTML=''; });
+    const generated=$('#report-generated-label'); if(generated) generated.textContent='Carregando somente eventos reais do Player…';
+  }
+
   async function loadPlaybackReport({ quiet = false } = {}) {
     if (!state.company?.id || state.reportLoading) return;
     state.reportLoading = true;
+    state.report = null;
+    resetReportVisuals();
     $('#report-loading')?.classList.remove('hidden');
     $('#report-content')?.classList.add('hidden');
     $('#report-empty')?.classList.add('hidden');
@@ -1193,39 +1429,31 @@
   }
 
   async function handleSignup(event) {
-  event.preventDefault();
-  const button = $('#signup-submit');
-  const email = $('#signup-email').value.trim();
-  const password = $('#signup-password').value;
-  const displayName = $('#signup-name').value.trim();
-  setBusy(button, true, 'Criando conta...');
-  try {
-    await functionRequest('public-signup', {
-      authenticated: false,
-      body: { email, password, display_name: displayName },
-    });
-    const data = await authRequest('/token?grant_type=password', {
-      body: { email, password },
-    });
-    if (!data?.access_token) throw new Error('Login não retornou uma sessão válida.');
-    saveSession(data);
-    await enterAuthenticatedApp();
-    toast('Conta criada', 'Seu acesso já está liberado. Agora crie sua empresa.');
-  } catch (error) {
-    toast('Não foi possível criar a conta', friendlyAuthError(error), 'error');
-  } finally { setBusy(button, false); }
-}
-
-function friendlyAuthError(error) {
-    const msg = String(error?.message || 'Erro de autenticação.');
-    if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha inválidos.';
-    if (/email not confirmed/i.test(msg)) return 'Esta conta antiga ainda não está liberada. Crie uma nova conta ou fale com o administrador.';
-    if (/email_already_registered|user already registered/i.test(msg)) return 'Este e-mail já está cadastrado.';
-    if (/signup_rate_limited/i.test(msg)) return 'Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.';
-    if (/invalid_email/i.test(msg)) return 'Informe um e-mail válido.';
-    if (/invalid_password/i.test(msg)) return 'A senha deve ter entre 8 e 72 caracteres.';
-    if (/invalid_display_name/i.test(msg)) return 'Informe seu nome.';
-    return msg;
+    event.preventDefault();
+    const button = $('#signup-submit');
+    const email = $('#signup-email').value.trim();
+    const password = $('#signup-password').value;
+    const displayName = $('#signup-name').value.trim();
+    const companyName = $('#signup-company').value.trim();
+    const planId = $('#signup-plan').value;
+    if (!companyName || !planId) return toast('Complete o cadastro', 'Informe a empresa e selecione o plano de interesse.', 'error');
+    setBusy(button, true, 'Criando cadastro...');
+    try {
+      await functionRequest('public-signup-v2', { authenticated:false, body:{ email, password, display_name:displayName, company_name:companyName, plan_id:planId } });
+      const data = await authRequest('/token?grant_type=password', { body:{ email, password } });
+      saveSession(data);
+      await loadPublicConfig().catch(() => null);
+      await enterAuthenticatedApp();
+      toast('Cadastro recebido', 'Seu acesso está aguardando aprovação do administrador.');
+    } catch (error) {
+      const code = String(error?.message || '');
+      const friendly = /email_already_registered/i.test(code) ? 'Este e-mail já está cadastrado.'
+        : /platform_client_limit_reached/i.test(code) ? 'No momento não há novas vagas de clientes nesta infraestrutura.'
+        : /plan_not_available/i.test(code) ? 'O plano selecionado não está mais disponível.'
+        : /signup_rate_limited/i.test(code) ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
+        : friendlyAuthError(error);
+      toast('Não foi possível criar o cadastro', friendly, 'error');
+    } finally { setBusy(button, false); }
   }
 
   async function handleForgotPassword() {
@@ -1306,6 +1534,48 @@ function friendlyAuthError(error) {
     $('#pair-device-orientation').value = 'auto';
     openDialog('pair-device-dialog');
     setTimeout(() => $('#pair-device-code')?.focus(), 50);
+  }
+
+  function openReplaceDeviceDialog(deviceId) {
+    const device = state.devices.find(d => d.id === deviceId);
+    if (!device) return;
+    $('#replace-device-old-id').value = device.id;
+    $('#replace-device-old-name').textContent = device.name;
+    $('#replace-device-code').value = '';
+    $('#replace-device-name').value = device.name;
+    $('#replace-device-orientation').value = device.orientation || 'auto';
+    openDialog('replace-device-dialog');
+    setTimeout(() => $('#replace-device-code')?.focus(), 50);
+  }
+
+  async function handleReplaceDevice(event) {
+    event.preventDefault();
+    const button = $('#replace-device-save');
+    const oldDeviceId = $('#replace-device-old-id').value;
+    const code = $('#replace-device-code').value.replace(/\D/g, '');
+    const name = $('#replace-device-name').value.trim();
+    if (!oldDeviceId || code.length !== 6 || !name) {
+      toast('Confira os dados', 'Informe os 6 dígitos da nova TV e um nome para ela.', 'error');
+      return;
+    }
+    setBusy(button, true, 'Substituindo...');
+    try {
+      await functionRequest('replace-device', {
+        body: {
+          company_id: state.company.id,
+          old_device_id: oldDeviceId,
+          code,
+          name,
+          orientation: $('#replace-device-orientation').value,
+        },
+      });
+      closeDialog('replace-device-dialog');
+      $('#replace-device-form').reset();
+      toast('TV substituída com sucesso', 'A vaga do plano foi mantida e a programação foi transferida para a nova TV.');
+      await loadAllData();
+    } catch (error) {
+      toast('Não foi possível substituir a TV', error.message, 'error');
+    } finally { setBusy(button, false); }
   }
 
   async function handleAssignPlaylist(deviceId, playlistId) {
@@ -1653,6 +1923,7 @@ function friendlyAuthError(error) {
 
   function openPlaylistEditor(id) {
     state.editingPlaylistId = id;
+    state.selectedPlaylistItemIds = new Set();
     renderPlaylistEditor();
     openDialog('playlist-items-dialog');
   }
@@ -1694,6 +1965,139 @@ function friendlyAuthError(error) {
       toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
       renderPlaylistEditor();
     } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
+  }
+
+  function playlistScheduleStatus(message='', type='') {
+    const el = $('#playlist-schedule-status');
+    if (!el) return;
+    el.textContent = message;
+    el.className = `form-status ${type}`.trim();
+    el.classList.toggle('hidden', !message);
+  }
+
+  function selectedPlaylistItems() {
+    return state.playlistItems.filter(item => item.playlist_id === state.editingPlaylistId && state.selectedPlaylistItemIds.has(item.id));
+  }
+
+  function openPlaylistScheduleDialog(ids) {
+    const targetIds = Array.isArray(ids) ? ids : [...state.selectedPlaylistItemIds];
+    if (!targetIds.length) return toast('Selecione uma mídia', 'Marque uma ou mais mídias da playlist para programar.', 'error');
+    state.scheduleTargetItemIds = targetIds;
+    const first = state.playlistItems.find(item => item.id === targetIds[0]);
+    $('#playlist-schedule-count').textContent = `${targetIds.length} mídia${targetIds.length===1?'':'s'}`;
+    $('#playlist-schedule-enabled').checked = first?.schedule_enabled !== false;
+    $('#playlist-schedule-start-date').value = first?.start_date || '';
+    $('#playlist-schedule-end-date').value = first?.end_date || '';
+    $('#playlist-schedule-start-time').value = normalizeTime(first?.start_time || '');
+    $('#playlist-schedule-end-time').value = normalizeTime(first?.end_time || '');
+    const allDay = !(first?.start_time && first?.end_time);
+    $('#playlist-schedule-all-day').checked = allDay;
+    const days = new Set((Array.isArray(first?.weekdays) ? first.weekdays : [0,1,2,3,4,5,6]).map(Number));
+    $$('[data-playlist-weekday]').forEach(input => { input.checked = days.has(Number(input.dataset.playlistWeekday)); });
+    playlistScheduleStatus();
+    syncPlaylistScheduleFormVisibility();
+    openDialog('playlist-schedule-dialog');
+  }
+
+  function syncPlaylistScheduleFormVisibility() {
+    const enabled = $('#playlist-schedule-enabled')?.checked !== false;
+    const allDay = $('#playlist-schedule-all-day')?.checked !== false;
+    $$('.schedule-date-fields input').forEach(input => input.disabled = !enabled);
+    $('#playlist-schedule-all-day').disabled = !enabled;
+    $$('[data-playlist-weekday]').forEach(input => input.disabled = !enabled);
+    $('#playlist-schedule-time-fields').classList.toggle('hidden', !enabled || allDay);
+  }
+
+  async function applyPlaylistSchedule(event) {
+    event.preventDefault();
+    const ids = state.scheduleTargetItemIds.filter(Boolean);
+    if (!ids.length) return;
+    const enabled = $('#playlist-schedule-enabled').checked;
+    const allDay = $('#playlist-schedule-all-day').checked;
+    const weekdays = $$('[data-playlist-weekday]').filter(input => input.checked).map(input => Number(input.dataset.playlistWeekday));
+    const startDate = $('#playlist-schedule-start-date').value || null;
+    const endDate = $('#playlist-schedule-end-date').value || null;
+    const startTime = enabled && !allDay ? ($('#playlist-schedule-start-time').value || null) : null;
+    const endTime = enabled && !allDay ? ($('#playlist-schedule-end-time').value || null) : null;
+    if (enabled && !weekdays.length) return playlistScheduleStatus('❌ Selecione pelo menos um dia da semana.', 'error');
+    if (startDate && endDate && endDate < startDate) return playlistScheduleStatus('❌ A data final não pode ser anterior à inicial.', 'error');
+    if (enabled && !allDay && (!startTime || !endTime)) return playlistScheduleStatus('❌ Informe a hora inicial e final.', 'error');
+    const button = $('#playlist-schedule-save');
+    setBusy(button, true, 'Aplicando...');
+    playlistScheduleStatus('Salvando programação...', 'pending');
+    try {
+      const payload = { schedule_enabled: enabled, start_date: enabled ? startDate : null, end_date: enabled ? endDate : null, start_time: enabled ? startTime : null, end_time: enabled ? endTime : null, weekdays: enabled ? weekdays : [0,1,2,3,4,5,6] };
+      await Promise.all(ids.map(id => restRequest('playlist_items', { method:'PATCH', query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body:payload, prefer:'return=minimal' })));
+      await loadAllData();
+      playlistScheduleStatus('✅ Programação salva com sucesso.', 'success');
+      toast('Programação salva', `${ids.length} mídia(s) atualizada(s).`);
+      setTimeout(() => closeDialog('playlist-schedule-dialog'), 650);
+    } catch (error) { playlistScheduleStatus(`❌ ${error.message}`, 'error'); toast('Erro ao programar mídias', error.message, 'error'); }
+    finally { setBusy(button, false); }
+  }
+
+  async function clearPlaylistSchedule() {
+    const ids = state.scheduleTargetItemIds.filter(Boolean);
+    if (!ids.length) return;
+    try {
+      await Promise.all(ids.map(id => restRequest('playlist_items', { method:'PATCH', query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body:{schedule_enabled:false,start_date:null,end_date:null,start_time:null,end_time:null,weekdays:[0,1,2,3,4,5,6]}, prefer:'return=minimal' })));
+      await loadAllData();
+      closeDialog('playlist-schedule-dialog');
+      toast('Programação removida', 'As mídias voltaram a ficar disponíveis sempre.');
+    } catch (error) { playlistScheduleStatus(`❌ ${error.message}`, 'error'); }
+  }
+
+  async function setSelectedPlaylistEnabled(enabled) {
+    const ids = [...state.selectedPlaylistItemIds];
+    if (!ids.length) return;
+    try {
+      await Promise.all(ids.map(id => restRequest('playlist_items',{method:'PATCH',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{enabled},prefer:'return=minimal'})));
+      await loadAllData();
+      toast(enabled ? 'Mídias ativadas' : 'Mídias desativadas', `${ids.length} item(ns) atualizado(s).`);
+    } catch (error) { toast('Erro ao atualizar mídias', error.message, 'error'); }
+  }
+
+  async function togglePlaylistItemEnabled(itemId) {
+    const item = state.playlistItems.find(row => row.id === itemId);
+    if (!item) return;
+    state.selectedPlaylistItemIds = new Set([itemId]);
+    await setSelectedPlaylistEnabled(!item.enabled);
+  }
+
+  async function replaceSelectedPlaylistMedia() {
+    const mediaId = $('#playlist-bulk-replace-media')?.value || '';
+    const ids = [...state.selectedPlaylistItemIds];
+    if (!ids.length) return toast('Selecione uma mídia', '', 'error');
+    if (!mediaId) return toast('Escolha a substituição', 'Selecione a nova mídia no campo “Substituir por”.', 'error');
+    const media = state.media.find(row => row.id === mediaId);
+    if (!media) return;
+    if (!confirm(`Substituir ${ids.length} item(ns) por “${media.name}”?`)) return;
+    try {
+      await Promise.all(ids.map(id => restRequest('playlist_items',{method:'PATCH',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{media_id:mediaId,duration_override_seconds:media.media_type==='image'?10:null},prefer:'return=minimal'})));
+      await loadAllData();
+      toast('Mídias substituídas', `${ids.length} item(ns) atualizado(s).`);
+    } catch (error) { toast('Erro ao substituir', error.message, 'error'); }
+  }
+
+  async function deleteSelectedPlaylistItems() {
+    const ids = [...state.selectedPlaylistItemIds];
+    if (!ids.length || !confirm(`Excluir ${ids.length} item(ns) desta playlist?`)) return;
+    try {
+      await Promise.all(ids.map(id => restRequest('playlist_items',{method:'DELETE',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`})));
+      state.selectedPlaylistItemIds = new Set();
+      await loadAllData();
+      toast('Itens removidos', `${ids.length} mídia(s) removida(s) da sequência.`);
+    } catch (error) { toast('Erro ao excluir itens', error.message, 'error'); }
+  }
+
+  async function persistPlaylistOrder(orderedIds) {
+    if (!orderedIds?.length) return;
+    try {
+      await Promise.all(orderedIds.map((id,index) => restRequest('playlist_items',{method:'PATCH',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{position:index},prefer:'return=minimal'})));
+      orderedIds.forEach((id,index)=>{const item=state.playlistItems.find(row=>row.id===id);if(item)item.position=index;});
+      renderPlaylistEditor();
+      toast('Ordem atualizada');
+    } catch (error) { toast('Erro ao reordenar', error.message, 'error'); await loadAllData().catch(()=>{}); }
   }
 
   async function removePlaylistItem(itemId) {
@@ -1767,6 +2171,9 @@ function friendlyAuthError(error) {
     $('#signup-form').addEventListener('submit', handleSignup);
     $('#forgot-password').addEventListener('click', handleForgotPassword);
     $('#company-form').addEventListener('submit', handleCreateCompany);
+    $('#access-refresh').addEventListener('click', () => enterAuthenticatedApp().catch(error => toast('Falha ao verificar acesso', error.message, 'error')));
+    $('#access-logout').addEventListener('click', logout);
+    $('#access-notifications').addEventListener('click', enableAccessNotifications);
     $('#logout-button').addEventListener('click', logout);
     $('#refresh-button').addEventListener('click', async () => {
       try { await loadAllData(); toast('Dados atualizados'); }
@@ -1787,9 +2194,22 @@ function friendlyAuthError(error) {
     });
     $('#monitor-severity-filter').addEventListener('change', renderMonitoring);
     $('#pair-device-form').addEventListener('submit', handlePairDevice);
+    $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
+    $('#player-branding-form').addEventListener('submit', savePlayerBranding);
+    $('#branding-copy-url').addEventListener('click', async () => { const value=$('#branding-player-url').value; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url').select();document.execCommand('copy');toast('Link copiado')} });
+    $('#branding-open-player').addEventListener('click', () => window.open($('#branding-player-url').value || './player.html','_blank','noopener'));
+    $('#playlist-schedule-form').addEventListener('submit', applyPlaylistSchedule);
+    $('#playlist-schedule-clear').addEventListener('click', clearPlaylistSchedule);
+    $('#playlist-schedule-enabled').addEventListener('change', syncPlaylistScheduleFormVisibility);
+    $('#playlist-schedule-all-day').addEventListener('change', syncPlaylistScheduleFormVisibility);
+    $('#playlist-bulk-schedule').addEventListener('click', () => openPlaylistScheduleDialog());
+    $('#playlist-bulk-enable').addEventListener('click', () => setSelectedPlaylistEnabled(true));
+    $('#playlist-bulk-disable').addEventListener('click', () => setSelectedPlaylistEnabled(false));
+    $('#playlist-bulk-replace').addEventListener('click', replaceSelectedPlaylistMedia);
+    $('#playlist-bulk-delete').addEventListener('click', deleteSelectedPlaylistItems);
     $('#add-campaign-button').addEventListener('click', () => openCampaignDialog());
     $('#empty-add-campaign-button').addEventListener('click', () => openCampaignDialog());
     $('#campaign-form').addEventListener('submit', handleSaveCampaign);
@@ -1805,6 +2225,10 @@ function friendlyAuthError(error) {
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
     document.addEventListener('click', event => {
+      const captureDevice = event.target.closest('[data-capture-device]');
+      if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
+      const replaceDevice = event.target.closest('[data-replace-device]');
+      if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
       if (editDevice) return openEditDeviceDialog(editDevice.dataset.editDevice);
       const deleteDeviceButton = event.target.closest('[data-delete-device]');
@@ -1827,6 +2251,10 @@ function friendlyAuthError(error) {
       if (addMedia) return addMediaToPlaylist(addMedia.dataset.addMediaToPlaylist);
       const saveDuration = event.target.closest('[data-save-item-duration]');
       if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
+      const editItemSchedule = event.target.closest('[data-edit-item-schedule]');
+      if (editItemSchedule) { state.selectedPlaylistItemIds = new Set([editItemSchedule.dataset.editItemSchedule]); renderPlaylistEditor(); return openPlaylistScheduleDialog([editItemSchedule.dataset.editItemSchedule]); }
+      const toggleItem = event.target.closest('[data-toggle-item-enabled]');
+      if (toggleItem) return togglePlaylistItemEnabled(toggleItem.dataset.toggleItemEnabled);
       const removeItem = event.target.closest('[data-remove-item]');
       if (removeItem) return removePlaylistItem(removeItem.dataset.removeItem);
       const moveItem = event.target.closest('[data-move-item]');
@@ -1834,11 +2262,42 @@ function friendlyAuthError(error) {
     });
 
     document.addEventListener('change', event => {
+      const itemCheck = event.target.closest('[data-select-playlist-item]');
+      if (itemCheck) { if(itemCheck.checked) state.selectedPlaylistItemIds.add(itemCheck.dataset.selectPlaylistItem); else state.selectedPlaylistItemIds.delete(itemCheck.dataset.selectPlaylistItem); syncPlaylistBulkUi(); return; }
+      if (event.target.id === 'playlist-select-all') { const checked=event.target.checked; const items=state.playlistItems.filter(i=>i.playlist_id===state.editingPlaylistId); state.selectedPlaylistItemIds = checked ? new Set(items.map(i=>i.id)) : new Set(); renderPlaylistEditor(); return; }
       const select = event.target.closest('[data-device-playlist]');
       if (select) handleAssignPlaylist(select.dataset.devicePlaylist, select.value);
     });
 
-    $('#playlist-items-dialog').addEventListener('close', () => { state.editingPlaylistId = null; });
+
+    document.addEventListener('dragstart', event => {
+      const row = event.target.closest('[data-playlist-drag-item]');
+      if (!row) return;
+      state.draggingPlaylistItemId = row.dataset.playlistDragItem;
+      row.classList.add('dragging');
+      if (event.dataTransfer) { event.dataTransfer.effectAllowed='move'; event.dataTransfer.setData('text/plain', state.draggingPlaylistItemId); }
+    });
+    document.addEventListener('dragover', event => {
+      const row = event.target.closest('[data-playlist-drag-item]');
+      if (!row || !state.draggingPlaylistItemId) return;
+      event.preventDefault();
+      $$('.playlist-item-row.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      if (row.dataset.playlistDragItem !== state.draggingPlaylistItemId) row.classList.add('drag-over');
+    });
+    document.addEventListener('drop', event => {
+      const row = event.target.closest('[data-playlist-drag-item]');
+      if (!row || !state.draggingPlaylistItemId) return;
+      event.preventDefault();
+      const dragged=state.draggingPlaylistItemId,target=row.dataset.playlistDragItem;
+      const ids=state.playlistItems.filter(i=>i.playlist_id===state.editingPlaylistId).sort((a,b)=>a.position-b.position).map(i=>i.id);
+      const from=ids.indexOf(dragged),to=ids.indexOf(target);
+      if(from>=0&&to>=0&&from!==to){ids.splice(from,1);ids.splice(to,0,dragged);persistPlaylistOrder(ids);}
+      state.draggingPlaylistItemId=null;
+      $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over'));
+    });
+    document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
+
+    $('#playlist-items-dialog').addEventListener('close', () => { state.editingPlaylistId = null; state.selectedPlaylistItemIds = new Set(); });
   }
 
   bootstrap().catch(error => {

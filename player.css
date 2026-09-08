@@ -4,7 +4,7 @@ html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background:
 button { font: inherit; }
 .hidden { display: none !important; }
 .player-root, .pairing-screen, .playback-screen, .media-stage { width: 100%; height: 100%; }
-.pairing-screen { display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 0%, #17335f 0, #08111f 35%, #03070d 72%, #000 100%); }
+.pairing-screen { display: grid; place-items: center; padding: 24px; background: radial-gradient(circle at 20% 0%, #17335f 0, #08111f 35%, #03070d 72%, #000 100%); background-size: cover; background-position: center; }
 .pairing-card { width: min(680px, 100%); padding: clamp(28px, 5vw, 54px); border-radius: 30px; border: 1px solid rgba(255,255,255,.13); background: rgba(7,15,28,.9); box-shadow: 0 30px 100px rgba(0,0,0,.45); text-align: center; }
 .player-brand { display: flex; align-items: center; justify-content: center; gap: 14px; margin-bottom: 36px; text-align: left; }
 .player-brand > span, .idle-logo { display: grid; place-items: center; width: 54px; height: 54px; border-radius: 16px; background: linear-gradient(145deg,#3178ff,#7357ff); font-weight: 900; font-size: 28px; box-shadow: 0 12px 40px rgba(50,102,255,.3); }
@@ -24,8 +24,6 @@ button { font: inherit; }
 .idle-overlay { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 30px; text-align: center; background: radial-gradient(circle at center, #0c1b32 0, #03070d 65%, #000 100%); }
 .idle-overlay h2 { margin: 10px 0 0; font-size: clamp(26px, 4vw, 42px); }
 .idle-overlay p { margin: 0; max-width: 650px; color: #9eacc1; font-size: clamp(15px, 2vw, 19px); }
-.player-status { position: absolute; top: 16px; right: 16px; z-index: 5; padding: 8px 12px; border-radius: 999px; background: rgba(0,0,0,.55); backdrop-filter: blur(10px); color: #aebbd0; font-size: 12px; opacity: .75; transition: opacity .2s; }
-.player-controls { position: absolute; right: 16px; bottom: 16px; z-index: 6; display: flex; gap: 8px; opacity: .12; transition: opacity .2s; }
-.player-controls:hover, .player-controls:focus-within { opacity: 1; }
-.player-controls button { width: 44px; height: 44px; border-radius: 12px; border: 1px solid rgba(255,255,255,.14); background: rgba(0,0,0,.6); color: #fff; cursor: pointer; font-size: 20px; }
+.player-status { display:none !important; }
+.player-controls { display:none !important; }
 @media (max-width: 600px) { .pairing-card { border-radius: 22px; } .pairing-code { letter-spacing: .08em; padding-inline: 12px; } }

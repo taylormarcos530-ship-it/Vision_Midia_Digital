@@ -33,6 +33,16 @@ function safeNumber(value, min, max) {
   return Math.max(min, Math.min(max, number))
 }
 
+function decodeBase64(value) {
+  const raw = String(value || '').replace(/^data:image\/jpeg;base64,/, '')
+  if (!raw || raw.length > 7_500_000) throw new Error('invalid_screenshot_payload')
+  const binary = atob(raw)
+  const bytes = new Uint8Array(binary.length)
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+  if (bytes.length < 100 || bytes.length > 5 * 1024 * 1024) throw new Error('invalid_screenshot_size')
+  return bytes
+}
+
 const WEEKDAY_INDEX = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 }
 
 function timeToSeconds(value) {
@@ -110,6 +120,11 @@ function campaignIsActive(campaign, clock) {
   return true
 }
 
+
+function itemScheduleIsActive(item, clock) {
+  if (!item?.schedule_enabled) return true
+  return campaignIsActive(item, clock)
+}
 async function resolveProgram(admin, device) {
   const [{ data: company, error: companyError }, { data: campaigns, error: campaignsError }, { data: targets, error: targetsError }, { data: assignment, error: assignmentError }] = await Promise.all([
     admin.from('companies').select('timezone').eq('id', device.company_id).maybeSingle(),
@@ -261,6 +276,71 @@ Deno.serve(async (req) => {
       return json({ ok: true, device_id: device.id, server_time: now })
     }
 
+    if (action === 'commands') {
+      const { data: commands, error: commandsError } = await admin.from('device_commands')
+        .select('id,command_type,status,requested_at,delivered_at')
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .in('status', ['pending','sent'])
+        .order('requested_at', { ascending: true })
+        .limit(3)
+      if (commandsError) throw commandsError
+      if (commands?.length) {
+        const ids = commands.map(row => row.id)
+        await admin.from('device_commands').update({ status:'sent', delivered_at:new Date().toISOString() }).in('id', ids)
+      }
+      return json({ ok:true, commands: commands || [] })
+    }
+
+    if (action === 'screenshot_result') {
+      const commandId = String(body?.command_id || '')
+      const { data: command, error: commandError } = await admin.from('device_commands')
+        .select('id,company_id,device_id,command_type,status')
+        .eq('id', commandId).eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle()
+      if (commandError) throw commandError
+      if (!command || command.command_type !== 'screenshot') return json({ error:'invalid_screenshot_command' }, 404)
+      const { data: existing } = await admin.from('device_screenshots').select('id,storage_path').eq('command_id', commandId).maybeSingle()
+      if (existing) {
+        await admin.from('device_commands').update({ status:'completed', completed_at:new Date().toISOString() }).eq('id', commandId)
+        return json({ ok:true, screenshot_id:existing.id, duplicate:true })
+      }
+      const bytes = decodeBase64(body?.image_base64)
+      const width = safeNumber(body?.width, 1, 10000)
+      const height = safeNumber(body?.height, 1, 10000)
+      const { data: oldShots, error: oldError } = await admin.from('device_screenshots').select('id,storage_path,size_bytes').eq('company_id',device.company_id).eq('device_id',device.id)
+      if (oldError) throw oldError
+      const oldBytes = (oldShots || []).reduce((sum,row)=>sum+Number(row.size_bytes||0),0)
+      const { data: usage, error: usageError } = await admin.rpc('get_platform_storage_usage',{p_company_id:device.company_id})
+      if (usageError) throw usageError
+      const u = usage?.[0] || usage || {}
+      const projectedGlobal = Math.max(0, Number(u.global_used_bytes||0) - oldBytes) + bytes.length
+      const projectedCompany = Math.max(0, Number(u.company_used_bytes||0) - oldBytes) + bytes.length
+      if (projectedGlobal > Number(u.capacity_mb||1024)*1024*1024 || projectedCompany > Number(u.company_limit_mb||0)*1024*1024) {
+        await admin.from('device_commands').update({ status:'failed', completed_at:new Date().toISOString(), error_message:'screenshot_storage_limit' }).eq('id',commandId)
+        return json({ error:'screenshot_storage_limit' }, 409)
+      }
+      const storagePath = `${device.company_id}/screenshots/${device.id}/${commandId}.jpg`
+      const { error: uploadError } = await admin.storage.from('vision-media').upload(storagePath, bytes, { contentType:'image/jpeg', upsert:false })
+      if (uploadError) throw uploadError
+      const now = new Date().toISOString()
+      const { data: shot, error: shotError } = await admin.from('device_screenshots').insert({ company_id:device.company_id, device_id:device.id, command_id:commandId, storage_path:storagePath, captured_at:now, width:width==null?null:Math.round(width), height:height==null?null:Math.round(height), size_bytes:bytes.length }).select('id,storage_path,captured_at').single()
+      if (shotError) { await admin.storage.from('vision-media').remove([storagePath]).catch(()=>null); throw shotError }
+      await admin.from('device_commands').update({ status:'completed', completed_at:now, result:{screenshot_id:shot.id,storage_path:storagePath} }).eq('id',commandId)
+      const oldPaths=(oldShots||[]).map(row=>row.storage_path).filter(Boolean)
+      if(oldPaths.length) await admin.storage.from('vision-media').remove(oldPaths).catch(()=>null)
+      const oldIds=(oldShots||[]).map(row=>row.id)
+      if(oldIds.length) await admin.from('device_screenshots').delete().in('id',oldIds)
+      return json({ ok:true, screenshot:shot })
+    }
+
+    if (action === 'screenshot_error') {
+      const commandId=String(body?.command_id||'')
+      const message=String(body?.error_message||'Falha ao capturar tela').slice(0,500)
+      const { error } = await admin.from('device_commands').update({status:'failed',completed_at:new Date().toISOString(),error_message:message}).eq('id',commandId).eq('company_id',device.company_id).eq('device_id',device.id).in('status',['pending','sent'])
+      if(error)throw error
+      return json({ok:true})
+    }
+
     if (action === 'manifest') {
       const resolved = await resolveProgram(admin, device)
 
@@ -286,14 +366,17 @@ Deno.serve(async (req) => {
 
       const { data: playlistItems, error: itemsError } = await admin
         .from('playlist_items')
-        .select('id,media_id,position,duration_override_seconds,enabled,updated_at')
+        .select('id,media_id,position,duration_override_seconds,enabled,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
         .eq('playlist_id', playlist.id)
         .eq('company_id', device.company_id)
         .eq('enabled', true)
         .order('position', { ascending: true })
       if (itemsError) throw itemsError
 
-      const mediaIds = [...new Set((playlistItems || []).map((item) => item.media_id))]
+      const itemClock = localDateParts(new Date(), resolved.program?.timezone || 'America/Sao_Paulo')
+      const supportsItemSchedules = body?.supports_item_schedules === true
+      const effectivePlaylistItems = supportsItemSchedules ? (playlistItems || []) : (playlistItems || []).filter(item => itemScheduleIsActive(item, itemClock))
+      const mediaIds = [...new Set(effectivePlaylistItems.map((item) => item.media_id))]
       let media = []
       if (mediaIds.length) {
         const { data: mediaRows, error: mediaError } = await admin
@@ -308,7 +391,7 @@ Deno.serve(async (req) => {
 
       const mediaById = new Map(media.map((item) => [item.id, item]))
       const items = []
-      for (const item of playlistItems || []) {
+      for (const item of effectivePlaylistItems) {
         const asset = mediaById.get(item.media_id)
         if (!asset) continue
         let url = asset.source_url || null
@@ -327,6 +410,7 @@ Deno.serve(async (req) => {
           id: item.id,
           position: item.position,
           duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
+          schedule: { enabled: Boolean(item.schedule_enabled), start_date: item.start_date || null, end_date: item.end_date || null, start_time: item.start_time || null, end_time: item.end_time || null, weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6] },
           media: {
             id: asset.id,
             name: asset.name,
@@ -346,7 +430,7 @@ Deno.serve(async (req) => {
         assignment: resolved.assignmentUpdatedAt,
         program: resolved.program,
         playlist: playlist.updated_at,
-        items: items.map((item) => [item.id, item.media.id, item.media.checksum, item.duration_seconds]),
+        items: items.map((item) => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
       })
 
       return json({
