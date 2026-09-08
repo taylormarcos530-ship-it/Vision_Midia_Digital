@@ -1,0 +1,55 @@
+name: Switch Plan Save To Edge
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/switch-plan-save-edge.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Switch plan save transport only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          p=Path('master.js')
+          s=p.read_text()
+
+          old_rpc=r"  async function rpc\(name, body, retry=true\)\{[^\n]+\}\n"
+          edge="  async function savePlanRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-plan`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePlanRequest(body,false)}return parse(res)}\n"
+          s,n=re.subn(old_rpc,edge,s,count=1)
+          if n!=1: raise SystemExit('rpc helper replacement failed')
+
+          s=s.replace("if(/plans_slug_key|duplicate key.*slug/i.test(m))return 'Já existe um plano com esse slug.';", "if(/plan_slug_already_exists|plans_slug_key|duplicate key.*slug/i.test(m))return 'Já existe um plano com esse slug.';")
+          s=s.replace("if(/plan_not_found/i.test(m))return 'Este plano não foi encontrado. Atualize a página e tente novamente.';return m}", "if(/plan_not_found/i.test(m))return 'Este plano não foi encontrado. Atualize a página e tente novamente.';if(/plan_save_failed|plan_save_unexpected_error/i.test(m))return 'Não foi possível salvar o plano no servidor. Tente novamente.';return m}")
+
+          new_save="  async function savePlan(ev){ev.preventDefault();const b=$('#mp-save');const price=reaisToCents($('#mp-price').value);if(price===null){planStatus('❌ Informe um preço mensal válido.','error');return}busy(b,true,'Salvando...');planStatus('Salvando...','pending');try{await savePlanRequest({id:$('#mp-id').value||null,name:$('#mp-name').value.trim(),slug:$('#mp-slug').value.trim(),description:$('#mp-description').value.trim(),monthly_price_cents:price,max_devices:planIntOrNull('#mp-devices'),storage_limit_mb:planIntOrNull('#mp-storage'),max_users:planIntOrNull('#mp-users'),max_campaigns:planIntOrNull('#mp-campaigns'),is_active:$('#mp-active').checked,sort_order:Number($('#mp-order').value||0)});planStatus('✅ Plano salvo com sucesso.','success');closeDialog('master-plan-dialog');toast('Plano salvo','Alterações aplicadas com sucesso.');await load().catch(e=>toast('Plano salvo, mas a lista não atualizou',e.message,'error'))}catch(e){const msg=friendlyPlanError(e);planStatus(`❌ ${msg}`,'error');toast('Erro ao salvar plano',msg,'error')}finally{busy(b,false)}}\n"
+          s,n=re.subn(r"  async function savePlan\(ev\)\{[^\n]+\}\n",new_save,s,count=1)
+          if n!=1: raise SystemExit('savePlan replacement failed')
+          p.write_text(s)
+          PY
+
+          node --check master.js
+          grep -q '/functions/v1/save-plan' master.js
+          if grep -q "rpc('save_platform_plan'" master.js; then exit 1; fi
+
+      - name: Commit transport fix
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add master.js
+          git diff --cached --check
+          git commit -m 'fix: save plans through secure Master endpoint'
+          git push origin HEAD:main
