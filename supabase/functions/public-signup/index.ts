@@ -44,7 +44,7 @@ Deno.serve(async (req) => {
     const sourceHash = await sha256(`vision-signup:${source}`)
     const emailHash = await sha256(`vision-signup:${email}`)
     const admin = adminClient()
-    const attempts = admin.schema('private').from('public_signup_attempts')
+    const attempts = admin.from('public_signup_attempts')
 
     const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString()
     const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000).toISOString()
@@ -77,8 +77,10 @@ Deno.serve(async (req) => {
       return json({ error: 'signup_failed' }, Number(error.status) || 400)
     }
 
-    await attempts.update({ success: true }).eq('id', attempt.id)
-    await attempts.delete().lt('attempted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).catch(() => null)
+    const { error: markError } = await attempts.update({ success: true }).eq('id', attempt.id)
+    if (markError) console.error('public-signup mark success', markError)
+    const { error: cleanupError } = await attempts.delete().lt('attempted_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+    if (cleanupError) console.error('public-signup cleanup', cleanupError)
 
     return json({ ok: true, user_id: data.user?.id || null }, 201)
   } catch (error) {
