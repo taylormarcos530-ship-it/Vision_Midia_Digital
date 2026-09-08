@@ -102,6 +102,7 @@
       <div class="form-grid two"><label>Preço manual mensal (R$)<input id="me-manual-price" inputmode="decimal" placeholder="Vazio = preço do plano" /></label><label>Observação de cobrança<input id="me-billing-notes" maxlength="500" /></label></div>
       <div class="limit-box"><strong>Limites personalizados <small>(vazio = usar plano)</small></strong><div class="form-grid four"><label>TVs<input id="me-max-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="me-storage-mb" type="number" min="0" /></label><label>Usuários<input id="me-max-users" type="number" min="1" /></label><label>Campanhas<input id="me-max-campaigns" type="number" min="0" /></label></div></div>
       <div class="danger-note">Suspender a empresa ou assinatura bloqueia novas operações e o player deixa de receber conteúdo.</div>
+      <div id="me-status" class="form-status hidden" role="status" aria-live="polite"></div>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-company-dialog">Cancelar</button><button id="me-save" class="button primary" type="submit">Salvar alterações</button></div>
     </form>
   </dialog>

@@ -8,9 +8,28 @@
   const esc = (v='') => String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 
   function toast(title, message='', type='success') {
+    let root = $('#master-toast-root');
+    const dialog = $('dialog[open]');
+    if (dialog) {
+      let localRoot = dialog.querySelector('.dialog-toast-root');
+      if (!localRoot) {
+        localRoot = document.createElement('div');
+        localRoot.className = 'dialog-toast-root';
+        localRoot.setAttribute('aria-live','polite');
+        dialog.appendChild(localRoot);
+      }
+      root = localRoot;
+    }
     const el = document.createElement('div'); el.className = `toast ${type}`;
     el.innerHTML = `<strong>${esc(title)}</strong>${message ? `<span>${esc(message)}</span>` : ''}`;
-    $('#master-toast-root').appendChild(el); setTimeout(() => el.remove(), 4200);
+    root.appendChild(el); setTimeout(() => el.remove(), 4200);
+  }
+  function formStatus(selector, message='', type='') {
+    const el = $(selector);
+    if (!el) return;
+    el.textContent = message;
+    el.className = `form-status ${type}`.trim();
+    el.classList.toggle('hidden', !message);
   }
   function busy(btn, yes, text='Salvando...') {
     if (!btn) return;
@@ -29,6 +48,7 @@
   async function refresh(){ if(!state.session?.refresh_token) return null; const d=await auth('/token?grant_type=refresh_token',{refresh_token:state.session.refresh_token}); saveSession(d); return d; }
   async function master(body, retry=true){ const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/master-admin`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}); if(res.status===401&&retry&&state.session?.refresh_token){await refresh(); return master(body,false)} return parse(res); }
   async function savePlanRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-plan`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePlanRequest(body,false)}return parse(res)}
+  async function saveCompanyRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-company`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return saveCompanyRequest(body,false)}return parse(res)}
 
   function show(id){ ['master-auth','master-denied','master-shell'].forEach(x => $(`#${x}`).classList.toggle('hidden',x!==id)); }
   function setConn(ok){ const el=$('#master-connection'); el.className=`pill ${ok?'online':'offline'}`; el.textContent=ok?'● Conectado':'● Sem conexão'; }
@@ -54,16 +74,46 @@
   function fillPlanSelects(){ const opts=(state.data.plans||[]).filter(p=>p.is_active).map(p=>`<option value="${p.id}">${esc(p.name)} • ${esc(money(p.monthly_price_cents))}</option>`).join(''); $('#mc-plan').innerHTML=opts; $('#me-plan').innerHTML=(state.data.plans||[]).map(p=>`<option value="${p.id}">${esc(p.name)}${p.is_active?'':' (inativo)'}</option>`).join(''); }
   function openNewClient(){ fillPlanSelects(); $('#master-client-form').reset(); $('#mc-trial-days').value='7'; openDialog('master-client-dialog'); }
   async function createClient(ev){ev.preventDefault();const b=$('#mc-save');busy(b,true,'Criando...');try{const d=await master({action:'create_client',company_name:$('#mc-company-name').value.trim(),owner_name:$('#mc-owner-name').value.trim(),owner_email:$('#mc-owner-email').value.trim(),plan_id:$('#mc-plan').value,trial_days:Number($('#mc-trial-days').value||0),temporary_password:$('#mc-temp-password').value});closeDialog('master-client-dialog');toast('Cliente criado',d.delivery==='invite'?'Convite enviado por e-mail.':d.delivery==='temporary_password'?'Acesso criado com senha temporária.':'Usuário existente vinculado.');await load();}catch(e){toast('Erro ao criar cliente',e.message,'error')}finally{busy(b,false)}}
-  function openCompany(id){ const c=companyById(id); if(!c)return; fillPlanSelects(); $('#me-company-id').value=c.id; $('#me-company-title').textContent=c.name; $('#me-company-name').value=c.name; $('#me-company-status').value=c.status; $('#me-plan').value=c.subscription?.plan_id||''; $('#me-sub-status').value=c.subscription?.status||'active'; $('#me-manual-price').value=c.subscription?.manual_price_cents==null?'':(Number(c.subscription.manual_price_cents)/100).toFixed(2).replace('.',','); $('#me-billing-notes').value=c.subscription?.billing_notes||''; const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns); openDialog('master-company-dialog'); }
+  function openCompany(id){ const c=companyById(id); if(!c)return; fillPlanSelects(); formStatus('#me-status'); $('#me-company-id').value=c.id; $('#me-company-title').textContent=c.name; $('#me-company-name').value=c.name; $('#me-company-status').value=c.status; $('#me-plan').value=c.subscription?.plan_id||''; $('#me-sub-status').value=c.subscription?.status||'active'; $('#me-manual-price').value=c.subscription?.manual_price_cents==null?'':(Number(c.subscription.manual_price_cents)/100).toFixed(2).replace('.',','); $('#me-billing-notes').value=c.subscription?.billing_notes||''; const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns); openDialog('master-company-dialog'); }
   function overrideObj(){ const o={}; [['max_devices','#me-max-devices'],['storage_limit_mb','#me-storage-mb'],['max_users','#me-max-users'],['max_campaigns','#me-max-campaigns']].forEach(([k,s])=>{const v=$(s).value.trim();if(v!=='')o[k]=Number(v)}); return o; }
-  async function saveCompany(ev){ev.preventDefault();const b=$('#me-save');busy(b,true);try{await master({action:'update_company',company_id:$('#me-company-id').value,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value||null,subscription_status:$('#me-sub-status').value,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim()});closeDialog('master-company-dialog');toast('Conta atualizada');await load();}catch(e){toast('Erro ao atualizar',e.message,'error')}finally{busy(b,false)}}
+  async function saveCompany(ev){
+    ev.preventDefault();
+    const b=$('#me-save');
+    const companyId=$('#me-company-id').value;
+    const expectedPlanId=$('#me-plan').value;
+    if(!expectedPlanId){formStatus('#me-status','❌ Selecione um plano.','error');return}
+    busy(b,true,'Salvando...');
+    formStatus('#me-status','Salvando alterações...','pending');
+    try{
+      const d=await saveCompanyRequest({
+        company_id:companyId,
+        company_name:$('#me-company-name').value.trim(),
+        company_status:$('#me-company-status').value,
+        plan_id:expectedPlanId,
+        subscription_status:$('#me-sub-status').value,
+        manual_price_cents:reaisToCents($('#me-manual-price').value),
+        limit_overrides:overrideObj(),
+        billing_notes:$('#me-billing-notes').value.trim()
+      });
+      if(!d?.ok || d?.subscription?.plan_id!==expectedPlanId) throw new Error('O servidor não confirmou o plano selecionado.');
+      await load();
+      const persisted=companyById(companyId);
+      if(persisted?.subscription?.plan_id!==expectedPlanId) throw new Error('O plano foi salvo, mas a confirmação do painel não corresponde.');
+      const planName=d?.plan?.name||planById(expectedPlanId)?.name||'selecionado';
+      formStatus('#me-status',`✅ Salvo com sucesso. Plano ${planName} aplicado.`,'success');
+      toast('Salvo com sucesso',`Plano ${planName} e dados da assinatura atualizados.`);
+    }catch(e){
+      formStatus('#me-status',`❌ ${e.message}`,'error');
+      toast('Erro ao salvar',e.message,'error');
+    }finally{busy(b,false)}
+  }
   async function toggleCompany(id,next){const c=companyById(id);if(!c)return;if(!confirm(`${next==='suspended'?'Suspender':'Reativar'} a conta “${c.name}”?`))return;try{await master({action:'update_company',company_id:id,company_status:next,subscription_status:next==='suspended'?'suspended':'active'});toast(next==='suspended'?'Conta suspensa':'Conta reativada');await load()}catch(e){toast('Não foi possível alterar a conta',e.message,'error')}}
   function openUsers(id){const c=companyById(id);if(!c)return;state.selectedCompanyId=id;$('#mu-company-id').value=id;$('#mu-company-title').textContent=`Usuários • ${c.name}`;renderUsers(c);$('#master-add-user-form').reset();openDialog('master-users-dialog')}
   function renderUsers(c){$('#master-users-list').innerHTML=c.members.map(m=>`<div class="user-row"><div><strong>${esc(m.user?.display_name||m.user?.email||'Usuário')}</strong><small>${esc(m.user?.email||'')} • ${m.role==='owner'?'Proprietário':m.role} • ${m.status}</small></div>${m.role==='owner'?'<span class="status active">Protegido</span>':`<button class="small-button" data-toggle-member="${m.id}" data-next-member="${m.status==='active'?'disabled':'active'}">${m.status==='active'?'Desativar':'Ativar'}</button>`}${state.role==='super_admin'?`<button class="small-button" data-reset-user="${m.user_id}">Nova senha</button>`:''}</div>`).join('')}
   async function addUser(ev){ev.preventDefault();const b=$('#mu-add');busy(b,true,'Adicionando...');try{const d=await master({action:'add_user',company_id:$('#mu-company-id').value,email:$('#mu-email').value.trim(),display_name:$('#mu-name').value.trim(),role:$('#mu-role').value,temporary_password:$('#mu-password').value});toast('Usuário adicionado',d.delivery==='invite'?'Convite enviado.':d.delivery==='temporary_password'?'Senha temporária criada.':'Usuário existente vinculado.');await load();openUsers($('#mu-company-id').value)}catch(e){toast('Erro ao adicionar usuário',e.message,'error')}finally{busy(b,false)}}
   async function toggleMember(id,status){try{await master({action:'update_member',member_id:id,status});toast('Usuário atualizado');const cid=$('#mu-company-id').value;await load();openUsers(cid)}catch(e){toast('Erro ao atualizar usuário',e.message,'error')}}
   async function resetUser(id){const pw=prompt('Digite uma nova senha temporária com pelo menos 8 caracteres:');if(!pw)return;if(pw.length<8){toast('Senha muito curta','Use pelo menos 8 caracteres.','error');return}try{await master({action:'set_user_password',user_id:id,temporary_password:pw});toast('Senha temporária atualizada')}catch(e){toast('Erro ao redefinir senha',e.message,'error')}}
-  function planStatus(message='',type=''){const el=$('#mp-status');if(!el)return;el.textContent=message;el.className=`form-status ${type}`.trim();el.classList.toggle('hidden',!message)}
+  function planStatus(message='',type=''){formStatus('#mp-status',message,type)}
   function planIntOrNull(selector){const v=$(selector).value.trim();return v===''?null:Number(v)}
   function friendlyPlanError(error){const m=String(error?.message||'Erro desconhecido');if(/super_admin_required/i.test(m))return 'Sua sessão não tem permissão de Super Master.';if(/plan_slug_already_exists|plans_slug_key|duplicate key.*slug/i.test(m))return 'Já existe um plano com esse slug.';if(/invalid_plan_slug/i.test(m))return 'O slug deve usar apenas letras minúsculas, números e hífen.';if(/invalid_plan_name/i.test(m))return 'Informe um nome de plano válido.';if(/invalid_plan_price/i.test(m))return 'Informe um preço mensal válido.';if(/plan_not_found/i.test(m))return 'Este plano não foi encontrado. Atualize a página e tente novamente.';if(/plan_save_failed|plan_save_unexpected_error/i.test(m))return 'Não foi possível salvar o plano no servidor. Tente novamente.';return m}
   function openPlan(id=null){ if(state.role!=='super_admin'){toast('Somente o Super Master pode editar planos.','','error');return} const p=id?planById(id):null; $('#master-plan-form').reset(); planStatus(); $('#mp-id').value=p?.id||''; $('#mp-title').textContent=p?'Editar plano':'Novo plano'; $('#mp-name').value=p?.name||''; $('#mp-slug').value=p?.slug||''; $('#mp-description').value=p?.description||''; $('#mp-price').value=p?(p.monthly_price_cents/100).toFixed(2).replace('.',','):''; $('#mp-order').value=p?.sort_order||0; $('#mp-devices').value=numOrBlank(p?.max_devices); $('#mp-storage').value=numOrBlank(p?.storage_limit_mb); $('#mp-users').value=numOrBlank(p?.max_users); $('#mp-campaigns').value=numOrBlank(p?.max_campaigns); $('#mp-active').checked=p?.is_active!==false; openDialog('master-plan-dialog'); }
