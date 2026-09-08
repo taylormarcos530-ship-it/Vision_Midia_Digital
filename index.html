@@ -498,6 +498,22 @@
   </dialog>
 
 
+
+  <dialog id="view-tv-dialog" class="app-dialog large-dialog">
+    <div class="dialog-body tv-viewer-dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">VISUALIZAÇÃO DA TV</span><h3 id="view-tv-title">TV</h3><p id="view-tv-status" class="dialog-subtitle">—</p></div>
+        <button class="icon-button" data-close-dialog="view-tv-dialog" type="button">×</button>
+      </div>
+      <div id="view-tv-preview" class="tv-viewer-preview"><div class="tv-viewer-empty">Carregando…</div></div>
+      <div class="tv-viewer-footer">
+        <small id="view-tv-captured-at">Sem captura disponível</small>
+        <button id="view-tv-refresh" class="button primary" type="button">📷 Atualizar agora</button>
+      </div>
+      <p class="form-hint">A visualização usa uma captura enviada pelo Vision Player. Não é transmissão de vídeo ao vivo; o botão Atualizar agora solicita uma nova imagem da tela.</p>
+    </div>
+  </dialog>
+
   <dialog id="replace-device-dialog" class="app-dialog">
     <form id="replace-device-form" class="dialog-body">
       <div class="dialog-header">

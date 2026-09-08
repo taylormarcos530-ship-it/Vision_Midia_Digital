@@ -36,6 +36,7 @@
     reportLoading: false,
     activeView: 'dashboard',
     editingPlaylistId: null,
+    viewingDeviceId: null,
     isBusy: false,
   };
 
@@ -233,7 +234,27 @@
   }
 
   async function loadPublicConfig() {
-    const data = await functionRequest('public-config', { authenticated: false, body: {} });
+    let data = null;
+    try {
+      data = await functionRequest('public-config', { authenticated: false, body: {} });
+    } catch (primaryError) {
+      // Fallback público: os planos ativos e a configuração pública possuem RLS de leitura anon.
+      try {
+        const headers = { apikey: CONFIG.supabasePublishableKey, 'Content-Type': 'application/json' };
+        const [plansResponse, configResponse] = await Promise.all([
+          fetch(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }),
+          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
+        ]);
+        if (!plansResponse.ok || !configResponse.ok) throw primaryError;
+        const plans = await plansResponse.json();
+        const configs = await configResponse.json();
+        data = { ok: true, plans: plans || [], config: configs?.[0] || {} };
+      } catch (fallbackError) {
+        const select = $('#signup-plan');
+        if (select) select.innerHTML = '<option value="">Não foi possível carregar os planos</option>';
+        throw fallbackError;
+      }
+    }
     state.publicConfig = data || { config: {}, plans: [] };
     const select = $('#signup-plan');
     if (select) {
@@ -528,6 +549,7 @@
         <div class="device-card-head">
           <div class="device-card-title"><strong>${escapeHtml(device.name)}</strong><span>${escapeHtml(platformLabel(device.platform))}</span></div>
           <div class="card-menu">
+            <button class="small-icon-button view-tv-button" data-view-device="${device.id}" title="Ver a captura atual desta TV em tamanho maior">👁 Ver TV</button>
             <button class="small-icon-button capture-button" data-capture-device="${device.id}" title="Capturar o que está passando agora">📷 Capturar</button>
             ${['owner','admin'].includes(state.companyRole) ? `<button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>` : ''}
             <button class="small-icon-button" data-edit-device="${device.id}" title="Editar">✎</button>
@@ -564,6 +586,54 @@
         target.replaceChildren(img);
         target.dataset.loaded = '1';
       } catch { target.textContent = 'Captura indisponível'; }
+    }
+  }
+
+
+  async function renderTvViewer(deviceId) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    state.viewingDeviceId = deviceId;
+    $('#view-tv-title').textContent = device.name;
+    $('#view-tv-status').textContent = `${statusLabel(effectiveDeviceStatus(device))} • ${formatLastSeen(device.last_seen_at)}`;
+    const preview = $('#view-tv-preview');
+    const shot = latestScreenshotForDevice(deviceId);
+    if (!shot?.storage_path) {
+      preview.innerHTML = '<div class="tv-viewer-empty">Ainda não há captura desta TV.<br><small>Use “Atualizar agora” para solicitar uma imagem do que está passando.</small></div>';
+      $('#view-tv-captured-at').textContent = 'Sem captura disponível';
+      return;
+    }
+    preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
+    $('#view-tv-captured-at').textContent = `Capturada em ${formatMonitorDateTime(shot.captured_at)}`;
+    try {
+      const url = await getSignedMediaUrl(shot.storage_path);
+      if (state.viewingDeviceId !== deviceId) return;
+      const img = new Image();
+      img.alt = `Captura da TV ${device.name}`;
+      img.src = url;
+      preview.replaceChildren(img);
+    } catch {
+      preview.innerHTML = '<div class="tv-viewer-empty">Não foi possível abrir a captura.</div>';
+    }
+  }
+
+  async function openTvViewer(deviceId) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    openDialog('view-tv-dialog');
+    await renderTvViewer(deviceId);
+  }
+
+  async function refreshTvViewer() {
+    const deviceId = state.viewingDeviceId;
+    if (!deviceId) return;
+    const button = $('#view-tv-refresh');
+    setBusy(button, true, 'Atualizando...');
+    try {
+      await requestDeviceScreenshot(deviceId);
+      await renderTvViewer(deviceId);
+    } finally {
+      setBusy(button, false);
     }
   }
 
@@ -2194,6 +2264,7 @@
     });
     $('#monitor-severity-filter').addEventListener('change', renderMonitoring);
     $('#pair-device-form').addEventListener('submit', handlePairDevice);
+    $('#view-tv-refresh').addEventListener('click', refreshTvViewer);
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
@@ -2225,6 +2296,8 @@
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
     document.addEventListener('click', event => {
+      const viewDevice = event.target.closest('[data-view-device]');
+      if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
       const captureDevice = event.target.closest('[data-capture-device]');
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
       const replaceDevice = event.target.closest('[data-replace-device]');
@@ -2297,6 +2370,7 @@
     });
     document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
+    $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; });
     $('#playlist-items-dialog').addEventListener('close', () => { state.editingPlaylistId = null; state.selectedPlaylistItemIds = new Set(); });
   }
 
