@@ -1,184 +1,22 @@
 name: Fix Player Playlist Report
-
 on:
   push:
     branches: [main]
     paths:
       - '.github/workflows/fix-player-playlist-report.yml'
-
 permissions:
   contents: write
-
 jobs:
   patch:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-      - name: Apply isolated fixes
+      - name: Apply targeted patch
         shell: bash
         run: |
           set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import re
-
-          # 1) Player: fit full media without cropping, including stubborn Android/WebView caches.
-          pc = Path('player.css')
-          s = pc.read_text()
-          s = s.replace(
-            '.media-stage { position: absolute; inset: 0; display: grid; place-items: center; background: #000; }\n.media-stage img, .media-stage video { width: 100%; height: 100%; object-fit: contain; background: #000; }',
-            '.media-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; background: #000; }\n.media-stage img, .media-stage video { display:block; width:100%; height:100%; max-width:100vw; max-height:100vh; object-fit:contain !important; object-position:center center !important; background:#000; transform:none !important; }'
-          )
-          pc.write_text(s)
-
-          pj = Path('player.js')
-          s = pj.read_text()
-          if "img.style.objectFit = 'contain';" not in s:
-            s = s.replace("        img.src = url;\n        stage.appendChild(img);", "        img.src = url;\n        img.style.width = '100%';\n        img.style.height = '100%';\n        img.style.objectFit = 'contain';\n        img.style.objectPosition = 'center';\n        stage.appendChild(img);", 1)
-          if "video.style.objectFit = 'contain';" not in s:
-            s = s.replace("        video.preload = 'auto';\n        stage.appendChild(video);", "        video.preload = 'auto';\n        video.style.width = '100%';\n        video.style.height = '100%';\n        video.style.objectFit = 'contain';\n        video.style.objectPosition = 'center';\n        stage.appendChild(video);", 1)
-          pj.write_text(s)
-
-          sw = Path('sw.js')
-          s = sw.read_text().replace("const CACHE = 'vision-midia-shell-v5';", "const CACHE = 'vision-midia-shell-v6';")
-          sw.write_text(s)
-
-          # 2) Playlist editor: thumbnails, order state and per-image duration control.
-          app = Path('app.js')
-          s = app.read_text()
-          replacement = r'''  function renderPlaylistEditor() {
-    const playlist = state.playlists.find(p => p.id === state.editingPlaylistId);
-    if (!playlist) return;
-    $('#playlist-items-title').textContent = playlist.name;
-    const items = state.playlistItems
-      .filter(i => i.playlist_id === playlist.id)
-      .sort((a,b) => a.position - b.position);
-    const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
-
-    const list = $('#playlist-items-list');
-    $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
-    list.innerHTML = items.map((item, index) => {
-      const media = mediaById[item.media_id];
-      const isImage = media?.media_type === 'image';
-      const imageSeconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
-      const details = [media?.media_type || '', media?.width && media?.height ? `${media.width}×${media.height}` : ''].filter(Boolean).join(' • ');
-      return `
-        <div class="sortable-row playlist-item-row">
-          <span class="playlist-order-badge">${index + 1}</span>
-          <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="grow"><strong>${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(details)}</small><span class="playlist-selection-state selected">Na playlist • ordem ${index + 1}</span></div>
-          ${isImage ? `<label class="playlist-duration-control">Tempo <span><input type="number" min="1" max="86400" step="1" value="${imageSeconds}" data-item-duration-input="${item.id}" /> s</span></label><button class="small-icon-button duration-save-button" data-save-item-duration="${item.id}">Salvar tempo</button>` : `<span class="playlist-video-duration">${media?.duration_seconds ? `Vídeo ${escapeHtml(formatDuration(media.duration_seconds))}` : 'Tempo do vídeo'}</span>`}
-          <div class="order-buttons">
-            <button class="small-icon-button" data-move-item="${item.id}" data-direction="up" ${index === 0 ? 'disabled' : ''}>↑</button>
-            <button class="small-icon-button" data-move-item="${item.id}" data-direction="down" ${index === items.length - 1 ? 'disabled' : ''}>↓</button>
-            <button class="small-icon-button" data-remove-item="${item.id}">×</button>
-          </div>
-        </div>
-      `;
-    }).join('');
-
-    const picker = $('#playlist-media-picker');
-    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
-    const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
-    picker.innerHTML = state.media.map(media => {
-      const order = included.get(media.id);
-      return `
-        <div class="picker-row ${order ? 'already-selected' : ''}">
-          <div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}</small><span class="playlist-selection-state ${order ? 'selected' : ''}">${order ? `Já adicionada • ordem ${order}` : 'Ainda não selecionada'}</span></div>
-          <button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order ? 'disabled' : ''}>${order ? 'Adicionada' : '+ Adicionar'}</button>
-        </div>`;
-    }).join('');
-    hydratePlaylistPreviews();
-  }
-
-  async function hydratePlaylistPreviews() {
-    const visibleIds = new Set($$('[data-playlist-media-preview]').map(el => el.dataset.playlistMediaPreview).filter(Boolean));
-    for (const media of state.media.filter(item => visibleIds.has(item.id))) {
-      const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
-      if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        targets.forEach(target => {
-          if (target.dataset.loaded === '1') return;
-          target.dataset.loaded = '1';
-          if (media.media_type === 'image') {
-            const img = document.createElement('img'); img.alt = media.name; img.loading = 'lazy'; img.src = url; target.prepend(img);
-          } else {
-            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'metadata'; video.src = url; target.prepend(video);
-            video.addEventListener('loadedmetadata', () => { try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {} }, { once:true });
-          }
-        });
-      } catch { /* keep placeholder */ }
-    }
-  }
-
-'''
-          s, n = re.subn(r"  function renderPlaylistEditor\(\) \{.*?\n  const WEEKDAY_NAMES", replacement + '  const WEEKDAY_NAMES', s, count=1, flags=re.S)
-          if n != 1: raise SystemExit('renderPlaylistEditor patch failed')
-
-          duration_fn = r'''  async function savePlaylistItemDuration(itemId) {
-    const input = $(`[data-item-duration-input="${CSS.escape(itemId)}"]`);
-    const seconds = Number(input?.value || 0);
-    if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) return toast('Tempo inválido', 'Use de 1 a 86400 segundos.', 'error');
-    try {
-      await restRequest('playlist_items', {
-        method: 'PATCH',
-        query: `id=eq.${encodeURIComponent(itemId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
-        body: { duration_override_seconds: Math.round(seconds) },
-        prefer: 'return=minimal',
-      });
-      const local = state.playlistItems.find(item => item.id === itemId);
-      if (local) local.duration_override_seconds = Math.round(seconds);
-      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
-      renderPlaylistEditor();
-    } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
-  }
-
-'''
-          marker = '  async function removePlaylistItem(itemId) {'
-          if 'async function savePlaylistItemDuration' not in s:
-            if marker not in s: raise SystemExit('duration insertion marker missing')
-            s = s.replace(marker, duration_fn + marker, 1)
-
-          # New images enter with an explicit 10-second default, videos keep their natural duration.
-          old = "          media_id: mediaId,\n          position: nextPosition,\n          enabled: true,"
-          new = "          media_id: mediaId,\n          position: nextPosition,\n          duration_override_seconds: state.media.find(m => m.id === mediaId)?.media_type === 'image' ? 10 : null,\n          enabled: true,"
-          if old in s: s = s.replace(old, new, 1)
-
-          click_marker = "      const removeItem = event.target.closest('[data-remove-item]');"
-          click_code = "      const saveDuration = event.target.closest('[data-save-item-duration]');\n      if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);\n"
-          if click_code.strip() not in s:
-            if click_marker not in s: raise SystemExit('click insertion marker missing')
-            s = s.replace(click_marker, click_code + click_marker, 1)
-          app.write_text(s)
-
-          # 3) Playlist visual styles and previews should fit, never crop.
-          css = Path('styles.css')
-          c = css.read_text()
-          if '.playlist-thumb{' not in c:
-            c += r'''
-
-/* Playlist editor: preview, ordering and per-image duration */
-.playlist-item-row,.picker-row{min-height:68px}.playlist-order-badge{display:grid;place-items:center;flex:0 0 28px;height:28px;border-radius:9px;background:#20304a;color:#dce8ff;font-weight:800}.playlist-thumb{position:relative;flex:0 0 88px;width:88px;height:52px;display:grid;place-items:center;overflow:hidden;border:1px solid #31445f;border-radius:9px;background:#05080d;color:#71829c}.playlist-thumb img,.playlist-thumb video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain!important;object-position:center;background:#000}.playlist-selection-state{display:block;margin-top:4px;font-size:9px;color:#7f91ae}.playlist-selection-state.selected{color:#72d8ae}.picker-row.already-selected{border-color:#285b49;background:#10241f}.picker-add-button{min-width:90px}.playlist-duration-control{display:grid!important;gap:4px!important;min-width:82px;font-size:9px!important;color:#8fa1bb!important}.playlist-duration-control>span{display:flex;align-items:center;gap:4px}.playlist-duration-control input{width:64px;padding:7px 8px;text-align:center}.duration-save-button{white-space:nowrap}.playlist-video-duration{font-size:9px;color:#8799b3;white-space:nowrap}@media(max-width:720px){.playlist-item-row,.picker-row{align-items:flex-start;flex-wrap:wrap}.playlist-thumb{flex-basis:72px;width:72px;height:46px}.playlist-item-row .grow,.picker-row .grow{min-width:calc(100% - 120px)}.playlist-duration-control{margin-left:38px}.order-buttons{margin-left:auto}.picker-add-button{margin-left:auto}}
-'''
-          css.write_text(c)
-
-          # 4) Report copy: make source and repeated-exhibition counting explicit.
-          index = Path('index.html')
-          h = index.read_text()
-          h = h.replace('<article class="metric-card"><span>Exibições iniciadas</span><strong id="report-started">0</strong><small>Eventos registrados</small></article>', '<article class="metric-card"><span>Exibições registradas</span><strong id="report-started">0</strong><small>Eventos reais recebidos do Player</small></article>')
-          period = '<div class="report-period-line">\n              <strong id="report-period-label">Período</strong>\n              <span id="report-generated-label"></span>\n            </div>'
-          if 'id="report-source-note"' not in h and period in h:
-            h = h.replace(period, period + '\n            <div id="report-source-note" class="report-source-note">Fonte: eventos reais enviados pelo Vision Player. Cada repetição da mídia conta como uma exibição.</div>', 1)
-          index.write_text(h)
-
-          c = css.read_text()
-          if '.report-source-note{' not in c:
-            c += '\n.report-source-note{margin:-2px 0 14px;padding:10px 12px;border:1px solid #263b58;border-radius:10px;background:#0d1727;color:#8fa1bc;font-size:11px}.report-source-note strong{color:#cbd8eb}\n'
-          css.write_text(c)
-          PY
-
+          echo 'ZnJvbSBwYXRobGliIGltcG9ydCBQYXRoCmltcG9ydCByZQoKIyAxKSBQbGF5ZXI6IGZvcmNlIGNvbnRhaW4gYW5kIHJlZnJlc2ggc2VydmljZS13b3JrZXIgY2FjaGUuCnBjID0gUGF0aCgncGxheWVyLmNzcycpCnMgPSBwYy5yZWFkX3RleHQoKQpvbGRfY3NzID0gIi5tZWRpYS1zdGFnZSB7IHBvc2l0aW9uOiBhYnNvbHV0ZTsgaW5zZXQ6IDA7IGRpc3BsYXk6IGdyaWQ7IHBsYWNlLWl0ZW1zOiBjZW50ZXI7IGJhY2tncm91bmQ6ICMwMDA7IH1cbi5tZWRpYS1zdGFnZSBpbWcsIC5tZWRpYS1zdGFnZSB2aWRlbyB7IHdpZHRoOiAxMDAlOyBoZWlnaHQ6IDEwMCU7IG9iamVjdC1maXQ6IGNvbnRhaW47IGJhY2tncm91bmQ6ICMwMDA7IH0iCm5ld19jc3MgPSAiLm1lZGlhLXN0YWdlIHsgcG9zaXRpb246IGFic29sdXRlOyBpbnNldDogMDsgZGlzcGxheTogZ3JpZDsgcGxhY2UtaXRlbXM6IGNlbnRlcjsgb3ZlcmZsb3c6IGhpZGRlbjsgYmFja2dyb3VuZDogIzAwMDsgfVxuLm1lZGlhLXN0YWdlIGltZywgLm1lZGlhLXN0YWdlIHZpZGVvIHsgZGlzcGxheTpibG9jazsgd2lkdGg6MTAwJTsgaGVpZ2h0OjEwMCU7IG1heC13aWR0aDoxMDB2dzsgbWF4LWhlaWdodDoxMDB2aDsgb2JqZWN0LWZpdDpjb250YWluICFpbXBvcnRhbnQ7IG9iamVjdC1wb3NpdGlvbjpjZW50ZXIgY2VudGVyICFpbXBvcnRhbnQ7IGJhY2tncm91bmQ6IzAwMDsgdHJhbnNmb3JtOm5vbmUgIWltcG9ydGFudDsgfSIKaWYgb2xkX2NzcyBpbiBzOgogICAgcyA9IHMucmVwbGFjZShvbGRfY3NzLCBuZXdfY3NzLCAxKQplbGlmICdvYmplY3QtZml0OmNvbnRhaW4gIWltcG9ydGFudCcgbm90IGluIHM6CiAgICByYWlzZSBTeXN0ZW1FeGl0KCdwbGF5ZXIgY3NzIHRhcmdldCBub3QgZm91bmQnKQpwYy53cml0ZV90ZXh0KHMpCgpwaiA9IFBhdGgoJ3BsYXllci5qcycpCnMgPSBwai5yZWFkX3RleHQoKQppZiAiaW1nLnN0eWxlLm9iamVjdEZpdCA9ICdjb250YWluJzsiIG5vdCBpbiBzOgogICAgb2xkID0gIiAgICAgICAgaW1nLnNyYyA9IHVybDtcbiAgICAgICAgc3RhZ2UuYXBwZW5kQ2hpbGQoaW1nKTsiCiAgICBuZXcgPSAiICAgICAgICBpbWcuc3JjID0gdXJsO1xuICAgICAgICBpbWcuc3R5bGUud2lkdGggPSAnMTAwJSc7XG4gICAgICAgIGltZy5zdHlsZS5oZWlnaHQgPSAnMTAwJSc7XG4gICAgICAgIGltZy5zdHlsZS5vYmplY3RGaXQgPSAnY29udGFpbic7XG4gICAgICAgIGltZy5zdHlsZS5vYmplY3RQb3NpdGlvbiA9ICdjZW50ZXInO1xuICAgICAgICBzdGFnZS5hcHBlbmRDaGlsZChpbWcpOyIKICAgIGlmIG9sZCBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgncGxheWVyIGltYWdlIGluc2VydGlvbiB0YXJnZXQgbm90IGZvdW5kJykKICAgIHMgPSBzLnJlcGxhY2Uob2xkLCBuZXcsIDEpCmlmICJ2aWRlby5zdHlsZS5vYmplY3RGaXQgPSAnY29udGFpbic7IiBub3QgaW4gczoKICAgIG9sZCA9ICIgICAgICAgIHZpZGVvLnByZWxvYWQgPSAnYXV0byc7XG4gICAgICAgIHN0YWdlLmFwcGVuZENoaWxkKHZpZGVvKTsiCiAgICBuZXcgPSAiICAgICAgICB2aWRlby5wcmVsb2FkID0gJ2F1dG8nO1xuICAgICAgICB2aWRlby5zdHlsZS53aWR0aCA9ICcxMDAlJztcbiAgICAgICAgdmlkZW8uc3R5bGUuaGVpZ2h0ID0gJzEwMCUnO1xuICAgICAgICB2aWRlby5zdHlsZS5vYmplY3RGaXQgPSAnY29udGFpbic7XG4gICAgICAgIHZpZGVvLnN0eWxlLm9iamVjdFBvc2l0aW9uID0gJ2NlbnRlcic7XG4gICAgICAgIHN0YWdlLmFwcGVuZENoaWxkKHZpZGVvKTsiCiAgICBpZiBvbGQgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3BsYXllciB2aWRlbyBpbnNlcnRpb24gdGFyZ2V0IG5vdCBmb3VuZCcpCiAgICBzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQpwai53cml0ZV90ZXh0KHMpCgpzdyA9IFBhdGgoJ3N3LmpzJykKcyA9IHN3LnJlYWRfdGV4dCgpCmlmICJ2aXNpb24tbWlkaWEtc2hlbGwtdjYiIG5vdCBpbiBzOgogICAgaWYgInZpc2lvbi1taWRpYS1zaGVsbC12NSIgbm90IGluIHM6IHJhaXNlIFN5c3RlbUV4aXQoJ3NlcnZpY2Ugd29ya2VyIGNhY2hlIHZlcnNpb24gdGFyZ2V0IG5vdCBmb3VuZCcpCiAgICBzID0gcy5yZXBsYWNlKCJ2aXNpb24tbWlkaWEtc2hlbGwtdjUiLCAidmlzaW9uLW1pZGlhLXNoZWxsLXY2IiwgMSkKc3cud3JpdGVfdGV4dChzKQoKIyAyKSBQbGF5bGlzdCBlZGl0b3Igd2l0aCBwcmV2aWV3cywgb3JkZXJpbmcgYW5kIHBlci1pbWFnZSBkdXJhdGlvbi4KYXBwID0gUGF0aCgnYXBwLmpzJykKcyA9IGFwcC5yZWFkX3RleHQoKQpyZXBsYWNlbWVudCA9ICcnJyAgZnVuY3Rpb24gcmVuZGVyUGxheWxpc3RFZGl0b3IoKSB7CiAgICBjb25zdCBwbGF5bGlzdCA9IHN0YXRlLnBsYXlsaXN0cy5maW5kKHAgPT4gcC5pZCA9PT0gc3RhdGUuZWRpdGluZ1BsYXlsaXN0SWQpOwogICAgaWYgKCFwbGF5bGlzdCkgcmV0dXJuOwogICAgJCgnI3BsYXlsaXN0LWl0ZW1zLXRpdGxlJykudGV4dENvbnRlbnQgPSBwbGF5bGlzdC5uYW1lOwogICAgY29uc3QgaXRlbXMgPSBzdGF0ZS5wbGF5bGlzdEl0ZW1zCiAgICAgIC5maWx0ZXIoaSA9PiBpLnBsYXlsaXN0X2lkID09PSBwbGF5bGlzdC5pZCkKICAgICAgLnNvcnQoKGEsYikgPT4gYS5wb3NpdGlvbiAtIGIucG9zaXRpb24pOwogICAgY29uc3QgbWVkaWFCeUlkID0gT2JqZWN0LmZyb21FbnRyaWVzKHN0YXRlLm1lZGlhLm1hcChtID0+IFttLmlkLCBtXSkpOwoKICAgIGNvbnN0IGxpc3QgPSAkKCcjcGxheWxpc3QtaXRlbXMtbGlzdCcpOwogICAgJCgnI3BsYXlsaXN0LWl0ZW1zLWVtcHR5JykuY2xhc3NMaXN0LnRvZ2dsZSgnaGlkZGVuJywgaXRlbXMubGVuZ3RoID4gMCk7CiAgICBsaXN0LmlubmVySFRNTCA9IGl0ZW1zLm1hcCgoaXRlbSwgaW5kZXgpID0+IHsKICAgICAgY29uc3QgbWVkaWEgPSBtZWRpYUJ5SWRbaXRlbS5tZWRpYV9pZF07CiAgICAgIGNvbnN0IGlzSW1hZ2UgPSBtZWRpYT8ubWVkaWFfdHlwZSA9PT0gJ2ltYWdlJzsKICAgICAgY29uc3QgaW1hZ2VTZWNvbmRzID0gTWF0aC5tYXgoMSwgTWF0aC5yb3VuZChOdW1iZXIoaXRlbS5kdXJhdGlvbl9vdmVycmlkZV9zZWNvbmRzIHx8IG1lZGlhPy5kdXJhdGlvbl9zZWNvbmRzIHx8IDEwKSkpOwogICAgICBjb25zdCBkZXRhaWxzID0gW21lZGlhPy5tZWRpYV90eXBlIHx8ICcnLCBtZWRpYT8ud2lkdGggJiYgbWVkaWE/LmhlaWdodCA/IGAke21lZGlhLndpZHRofcOXJHttZWRpYS5oZWlnaHR9YCA6ICcnXS5maWx0ZXIoQm9vbGVhbikuam9pbignIOKAoiAnKTsKICAgICAgcmV0dXJuIGAKICAgICAgICA8ZGl2IGNsYXNzPSJzb3J0YWJsZS1yb3cgcGxheWxpc3QtaXRlbS1yb3ciPgogICAgICAgICAgPHNwYW4gY2xhc3M9InBsYXlsaXN0LW9yZGVyLWJhZGdlIj4ke2luZGV4ICsgMX08L3NwYW4+CiAgICAgICAgICA8ZGl2IGNsYXNzPSJwbGF5bGlzdC10aHVtYiIgZGF0YS1wbGF5bGlzdC1tZWRpYS1wcmV2aWV3PSIke21lZGlhPy5pZCB8fCAnJ30iPjxzcGFuPiR7bWVkaWE/Lm1lZGlhX3R5cGUgPT09ICd2aWRlbycgPyAn4pa2JyA6ICfilqcnfTwvc3Bhbj48L2Rpdj4KICAgICAgICAgIDxkaXYgY2xhc3M9Imdyb3ciPjxzdHJvbmc+JHtlc2NhcGVIdG1sKG1lZGlhPy5uYW1lIHx8ICdNw61kaWEgcmVtb3ZpZGEnKX08L3N0cm9uZz48c21hbGw+JHtlc2NhcGVIdG1sKGRldGFpbHMpfTwvc21hbGw+PHNwYW4gY2xhc3M9InBsYXlsaXN0LXNlbGVjdGlvbi1zdGF0ZSBzZWxlY3RlZCI+TmEgcGxheWxpc3Qg4oCiIG9yZGVtICR7aW5kZXggKyAxfTwvc3Bhbj48L2Rpdj4KICAgICAgICAgICR7aXNJbWFnZSA/IGA8bGFiZWwgY2xhc3M9InBsYXlsaXN0LWR1cmF0aW9uLWNvbnRyb2wiPlRlbXBvIDxzcGFuPjxpbnB1dCB0eXBlPSJudW1iZXIiIG1pbj0iMSIgbWF4PSI4NjQwMCIgc3RlcD0iMSIgdmFsdWU9IiR7aW1hZ2VTZWNvbmRzfSIgZGF0YS1pdGVtLWR1cmF0aW9uLWlucHV0PSIke2l0ZW0uaWR9IiAvPiBzPC9zcGFuPjwvbGFiZWw+PGJ1dHRvbiBjbGFzcz0ic21hbGwtaWNvbi1idXR0b24gZHVyYXRpb24tc2F2ZS1idXR0b24iIGRhdGEtc2F2ZS1pdGVtLWR1cmF0aW9uPSIke2l0ZW0uaWR9Ij5TYWx2YXIgdGVtcG88L2J1dHRvbj5gIDogYDxzcGFuIGNsYXNzPSJwbGF5bGlzdC12aWRlby1kdXJhdGlvbiI+JHttZWRpYT8uZHVyYXRpb25fc2Vjb25kcyA/IGBWw61kZW8gJHtlc2NhcGVIdG1sKGZvcm1hdER1cmF0aW9uKG1lZGlhLmR1cmF0aW9uX3NlY29uZHMpKX1gIDogJ1RlbXBvIGRvIHbDrWRlbyd9PC9zcGFuPmB9CiAgICAgICAgICA8ZGl2IGNsYXNzPSJvcmRlci1idXR0b25zIj4KICAgICAgICAgICAgPGJ1dHRvbiBjbGFzcz0ic21hbGwtaWNvbi1idXR0b24iIGRhdGEtbW92ZS1pdGVtPSIke2l0ZW0uaWR9IiBkYXRhLWRpcmVjdGlvbj0idXAiICR7aW5kZXggPT09IDAgPyAnZGlzYWJsZWQnIDogJyd9PuKGkTwvYnV0dG9uPgogICAgICAgICAgICA8YnV0dG9uIGNsYXNzPSJzbWFsbC1pY29uLWJ1dHRvbiIgZGF0YS1tb3ZlLWl0ZW09IiR7aXRlbS5pZH0iIGRhdGEtZGlyZWN0aW9uPSJkb3duIiAke2luZGV4ID09PSBpdGVtcy5sZW5ndGggLSAxID8gJ2Rpc2FibGVkJyA6ICcnfT7ihpM8L2J1dHRvbj4KICAgICAgICAgICAgPGJ1dHRvbiBjbGFzcz0ic21hbGwtaWNvbi1idXR0b24iIGRhdGEtcmVtb3ZlLWl0ZW09IiR7aXRlbS5pZH0iPsOXPC9idXR0b24+CiAgICAgICAgICA8L2Rpdj4KICAgICAgICA8L2Rpdj4KICAgICAgYDsKICAgIH0pLmpvaW4oJycpOwoKICAgIGNvbnN0IHBpY2tlciA9ICQoJyNwbGF5bGlzdC1tZWRpYS1waWNrZXInKTsKICAgICQoJyNwbGF5bGlzdC1tZWRpYS1lbXB0eScpLmNsYXNzTGlzdC50b2dnbGUoJ2hpZGRlbicsIHN0YXRlLm1lZGlhLmxlbmd0aCA+IDApOwogICAgY29uc3QgaW5jbHVkZWQgPSBuZXcgTWFwKGl0ZW1zLm1hcCgoaXRlbSxpbmRleCkgPT4gW2l0ZW0ubWVkaWFfaWQsaW5kZXggKyAxXSkpOwogICAgcGlja2VyLmlubmVySFRNTCA9IHN0YXRlLm1lZGlhLm1hcChtZWRpYSA9PiB7CiAgICAgIGNvbnN0IG9yZGVyID0gaW5jbHVkZWQuZ2V0KG1lZGlhLmlkKTsKICAgICAgcmV0dXJuIGAKICAgICAgICA8ZGl2IGNsYXNzPSJwaWNrZXItcm93ICR7b3JkZXIgPyAnYWxyZWFkeS1zZWxlY3RlZCcgOiAnJ30iPgogICAgICAgICAgPGRpdiBjbGFzcz0icGxheWxpc3QtdGh1bWIiIGRhdGEtcGxheWxpc3QtbWVkaWEtcHJldmlldz0iJHttZWRpYS5pZH0iPjxzcGFuPiR7bWVkaWEubWVkaWFfdHlwZSA9PT0gJ3ZpZGVvJyA/ICfilrYnIDogJ+KWpyd9PC9zcGFuPjwvZGl2PgogICAgICAgICAgPGRpdiBjbGFzcz0iZ3JvdyI+PHN0cm9uZz4ke2VzY2FwZUh0bWwobWVkaWEubmFtZSl9PC9zdHJvbmc+PHNtYWxsPiR7ZXNjYXBlSHRtbChtZWRpYS5tZWRpYV90eXBlKX0g4oCiICR7ZXNjYXBlSHRtbChmb3JtYXRCeXRlcyhtZWRpYS5zaXplX2J5dGVzKSl9JHttZWRpYS53aWR0aCAmJiBtZWRpYS5oZWlnaHQgPyBgIOKAoiAke21lZGlhLndpZHRofcOXJHttZWRpYS5oZWlnaHR9YCA6ICcnfTwvc21hbGw+PHNwYW4gY2xhc3M9InBsYXlsaXN0LXNlbGVjdGlvbi1zdGF0ZSAke29yZGVyID8gJ3NlbGVjdGVkJyA6ICcnfSI+JHtvcmRlciA/IGBKw6EgYWRpY2lvbmFkYSDigKIgb3JkZW0gJHtvcmRlcn1gIDogJ0FpbmRhIG7Do28gc2VsZWNpb25hZGEnfTwvc3Bhbj48L2Rpdj4KICAgICAgICAgIDxidXR0b24gY2xhc3M9InNtYWxsLWljb24tYnV0dG9uIHBpY2tlci1hZGQtYnV0dG9uIiBkYXRhLWFkZC1tZWRpYS10by1wbGF5bGlzdD0iJHttZWRpYS5pZH0iICR7b3JkZXIgPyAnZGlzYWJsZWQnIDogJyd9PiR7b3JkZXIgPyAnQWRpY2lvbmFkYScgOiAnKyBBZGljaW9uYXInfTwvYnV0dG9uPgogICAgICAgIDwvZGl2PmA7CiAgICB9KS5qb2luKCcnKTsKICAgIGh5ZHJhdGVQbGF5bGlzdFByZXZpZXdzKCk7CiAgfQoKICBhc3luYyBmdW5jdGlvbiBoeWRyYXRlUGxheWxpc3RQcmV2aWV3cygpIHsKICAgIGNvbnN0IHZpc2libGVJZHMgPSBuZXcgU2V0KCQkKCdbZGF0YS1wbGF5bGlzdC1tZWRpYS1wcmV2aWV3XScpLm1hcChlbCA9PiBlbC5kYXRhc2V0LnBsYXlsaXN0TWVkaWFQcmV2aWV3KS5maWx0ZXIoQm9vbGVhbikpOwogICAgZm9yIChjb25zdCBtZWRpYSBvZiBzdGF0ZS5tZWRpYS5maWx0ZXIoaXRlbSA9PiB2aXNpYmxlSWRzLmhhcyhpdGVtLmlkKSkpIHsKICAgICAgY29uc3QgdGFyZ2V0cyA9ICQkKGBbZGF0YS1wbGF5bGlzdC1tZWRpYS1wcmV2aWV3PSIke0NTUy5lc2NhcGUobWVkaWEuaWQpfSJdYCk7CiAgICAgIGlmICghdGFyZ2V0cy5sZW5ndGggfHwgIW1lZGlhLnN0b3JhZ2VfcGF0aCB8fCAhWydpbWFnZScsJ3ZpZGVvJ10uaW5jbHVkZXMobWVkaWEubWVkaWFfdHlwZSkpIGNvbnRpbnVlOwogICAgICB0cnkgewogICAgICAgIGNvbnN0IHVybCA9IGF3YWl0IGdldFNpZ25lZE1lZGlhVXJsKG1lZGlhLnN0b3JhZ2VfcGF0aCk7CiAgICAgICAgdGFyZ2V0cy5mb3JFYWNoKHRhcmdldCA9PiB7CiAgICAgICAgICBpZiAodGFyZ2V0LmRhdGFzZXQubG9hZGVkID09PSAnMScpIHJldHVybjsKICAgICAgICAgIHRhcmdldC5kYXRhc2V0LmxvYWRlZCA9ICcxJzsKICAgICAgICAgIGlmIChtZWRpYS5tZWRpYV90eXBlID09PSAnaW1hZ2UnKSB7CiAgICAgICAgICAgIGNvbnN0IGltZyA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ2ltZycpOyBpbWcuYWx0ID0gbWVkaWEubmFtZTsgaW1nLmxvYWRpbmcgPSAnbGF6eSc7IGltZy5zcmMgPSB1cmw7IHRhcmdldC5wcmVwZW5kKGltZyk7CiAgICAgICAgICB9IGVsc2UgewogICAgICAgICAgICBjb25zdCB2aWRlbyA9IGRvY3VtZW50LmNyZWF0ZUVsZW1lbnQoJ3ZpZGVvJyk7IHZpZGVvLm11dGVkID0gdHJ1ZTsgdmlkZW8ucGxheXNJbmxpbmUgPSB0cnVlOyB2aWRlby5wcmVsb2FkID0gJ21ldGFkYXRhJzsgdmlkZW8uc3JjID0gdXJsOyB0YXJnZXQucHJlcGVuZCh2aWRlbyk7CiAgICAgICAgICAgIHZpZGVvLmFkZEV2ZW50TGlzdGVuZXIoJ2xvYWRlZG1ldGFkYXRhJywgKCkgPT4geyB0cnkgeyB2aWRlby5jdXJyZW50VGltZSA9IE1hdGgubWluKC4xLCBNYXRoLm1heCgwLCAodmlkZW8uZHVyYXRpb24gfHwgMSkgLyAxMCkpOyB9IGNhdGNoIHt9IH0sIHsgb25jZTp0cnVlIH0pOwogICAgICAgICAgfQogICAgICAgIH0pOwogICAgICB9IGNhdGNoIHsgLyoga2VlcCBwbGFjZWhvbGRlciAqLyB9CiAgICB9CiAgfQoKJycnCmlmICdhc3luYyBmdW5jdGlvbiBoeWRyYXRlUGxheWxpc3RQcmV2aWV3cygpJyBub3QgaW4gczoKICAgIHMsIG4gPSByZS5zdWJuKHIiICBmdW5jdGlvbiByZW5kZXJQbGF5bGlzdEVkaXRvclwoXCkgXHsuKj9cbiAgY29uc3QgV0VFS0RBWV9OQU1FUyIsIHJlcGxhY2VtZW50ICsgJyAgY29uc3QgV0VFS0RBWV9OQU1FUycsIHMsIGNvdW50PTEsIGZsYWdzPXJlLlMpCiAgICBpZiBuICE9IDE6IHJhaXNlIFN5c3RlbUV4aXQoJ3JlbmRlclBsYXlsaXN0RWRpdG9yIHJlcGxhY2VtZW50IGZhaWxlZCcpCgpkdXJhdGlvbl9mbiA9ICcnJyAgYXN5bmMgZnVuY3Rpb24gc2F2ZVBsYXlsaXN0SXRlbUR1cmF0aW9uKGl0ZW1JZCkgewogICAgY29uc3QgaW5wdXQgPSAkKGBbZGF0YS1pdGVtLWR1cmF0aW9uLWlucHV0PSIke0NTUy5lc2NhcGUoaXRlbUlkKX0iXWApOwogICAgY29uc3Qgc2Vjb25kcyA9IE51bWJlcihpbnB1dD8udmFsdWUgfHwgMCk7CiAgICBpZiAoIU51bWJlci5pc0Zpbml0ZShzZWNvbmRzKSB8fCBzZWNvbmRzIDwgMSB8fCBzZWNvbmRzID4gODY0MDApIHJldHVybiB0b2FzdCgnVGVtcG8gaW52w6FsaWRvJywgJ1VzZSBkZSAxIGEgODY0MDAgc2VndW5kb3MuJywgJ2Vycm9yJyk7CiAgICB0cnkgewogICAgICBhd2FpdCByZXN0UmVxdWVzdCgncGxheWxpc3RfaXRlbXMnLCB7CiAgICAgICAgbWV0aG9kOiAnUEFUQ0gnLAogICAgICAgIHF1ZXJ5OiBgaWQ9ZXEuJHtlbmNvZGVVUklDb21wb25lbnQoaXRlbUlkKX0mY29tcGFueV9pZD1lcS4ke2VuY29kZVVSSUNvbXBvbmVudChzdGF0ZS5jb21wYW55LmlkKX1gLAogICAgICAgIGJvZHk6IHsgZHVyYXRpb25fb3ZlcnJpZGVfc2Vjb25kczogTWF0aC5yb3VuZChzZWNvbmRzKSB9LAogICAgICAgIHByZWZlcjogJ3JldHVybj1taW5pbWFsJywKICAgICAgfSk7CiAgICAgIGNvbnN0IGxvY2FsID0gc3RhdGUucGxheWxpc3RJdGVtcy5maW5kKGl0ZW0gPT4gaXRlbS5pZCA9PT0gaXRlbUlkKTsKICAgICAgaWYgKGxvY2FsKSBsb2NhbC5kdXJhdGlvbl9vdmVycmlkZV9zZWNvbmRzID0gTWF0aC5yb3VuZChzZWNvbmRzKTsKICAgICAgdG9hc3QoJ1RlbXBvIGF0dWFsaXphZG8nLCBgQSBpbWFnZW0gZmljYXLDoSAke01hdGgucm91bmQoc2Vjb25kcyl9IHNlZ3VuZG8ocykgbmEgdGVsYS5gKTsKICAgICAgcmVuZGVyUGxheWxpc3RFZGl0b3IoKTsKICAgIH0gY2F0Y2ggKGVycm9yKSB7IHRvYXN0KCdFcnJvIGFvIHNhbHZhciB0ZW1wbycsIGVycm9yLm1lc3NhZ2UsICdlcnJvcicpOyB9CiAgfQoKJycnCmlmICdhc3luYyBmdW5jdGlvbiBzYXZlUGxheWxpc3RJdGVtRHVyYXRpb24nIG5vdCBpbiBzOgogICAgbWFya2VyID0gJyAgYXN5bmMgZnVuY3Rpb24gcmVtb3ZlUGxheWxpc3RJdGVtKGl0ZW1JZCkgeycKICAgIGlmIG1hcmtlciBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnZHVyYXRpb24gZnVuY3Rpb24gbWFya2VyIG5vdCBmb3VuZCcpCiAgICBzID0gcy5yZXBsYWNlKG1hcmtlciwgZHVyYXRpb25fZm4gKyBtYXJrZXIsIDEpCgpvbGQgPSAiICAgICAgICAgIG1lZGlhX2lkOiBtZWRpYUlkLFxuICAgICAgICAgIHBvc2l0aW9uOiBuZXh0UG9zaXRpb24sXG4gICAgICAgICAgZW5hYmxlZDogdHJ1ZSwiCm5ldyA9ICIgICAgICAgICAgbWVkaWFfaWQ6IG1lZGlhSWQsXG4gICAgICAgICAgcG9zaXRpb246IG5leHRQb3NpdGlvbixcbiAgICAgICAgICBkdXJhdGlvbl9vdmVycmlkZV9zZWNvbmRzOiBzdGF0ZS5tZWRpYS5maW5kKG0gPT4gbS5pZCA9PT0gbWVkaWFJZCk/Lm1lZGlhX3R5cGUgPT09ICdpbWFnZScgPyAxMCA6IG51bGwsXG4gICAgICAgICAgZW5hYmxlZDogdHJ1ZSwiCmlmICdkdXJhdGlvbl9vdmVycmlkZV9zZWNvbmRzOiBzdGF0ZS5tZWRpYS5maW5kJyBub3QgaW4gczoKICAgIGlmIG9sZCBub3QgaW4gczogcmFpc2UgU3lzdGVtRXhpdCgnYWRkIG1lZGlhIGJvZHkgdGFyZ2V0IG5vdCBmb3VuZCcpCiAgICBzID0gcy5yZXBsYWNlKG9sZCwgbmV3LCAxKQoKY2xpY2tfY29kZSA9ICIgICAgICBjb25zdCBzYXZlRHVyYXRpb24gPSBldmVudC50YXJnZXQuY2xvc2VzdCgnW2RhdGEtc2F2ZS1pdGVtLWR1cmF0aW9uXScpO1xuICAgICAgaWYgKHNhdmVEdXJhdGlvbikgcmV0dXJuIHNhdmVQbGF5bGlzdEl0ZW1EdXJhdGlvbihzYXZlRHVyYXRpb24uZGF0YXNldC5zYXZlSXRlbUR1cmF0aW9uKTtcbiIKaWYgY2xpY2tfY29kZS5zdHJpcCgpIG5vdCBpbiBzOgogICAgbWFya2VyID0gIiAgICAgIGNvbnN0IHJlbW92ZUl0ZW0gPSBldmVudC50YXJnZXQuY2xvc2VzdCgnW2RhdGEtcmVtb3ZlLWl0ZW1dJyk7IgogICAgaWYgbWFya2VyIG5vdCBpbiBzOiByYWlzZSBTeXN0ZW1FeGl0KCdkdXJhdGlvbiBjbGljayBtYXJrZXIgbm90IGZvdW5kJykKICAgIHMgPSBzLnJlcGxhY2UobWFya2VyLCBjbGlja19jb2RlICsgbWFya2VyLCAxKQphcHAud3JpdGVfdGV4dChzKQoKIyAzKSBTdHlsZXMgZm9yIHByZXZpZXdzIGFuZCBjb250cm9scy4KY3NzID0gUGF0aCgnc3R5bGVzLmNzcycpCmMgPSBjc3MucmVhZF90ZXh0KCkKaWYgJy5wbGF5bGlzdC10aHVtYnsnIG5vdCBpbiBjOgogICAgYyArPSAnJycKCi8qIFBsYXlsaXN0IGVkaXRvcjogcHJldmlldywgb3JkZXJpbmcgYW5kIHBlci1pbWFnZSBkdXJhdGlvbiAqLwoucGxheWxpc3QtaXRlbS1yb3csLnBpY2tlci1yb3d7bWluLWhlaWdodDo2OHB4fS5wbGF5bGlzdC1vcmRlci1iYWRnZXtkaXNwbGF5OmdyaWQ7cGxhY2UtaXRlbXM6Y2VudGVyO2ZsZXg6MCAwIDI4cHg7aGVpZ2h0OjI4cHg7Ym9yZGVyLXJhZGl1czo5cHg7YmFja2dyb3VuZDojMjAzMDRhO2NvbG9yOiNkY2U4ZmY7Zm9udC13ZWlnaHQ6ODAwfS5wbGF5bGlzdC10aHVtYntwb3NpdGlvbjpyZWxhdGl2ZTtmbGV4OjAgMCA4OHB4O3dpZHRoOjg4cHg7aGVpZ2h0OjUycHg7ZGlzcGxheTpncmlkO3BsYWNlLWl0ZW1zOmNlbnRlcjtvdmVyZmxvdzpoaWRkZW47Ym9yZGVyOjFweCBzb2xpZCAjMzE0NDVmO2JvcmRlci1yYWRpdXM6OXB4O2JhY2tncm91bmQ6IzA1MDgwZDtjb2xvcjojNzE4MjljfS5wbGF5bGlzdC10aHVtYiBpbWcsLnBsYXlsaXN0LXRodW1iIHZpZGVve3Bvc2l0aW9uOmFic29sdXRlO2luc2V0OjA7d2lkdGg6MTAwJTtoZWlnaHQ6MTAwJTtvYmplY3QtZml0OmNvbnRhaW4haW1wb3J0YW50O29iamVjdC1wb3NpdGlvbjpjZW50ZXI7YmFja2dyb3VuZDojMDAwfS5wbGF5bGlzdC1zZWxlY3Rpb24tc3RhdGV7ZGlzcGxheTpibG9jazttYXJnaW4tdG9wOjRweDtmb250LXNpemU6OXB4O2NvbG9yOiM3ZjkxYWV9LnBsYXlsaXN0LXNlbGVjdGlvbi1zdGF0ZS5zZWxlY3RlZHtjb2xvcjojNzJkOGFlfS5waWNrZXItcm93LmFscmVhZHktc2VsZWN0ZWR7Ym9yZGVyLWNvbG9yOiMyODViNDk7YmFja2dyb3VuZDojMTAyNDFmfS5waWNrZXItYWRkLWJ1dHRvbnttaW4td2lkdGg6OTBweH0ucGxheWxpc3QtZHVyYXRpb24tY29udHJvbHtkaXNwbGF5OmdyaWQhaW1wb3J0YW50O2dhcDo0cHghaW1wb3J0YW50O21pbi13aWR0aDo4MnB4O2ZvbnQtc2l6ZTo5cHghaW1wb3J0YW50O2NvbG9yOiM4ZmExYmIhaW1wb3J0YW50fS5wbGF5bGlzdC1kdXJhdGlvbi1jb250cm9sPnNwYW57ZGlzcGxheTpmbGV4O2FsaWduLWl0ZW1zOmNlbnRlcjtnYXA6NHB4fS5wbGF5bGlzdC1kdXJhdGlvbi1jb250cm9sIGlucHV0e3dpZHRoOjY0cHg7cGFkZGluZzo3cHggOHB4O3RleHQtYWxpZ246Y2VudGVyfS5kdXJhdGlvbi1zYXZlLWJ1dHRvbnt3aGl0ZS1zcGFjZTpub3dyYXB9LnBsYXlsaXN0LXZpZGVvLWR1cmF0aW9ue2ZvbnQtc2l6ZTo5cHg7Y29sb3I6Izg3OTliMzt3aGl0ZS1zcGFjZTpub3dyYXB9QG1lZGlhKG1heC13aWR0aDo3MjBweCl7LnBsYXlsaXN0LWl0ZW0tcm93LC5waWNrZXItcm93e2FsaWduLWl0ZW1zOmZsZXgtc3RhcnQ7ZmxleC13cmFwOndyYXB9LnBsYXlsaXN0LXRodW1ie2ZsZXgtYmFzaXM6NzJweDt3aWR0aDo3MnB4O2hlaWdodDo0NnB4fS5wbGF5bGlzdC1pdGVtLXJvdyAuZ3JvdywucGlja2VyLXJvdyAuZ3Jvd3ttaW4td2lkdGg6Y2FsYygxMDAlIC0gMTIwcHgpfS5wbGF5bGlzdC1kdXJhdGlvbi1jb250cm9se21hcmdpbi1sZWZ0OjM4cHh9Lm9yZGVyLWJ1dHRvbnN7bWFyZ2luLWxlZnQ6YXV0b30ucGlja2VyLWFkZC1idXR0b257bWFyZ2luLWxlZnQ6YXV0b319CicnJwoKIyA0KSBSZXBvcnQgY29weSBleHBsYWlucyByZWFsIHNvdXJjZS4KaW5kZXggPSBQYXRoKCdpbmRleC5odG1sJykKaCA9IGluZGV4LnJlYWRfdGV4dCgpCmggPSBoLnJlcGxhY2UoJzxhcnRpY2xlIGNsYXNzPSJtZXRyaWMtY2FyZCI+PHNwYW4+RXhpYmnDp8O1ZXMgaW5pY2lhZGFzPC9zcGFuPjxzdHJvbmcgaWQ9InJlcG9ydC1zdGFydGVkIj4wPC9zdHJvbmc+PHNtYWxsPkV2ZW50b3MgcmVnaXN0cmFkb3M8L3NtYWxsPjwvYXJ0aWNsZT4nLCAnPGFydGljbGUgY2xhc3M9Im1ldHJpYy1jYXJkIj48c3Bhbj5FeGliacOnw7VlcyByZWdpc3RyYWRhczwvc3Bhbj48c3Ryb25nIGlkPSJyZXBvcnQtc3RhcnRlZCI+MDwvc3Ryb25nPjxzbWFsbD5FdmVudG9zIHJlYWlzIHJlY2ViaWRvcyBkbyBQbGF5ZXI8L3NtYWxsPjwvYXJ0aWNsZT4nKQppZiAnaWQ9InJlcG9ydC1zb3VyY2Utbm90ZSInIG5vdCBpbiBoOgogICAgbmVlZGxlID0gJycnICAgICAgICAgICAgPGRpdiBjbGFzcz0icmVwb3J0LXBlcmlvZC1saW5lIj4KICAgICAgICAgICAgICA8c3Ryb25nIGlkPSJyZXBvcnQtcGVyaW9kLWxhYmVsIj5QZXLDrW9kbzwvc3Ryb25nPgogICAgICAgICAgICAgIDxzcGFuIGlkPSJyZXBvcnQtZ2VuZXJhdGVkLWxhYmVsIj48L3NwYW4+CiAgICAgICAgICAgIDwvZGl2PicnJwogICAgcmVwbCA9IG5lZWRsZSArICcnJwogICAgICAgICAgICA8ZGl2IGlkPSJyZXBvcnQtc291cmNlLW5vdGUiIGNsYXNzPSJyZXBvcnQtc291cmNlLW5vdGUiPkZvbnRlOiBldmVudG9zIHJlYWlzIGVudmlhZG9zIHBlbG8gVmlzaW9uIFBsYXllci4gQ2FkYSByZXBldGnDp8OjbyBkYSBtw61kaWEgY29udGEgY29tbyB1bWEgZXhpYmnDp8Ojby48L2Rpdj4nJycKICAgIGlmIG5lZWRsZSBub3QgaW4gaDogcmFpc2UgU3lzdGVtRXhpdCgncmVwb3J0IHNvdXJjZSBub3RlIGluc2VydGlvbiB0YXJnZXQgbm90IGZvdW5kJykKICAgIGggPSBoLnJlcGxhY2UobmVlZGxlLCByZXBsLCAxKQppbmRleC53cml0ZV90ZXh0KGgpCmlmICcucmVwb3J0LXNvdXJjZS1ub3Rleycgbm90IGluIGM6CiAgICBjICs9ICdcbi5yZXBvcnQtc291cmNlLW5vdGV7bWFyZ2luOi0ycHggMCAxNHB4O3BhZGRpbmc6MTBweCAxMnB4O2JvcmRlcjoxcHggc29saWQgIzI2M2I1ODtib3JkZXItcmFkaXVzOjEwcHg7YmFja2dyb3VuZDojMGQxNzI3O2NvbG9yOiM4ZmExYmM7Zm9udC1zaXplOjExcHh9XG4nCmNzcy53cml0ZV90ZXh0KGMpCg==' | base64 -d > /tmp/fix_patch.py
+          python3 /tmp/fix_patch.py
           node --check app.js
           node --check player.js
           grep -q "vision-midia-shell-v6" sw.js
@@ -186,7 +24,6 @@ jobs:
           grep -q "data-playlist-media-preview" app.js
           grep -q "object-fit:contain !important" player.css
           grep -q "report-source-note" index.html
-
       - name: Commit targeted fixes
         shell: bash
         run: |
