@@ -558,3 +558,16 @@ textarea { resize: vertical; min-height: 90px; }
   .tv-viewer-preview { min-height: 180px; border-radius: 12px; }
   .tv-viewer-footer .button { width: 100%; }
 }
+
+
+/* DEVICE_PLAN_USAGE_V1 */
+.plan-usage-banner { display:flex; align-items:center; justify-content:space-between; gap:18px; margin:0 0 16px; padding:14px 16px; border:1px solid var(--line); border-radius:14px; background:rgba(70,105,255,.08); }
+.plan-usage-banner > div:first-child { display:flex; flex-direction:column; gap:3px; }
+.plan-usage-banner strong { color:var(--text); }
+.plan-usage-banner span { color:var(--muted); font-size:.9rem; }
+.plan-usage-numbers { display:flex; align-items:center; gap:7px; white-space:nowrap; color:var(--muted); }
+.plan-usage-numbers b { color:var(--text); font-size:1.05rem; }
+.plan-usage-banner.limit-reached { border-color:rgba(239,68,68,.55); background:rgba(239,68,68,.08); }
+.plan-usage-banner.warning { border-color:rgba(245,158,11,.55); background:rgba(245,158,11,.08); }
+#add-device-button:disabled { opacity:.55; cursor:not-allowed; }
+@media (max-width: 640px) { .plan-usage-banner { align-items:flex-start; flex-direction:column; gap:10px; } .plan-usage-numbers { white-space:normal; } }

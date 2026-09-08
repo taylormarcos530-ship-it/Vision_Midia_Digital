@@ -531,7 +531,49 @@
     return state.deviceScreenshots.find(row => row.device_id === deviceId) || null;
   }
 
+
+  function currentDevicePlanUsage() {
+    const plan = (state.publicConfig?.plans || []).find(item => item.id === state.subscription?.plan_id) || null;
+    const rawOverride = state.subscription?.limit_overrides?.max_devices;
+    const hasOverride = rawOverride !== undefined && rawOverride !== null && rawOverride !== '';
+    const limit = Number(hasOverride ? rawOverride : (plan?.max_devices || 0));
+    const used = state.devices.filter(device => !device.retired_at).length;
+    const available = limit > 0 ? Math.max(0, limit - used) : null;
+    return { planName: plan?.name || 'Plano atual', limit, used, available, hasOverride };
+  }
+
+  function renderDevicePlanUsage() {
+    const box = $('#device-plan-usage');
+    if (!box) return;
+    const usage = currentDevicePlanUsage();
+    const button = $('#add-device-button');
+    if (!usage.limit) {
+      box.className = 'plan-usage-banner warning';
+      box.innerHTML = '<strong>Limite de TVs não definido</strong><span>Fale com o administrador para configurar seu plano.</span>';
+      if (button) button.disabled = false;
+      return;
+    }
+    const full = usage.used >= usage.limit;
+    box.className = `plan-usage-banner ${full ? 'limit-reached' : ''}`;
+    box.innerHTML = `<div><strong>${escapeHtml(usage.planName)}</strong><span>Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'}.</span></div><div class="plan-usage-numbers"><b>${usage.used}</b> em uso <span>•</span> <b>${usage.available}</b> disponível${usage.available === 1 ? '' : 'is'}</div>`;
+    if (button) {
+      button.disabled = full;
+      button.title = full ? `Limite atingido: ${usage.used} de ${usage.limit} TVs em uso.` : `${usage.available} vaga(s) de TV disponível(is) no plano.`;
+    }
+  }
+
+  function friendlyPairDeviceError(error) {
+    const message = String(error?.message || error || 'Erro ao parear TV.');
+    if (message.includes('plan_device_limit_reached')) {
+      const usage = currentDevicePlanUsage();
+      if (usage.limit) return `Limite do plano atingido. Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'} e você já está usando ${usage.used}. Para adicionar outra, substitua uma TV ou altere o plano.`;
+      return 'Limite de TVs do plano atingido. Fale com o administrador para ajustar seu plano.';
+    }
+    return message;
+  }
+
   function renderDevices() {
+    renderDevicePlanUsage();
     const grid = $('#devices-grid');
     const empty = $('#devices-empty');
     const has = state.devices.length > 0;
@@ -1594,7 +1636,8 @@
       toast('TV pareada', 'O Vision Player receberá o acesso automaticamente.');
       await loadAllData();
     } catch (error) {
-      toast('Não foi possível parear', error.message, 'error');
+      toast('Não foi possível parear', friendlyPairDeviceError(error), 'error', 6500);
+      renderDevicePlanUsage();
     } finally { setBusy(button, false); }
   }
 
