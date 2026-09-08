@@ -129,6 +129,7 @@
       <div class="form-grid two"><label>Preço mensal (R$)<input id="mp-price" inputmode="decimal" required /></label><label>Ordem<input id="mp-order" type="number" value="0" /></label></div>
       <div class="form-grid four"><label>TVs<input id="mp-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="mp-storage" type="number" min="0" /></label><label>Usuários<input id="mp-users" type="number" min="1" /></label><label>Campanhas<input id="mp-campaigns" type="number" min="0" /></label></div>
       <label class="switch-line"><input id="mp-active" type="checkbox" checked /> Plano disponível para novas assinaturas</label>
+      <div id="mp-status" class="form-status hidden" role="status" aria-live="polite"></div>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-plan-dialog">Cancelar</button><button id="mp-save" class="button primary" type="submit">Salvar plano</button></div>
     </form>
   </dialog>
