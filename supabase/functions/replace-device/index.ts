@@ -42,7 +42,7 @@ Deno.serve(async(req)=>{
     ])
     if(me)throw me
     if(pe)throw pe
-    const companyAllowed=member?.status==='active'&&['owner','admin','operator'].includes(member.role)
+    const companyAllowed=member?.status==='active'&&['owner','admin'].includes(member.role)
     const masterAllowed=pa?.status==='active'&&['super_admin','admin'].includes(pa.role)
     if(!companyAllowed&&!masterAllowed)return J({error:'forbidden'},403)
 

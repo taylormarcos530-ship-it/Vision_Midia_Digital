@@ -18,6 +18,7 @@
     company: null,
     subscription: null,
     publicConfig: null,
+    companyRole: null,
     devices: [],
     media: [],
     playlists: [],
@@ -361,10 +362,12 @@
     const savedCompanyId = localStorage.getItem(COMPANY_KEY);
     state.company = state.companies.find(c => c.id === savedCompanyId) || state.companies[0];
     localStorage.setItem(COMPANY_KEY, state.company.id);
-    const rows = await restRequest('company_subscriptions', {
-      query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1`,
-    });
+    const [rows, memberRows] = await Promise.all([
+      restRequest('company_subscriptions', { query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1` }),
+      restRequest('company_members', { query: `select=role,status&company_id=eq.${encodeURIComponent(state.company.id)}&user_id=eq.${encodeURIComponent(state.user.id)}&limit=1` }),
+    ]);
     state.subscription = rows?.[0] || null;
+    state.companyRole = memberRows?.[0]?.status === 'active' ? memberRows[0].role : null;
     const reason = accessReason(state.subscription);
     if (reason) {
       showScreen('access');
@@ -526,7 +529,7 @@
           <div class="device-card-title"><strong>${escapeHtml(device.name)}</strong><span>${escapeHtml(platformLabel(device.platform))}</span></div>
           <div class="card-menu">
             <button class="small-icon-button capture-button" data-capture-device="${device.id}" title="Capturar o que está passando agora">📷 Capturar</button>
-            <button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>
+            ${['owner','admin'].includes(state.companyRole) ? `<button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>` : ''}
             <button class="small-icon-button" data-edit-device="${device.id}" title="Editar">✎</button>
             <button class="small-icon-button" data-delete-device="${device.id}" title="Excluir">×</button>
           </div>
