@@ -7,13 +7,16 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.2.0';
+  const APP_VERSION = 'vision-player-web-1.3.0';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
   const MEDIA_CACHE = 'vision-player-media-v1';
   const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
   const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
+  const SETUP_CODE_KEY = 'vision_player_setup_code_v1';
+  const querySetupCode = new URLSearchParams(location.search).get('setup');
+  if (querySetupCode) localStorage.setItem(SETUP_CODE_KEY, String(querySetupCode).slice(0,128));
 
   const state = {
     deviceToken: localStorage.getItem(DEVICE_TOKEN_KEY) || null,
@@ -25,6 +28,8 @@
     wakeLock: null,
     heartbeatTimer: null,
     syncTimer: null,
+    commandTimer: null,
+    processingCommands: new Set(),
     lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
     currentMediaId: null,
     cacheItems: 0,
@@ -159,6 +164,20 @@
     $('#player-status').textContent = text;
   }
 
+  function applyPairingBranding(branding = null) {
+    const screen = $('#pairing-screen');
+    const title = branding?.title || 'Vision Mídia Digital';
+    const message = branding?.message || 'No painel Vision, abra TVs → Parear TV e informe o código acima.';
+    $('#pairing-brand-title').textContent = title;
+    $('#pairing-heading').textContent = branding ? 'Vincule esta TV pelo código' : 'Digite este código no painel';
+    $('#pairing-instruction').textContent = message;
+    if (branding?.splash_url) {
+      screen.style.backgroundImage = `linear-gradient(rgba(0,0,0,.32),rgba(0,0,0,.58)),url("${branding.splash_url}")`;
+    } else {
+      screen.style.backgroundImage = '';
+    }
+  }
+
   function showPairing() {
     $('#pairing-screen').classList.remove('hidden');
     $('#playback-screen').classList.add('hidden');
@@ -175,15 +194,17 @@
     $('#pairing-status').textContent = 'Gerando código seguro…';
 
     if (!force && state.pairing?.request_id && new Date(state.pairing.expires_at).getTime() > Date.now()) {
+      applyPairingBranding(state.pairing.branding || null);
       renderPairing(state.pairing);
       pollPairing(state.pairing);
       return;
     }
 
     try {
-      const pairing = await functionRequest('device-bootstrap', { action: 'start', platform: detectPlatform() });
+      const pairing = await functionRequest('device-bootstrap', { action: 'start', platform: detectPlatform(), setup_code: localStorage.getItem(SETUP_CODE_KEY) || null });
       state.pairing = pairing;
       writeJson(PAIRING_KEY, pairing);
+      applyPairingBranding(pairing.branding || null);
       renderPairing(pairing);
       pollPairing(pairing);
     } catch (error) {
@@ -350,7 +371,7 @@
   async function syncManifest() {
     if (!state.deviceToken) return;
     try {
-      const manifest = await gateway({ action: 'manifest' });
+      const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
       await cacheManifestAssets(manifest);
       state.manifest = manifest;
@@ -528,6 +549,67 @@
     }
   }
 
+  const LOCAL_WEEKDAY_INDEX = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
+  function localClock(timeZone) {
+    let zone = timeZone || 'America/Sao_Paulo';
+    let formatter;
+    try { formatter = new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'}); }
+    catch { zone='America/Sao_Paulo'; formatter = new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'}); }
+    const parts=Object.fromEntries(formatter.formatToParts(new Date()).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+    const year=Number(parts.year),month=Number(parts.month),day=Number(parts.day);
+    const calendar=new Date(Date.UTC(year,month-1,day));
+    const previous=new Date(calendar.getTime()-86400000);
+    return {dateKey:`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,previousDateKey:`${previous.getUTCFullYear()}-${String(previous.getUTCMonth()+1).padStart(2,'0')}-${String(previous.getUTCDate()).padStart(2,'0')}`,weekday:LOCAL_WEEKDAY_INDEX[parts.weekday]??calendar.getUTCDay(),previousWeekday:previous.getUTCDay(),seconds:Number(parts.hour)*3600+Number(parts.minute)*60+Number(parts.second)};
+  }
+  function timeSeconds(value){if(!value)return null;const [h='0',m='0',sec='0']=String(value).split(':');const n=Number(h)*3600+Number(m)*60+Number(sec);return Number.isFinite(n)?n:null}
+  function itemScheduleActive(item, timeZone) {
+    const schedule=item?.schedule;
+    if(!schedule?.enabled)return true;
+    const clock=localClock(timeZone),start=timeSeconds(schedule.start_time),end=timeSeconds(schedule.end_time);
+    let dateKey=clock.dateKey,weekday=clock.weekday;
+    if(start!=null&&end!=null){if(start<end){if(clock.seconds<start||clock.seconds>=end)return false}else{if(clock.seconds>=start){}else if(clock.seconds<end){dateKey=clock.previousDateKey;weekday=clock.previousWeekday}else return false}}
+    if(schedule.start_date&&dateKey<schedule.start_date)return false;
+    if(schedule.end_date&&dateKey>schedule.end_date)return false;
+    const days=Array.isArray(schedule.weekdays)?schedule.weekdays.map(Number):[0,1,2,3,4,5,6];
+    return days.includes(weekday);
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||'').split(',')[1]||'');reader.onerror=()=>reject(reader.error||new Error('Falha ao ler captura.'));reader.readAsDataURL(blob);});
+  }
+
+  async function captureCurrentFrame() {
+    const media = $('#media-stage img, #media-stage video');
+    if (!media) throw new Error('Nenhuma imagem ou vídeo está sendo exibido agora.');
+    const viewW=Math.max(1,innerWidth||screen.width||1920),viewH=Math.max(1,innerHeight||screen.height||1080);
+    const scale=Math.min(1,1920/Math.max(viewW,viewH));
+    const width=Math.max(1,Math.round(viewW*scale)),height=Math.max(1,Math.round(viewH*scale));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponível.');ctx.fillStyle='#000';ctx.fillRect(0,0,width,height);
+    const sourceW=media.tagName==='VIDEO'?(media.videoWidth||0):(media.naturalWidth||0),sourceH=media.tagName==='VIDEO'?(media.videoHeight||0):(media.naturalHeight||0);
+    if(!sourceW||!sourceH)throw new Error('A mídia ainda não está pronta para captura.');
+    const contain=Math.min(width/sourceW,height/sourceH),drawW=sourceW*contain,drawH=sourceH*contain,x=(width-drawW)/2,y=(height-drawH)/2;
+    ctx.drawImage(media,x,y,drawW,drawH);
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));
+    if(!blob)throw new Error('Não foi possível gerar a captura.');
+    return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
+  }
+
+  async function pollDeviceCommands() {
+    if(!state.deviceToken||!navigator.onLine)return;
+    const result=await gateway({action:'commands'});
+    for(const command of result?.commands||[]){
+      if(command.command_type!=='screenshot'||state.processingCommands.has(command.id))continue;
+      state.processingCommands.add(command.id);
+      try{
+        const capture=await captureCurrentFrame();
+        await gateway({action:'screenshot_result',command_id:command.id,...capture});
+      }catch(error){
+        await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+      }finally{state.processingCommands.delete(command.id)}
+    }
+  }
+
   function shuffled(items) {
     const copy = [...items];
     for (let i = copy.length - 1; i > 0; i--) {
@@ -549,7 +631,14 @@
           continue;
         }
 
-        const queue = manifest.playlist.shuffle ? shuffled(manifest.items) : [...manifest.items];
+        const activeItems = (manifest.items || []).filter(item => itemScheduleActive(item, manifest.program?.timezone));
+        if (!activeItems.length) {
+          hideIdle();
+          $('#media-stage').replaceChildren();
+          await sleep(1000);
+          continue;
+        }
+        const queue = manifest.playlist.shuffle ? shuffled(activeItems) : [...activeItems];
         if (manifest.playlist.repeat_mode === 'single' && queue.length) {
           await playItem(queue[0], manifest.playlist, manifest.program, nonce);
           if (nonce !== state.playlistNonce) continue;
@@ -593,8 +682,11 @@
 
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
+    if (state.commandTimer) clearInterval(state.commandTimer);
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 30_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
+    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    pollDeviceCommands().catch(() => {});
   }
 
   async function requestFullscreenAndWakeLock() {
@@ -608,8 +700,11 @@
   function resetPairing(clearManifest = true) {
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
+    if (state.commandTimer) clearInterval(state.commandTimer);
     state.heartbeatTimer = null;
     state.syncTimer = null;
+    state.commandTimer = null;
+    state.processingCommands.clear();
     localStorage.removeItem(DEVICE_TOKEN_KEY);
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
