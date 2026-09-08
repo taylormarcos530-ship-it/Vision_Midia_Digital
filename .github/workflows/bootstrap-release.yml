@@ -1,0 +1,67 @@
+name: Bootstrap Vision Midia Digital RC
+
+on:
+  push:
+    paths:
+      - '.github/workflows/bootstrap-release.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Rebuild release archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat .bootstrap/part-* > /tmp/vision.b64
+          base64 --decode /tmp/vision.b64 > /tmp/vision-src.tgz
+          tar -xzf /tmp/vision-src.tgz -C .
+          rm -rf .bootstrap
+          rm -f .github/workflows/bootstrap-release.yml
+          rmdir .github/workflows 2>/dev/null || true
+          rmdir .github 2>/dev/null || true
+
+      - name: Validate release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f index.html
+          test -f app.js
+          test -f styles.css
+          test -f master.html
+          test -f master.js
+          test -f master.css
+          test -f player.html
+          test -f player.js
+          test -f player.css
+          test -f vercel.json
+          test -f supabase/functions/master-admin/index.ts
+          node --check app.js
+          node --check master.js
+          node --check player.js
+          python -m json.tool manifest.webmanifest >/dev/null
+          python -m json.tool player.webmanifest >/dev/null
+          python -m json.tool vercel.json >/dev/null
+          if grep -RIlE 'sb_secret_[A-Za-z0-9_-]+|SUPABASE_SERVICE_ROLE_KEY[[:space:]]*[:=][[:space:]]*["'"'][^"'"']+' --exclude-dir=.git .; then
+            echo 'Potential secret value found in source.' >&2
+            exit 1
+          fi
+
+      - name: Commit reconstructed release
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'vision-release-bot'
+          git config user.email 'vision-release-bot@users.noreply.github.com'
+          git add -A
+          git commit -m 'release: publish Vision Midia Digital RC final'
+          git push origin HEAD:main
