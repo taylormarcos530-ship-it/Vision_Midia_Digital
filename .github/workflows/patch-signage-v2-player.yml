@@ -1,0 +1,43 @@
+name: Apply Signage V2 Player Protocol
+
+on:
+  push:
+    branches: [stage-signage-v2]
+    paths:
+      - 'tools/patch_signage_v2_player.py'
+      - '.github/workflows/patch-signage-v2-player.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: stage-signage-v2
+      - name: Apply patch
+        run: python tools/patch_signage_v2_player.py
+      - name: Validate JavaScript
+        run: node --check player.js
+      - name: Validate protocol markers
+        run: |
+          grep -q "vision-player-web-1.3.0" player.js
+          grep -q "supports_item_schedules" player.js
+          grep -q "screenshot_result" supabase/functions/device-gateway/index.ts
+          grep -q "setup_company_id" supabase/functions/device-bootstrap/index.ts
+          grep -q "branded_player_company_mismatch" supabase/functions/claim-device/index.ts
+          grep -q "player-status { display:none" player.css
+          git diff --check
+      - name: Commit changes
+        run: |
+          git config user.name 'taylormarcos530-ship-it'
+          git config user.email 'taylormarcos530@gmail.com'
+          git add player.html player.css player.js supabase/functions/device-gateway/index.ts supabase/functions/device-bootstrap/index.ts supabase/functions/claim-device/index.ts
+          if git diff --cached --quiet; then
+            echo 'No Player changes to commit'
+          else
+            git commit -m 'feat: add offline item schedules branded pairing and remote TV screenshots'
+            git push origin stage-signage-v2
+          fi
