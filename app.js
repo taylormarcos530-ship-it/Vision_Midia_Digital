@@ -1164,36 +1164,38 @@
   }
 
   async function handleSignup(event) {
-    event.preventDefault();
-    const button = $('#signup-submit');
-    setBusy(button, true, 'Criando conta...');
-    try {
-      const data = await authRequest('/signup', {
-        body: {
-          email: $('#signup-email').value.trim(),
-          password: $('#signup-password').value,
-          data: { display_name: $('#signup-name').value.trim() },
-        },
-      });
-      if (data?.access_token) {
-        saveSession(data);
-        await enterAuthenticatedApp();
-        toast('Conta criada', 'Agora crie sua empresa.');
-      } else {
-        toast('Confira seu e-mail', 'Enviamos a confirmação para concluir o cadastro.');
-        switchAuthTab('login');
-        $('#login-email').value = $('#signup-email').value.trim();
-      }
-    } catch (error) {
-      toast('Não foi possível criar a conta', friendlyAuthError(error), 'error');
-    } finally { setBusy(button, false); }
-  }
+  event.preventDefault();
+  const button = $('#signup-submit');
+  const email = $('#signup-email').value.trim();
+  const password = $('#signup-password').value;
+  const displayName = $('#signup-name').value.trim();
+  setBusy(button, true, 'Criando conta...');
+  try {
+    await functionRequest('public-signup', {
+      authenticated: false,
+      body: { email, password, display_name: displayName },
+    });
+    const data = await authRequest('/token?grant_type=password', {
+      body: { email, password },
+    });
+    if (!data?.access_token) throw new Error('Login não retornou uma sessão válida.');
+    saveSession(data);
+    await enterAuthenticatedApp();
+    toast('Conta criada', 'Seu acesso já está liberado. Agora crie sua empresa.');
+  } catch (error) {
+    toast('Não foi possível criar a conta', friendlyAuthError(error), 'error');
+  } finally { setBusy(button, false); }
+}
 
-  function friendlyAuthError(error) {
+function friendlyAuthError(error) {
     const msg = String(error?.message || 'Erro de autenticação.');
     if (/invalid login credentials/i.test(msg)) return 'E-mail ou senha inválidos.';
-    if (/email not confirmed/i.test(msg)) return 'Confirme seu e-mail antes de entrar.';
-    if (/user already registered/i.test(msg)) return 'Este e-mail já está cadastrado.';
+    if (/email not confirmed/i.test(msg)) return 'Esta conta antiga ainda não está liberada. Crie uma nova conta ou fale com o administrador.';
+    if (/email_already_registered|user already registered/i.test(msg)) return 'Este e-mail já está cadastrado.';
+    if (/signup_rate_limited/i.test(msg)) return 'Muitas tentativas de cadastro. Aguarde alguns minutos e tente novamente.';
+    if (/invalid_email/i.test(msg)) return 'Informe um e-mail válido.';
+    if (/invalid_password/i.test(msg)) return 'A senha deve ter entre 8 e 72 caracteres.';
+    if (/invalid_display_name/i.test(msg)) return 'Informe seu nome.';
     return msg;
   }
 
