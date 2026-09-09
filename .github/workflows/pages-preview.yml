@@ -34,6 +34,9 @@ jobs:
           cp payment-ui.js saas-shell.js _site/
           cp downloads.html downloads.css downloads.js _site/
           cp player.html player.css player.js player.webmanifest _site/
+          if [ -d downloads ]; then
+            cp -R downloads _site/downloads
+          fi
           printf '' > _site/.nojekyll
 
       - name: Configure GitHub Pages
