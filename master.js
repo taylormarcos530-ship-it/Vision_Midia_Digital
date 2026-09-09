@@ -8,6 +8,7 @@
   const esc = (v='') => String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 
   function toast(title, message='', type='success') {
+    if(type==='success' && title!=='Salvo com sucesso' && /(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title))){message=message?`${title}. ${message}`:title;title='Salvo com sucesso'}
     let root = $('#master-toast-root');
     const dialog = $('dialog[open]');
     if (dialog) {
@@ -49,6 +50,7 @@
   async function master(body, retry=true){ const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/master-admin`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}); if(res.status===401&&retry&&state.session?.refresh_token){await refresh(); return master(body,false)} return parse(res); }
   async function savePlanRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-plan`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePlanRequest(body,false)}return parse(res)}
   async function saveCompanyRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-company`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return saveCompanyRequest(body,false)}return parse(res)}
+  async function savePaymentUrlRequest(companyId,paymentUrl,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/company_subscriptions?company_id=eq.${encodeURIComponent(companyId)}`,{method:'PATCH',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({payment_url:paymentUrl||null}),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePaymentUrlRequest(companyId,paymentUrl,false)}return parse(res)}
   async function edgeRequest(name,body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/${name}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body||{}),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return edgeRequest(name,body,false)}return parse(res)}
   async function platformSettingsRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/platform-settings`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return platformSettingsRequest(body,false)}return parse(res)}
 
@@ -133,6 +135,7 @@
     $('#me-plan').value=c.subscription?.plan_id||''; $('#me-sub-status').value=c.subscription?.status||'pending_approval';
     $('#me-payment-status').value=c.subscription?.payment_status||'pending';
     $('#me-due-date').value=c.subscription?.current_period_end?String(c.subscription.current_period_end).slice(0,10):'';
+    $('#me-payment-url').value=c.subscription?.payment_url||'';
     $('#me-manual-price').value=c.subscription?.manual_price_cents==null?'':(Number(c.subscription.manual_price_cents)/100).toFixed(2).replace('.',',');
     $('#me-billing-notes').value=c.subscription?.billing_notes||'';
     const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns);
@@ -145,7 +148,9 @@
     const b=$('#me-save');
     const companyId=$('#me-company-id').value;
     const expectedPlanId=$('#me-plan').value;
+    const paymentUrl=$('#me-payment-url').value.trim();
     if(!expectedPlanId){formStatus('#me-status','❌ Selecione um plano.','error');return}
+    if(paymentUrl && !/^https:\/\/\S+$/i.test(paymentUrl)){formStatus('#me-status','❌ Informe um link de pagamento HTTPS válido.','error');$('#me-payment-url').focus();return}
     busy(b,true,'Salvando...');
     formStatus('#me-status','Salvando alterações...','pending');
     try{
@@ -164,6 +169,7 @@
         player_autostart_enabled:$('#me-player-autostart').checked
       });
       if(!d?.ok || d?.subscription?.plan_id!==expectedPlanId) throw new Error('O servidor não confirmou o plano selecionado.');
+      await savePaymentUrlRequest(companyId,paymentUrl||null);
       await load();
       const persisted=companyById(companyId);
       if(persisted?.subscription?.plan_id!==expectedPlanId) throw new Error('O plano foi salvo, mas a confirmação do painel não corresponde.');
@@ -258,12 +264,21 @@
     try{const d=await platformSettingsRequest({action:'update',support_whatsapp:$('#ps-whatsapp').value,signup_whatsapp_message:$('#ps-signup-message').value.trim(),renewal_whatsapp_message:$('#ps-renewal-message').value.trim(),signup_enabled:$('#ps-signup-enabled').checked});state.platformConfig=d.config||{};renderPlatformSettings();formStatus('#ps-status','✅ Configurações salvas.','success');toast('Salvo com sucesso','Cadastro público e WhatsApp atualizados.')}catch(e){formStatus('#ps-status',`❌ ${e.message}`,'error');toast('Erro ao salvar configurações',e.message,'error')}finally{busy(b,false)}
   }
 
+  function confirmPaymentAndRelease(){
+    if(!$('#me-due-date').value){formStatus('#me-status','❌ Informe o vencimento antes de liberar o acesso.','error');$('#me-due-date').focus();return}
+    $('#me-company-status').value='active';
+    $('#me-sub-status').value='active';
+    $('#me-payment-status').value='paid';
+    formStatus('#me-status','Pagamento marcado como pago. Salvando e liberando acesso...','pending');
+    $('#master-company-form').requestSubmit();
+  }
+
   async function clearCompanyCache(){
     const id=$('#me-company-id').value; if(!id)return;
     const b=$('#me-clear-cache'); busy(b,true,'Solicitando...');
     try{await saveCompanyRequest({company_id:id,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,clear_cache:true});formStatus('#me-status','✅ Limpeza de cache enviada. As TVs baixarão novamente as mídias na próxima sincronização.','success');toast('Comando enviado','Cache da conta será renovado.');await load()}catch(e){formStatus('#me-status',`❌ ${e.message}`,'error')}finally{busy(b,false)}
   }
-  function bind(){ $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
+  function bind(){ $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
   async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){saveSession(null);show('master-auth');toast('Sessão expirada','Entre novamente.','error')} }
   boot();

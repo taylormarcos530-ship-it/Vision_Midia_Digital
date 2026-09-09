@@ -65,6 +65,10 @@
   }
 
   function toast(title, message = '', type = 'success', timeout = 3500) {
+    if (type === 'success' && title !== 'Salvo com sucesso' && /(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title))) {
+      message = message ? `${title}. ${message}` : title;
+      title = 'Salvo com sucesso';
+    }
     const root = $('#toast-root');
     const el = document.createElement('div');
     el.className = `toast ${type}`;
@@ -305,6 +309,16 @@
       link.href = `https://wa.me/${phone}?text=${encodeURIComponent(message || 'Olá! Preciso de ajuda com meu acesso à Vision Mídia Digital.')}`;
       link.classList.remove('hidden');
     } else link.classList.add('hidden');
+    const payLink = $('#access-payment');
+    const paymentUrl = String(state.subscription?.payment_url || '').trim();
+    const paymentNeeded = !['paid','waived'].includes(state.subscription?.payment_status || 'pending');
+    if (payLink && paymentUrl && paymentNeeded) {
+      payLink.href = paymentUrl;
+      payLink.classList.remove('hidden');
+    } else if (payLink) {
+      payLink.removeAttribute('href');
+      payLink.classList.add('hidden');
+    }
     if ('Notification' in window && Notification.permission === 'granted') notifyAccessState(reason);
   }
 
