@@ -1,0 +1,111 @@
+name: Build Signed Vision Player APK
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-signed-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout current branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/unified-master-panel
+          fetch-depth: 0
+
+      - name: Validate signing secrets
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          test -n "$KEYSTORE_B64" || { echo 'ANDROID_KEYSTORE_BASE64 ausente'; exit 1; }
+          test -n "$KEYSTORE_PASSWORD" || { echo 'ANDROID_KEYSTORE_PASSWORD ausente'; exit 1; }
+          test -n "$KEY_ALIAS" || { echo 'ANDROID_KEY_ALIAS ausente'; exit 1; }
+          test -n "$KEY_PASSWORD" || { echo 'ANDROID_KEY_PASSWORD ausente'; exit 1; }
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Bundle current web player into APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+
+      - name: Validate player JavaScript
+        run: node --check player.js
+
+      - name: Build unsigned release APK
+        run: gradle -p android-player --no-daemon assembleRelease
+
+      - name: Decode signing key
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > /tmp/vision-release.jks
+          chmod 600 /tmp/vision-release.jks
+
+      - name: Sign and verify APK
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          APK_IN='android-player/app/build/outputs/apk/release/app-release-unsigned.apk'
+          test -s "$APK_IN"
+          mkdir -p downloads
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks /tmp/vision-release.jks \
+            --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" \
+            --key-pass env:KEY_PASSWORD \
+            --out downloads/Vision-Player.apk \
+            "$APK_IN"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs downloads/Vision-Player.apk
+          sha256sum downloads/Vision-Player.apk > downloads/Vision-Player.sha256
+
+      - name: Upload signed APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-Player-signed
+          path: |
+            downloads/Vision-Player.apk
+            downloads/Vision-Player.sha256
+          retention-days: 90
+
+      - name: Commit signed APK to branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/Vision-Player.apk downloads/Vision-Player.sha256
+          if git diff --cached --quiet; then
+            echo 'Signed APK already up to date.'
+            exit 0
+          fi
+          git commit -m 'build: publish signed Vision Player APK'
+          git push origin HEAD:feature/unified-master-panel
