@@ -104,6 +104,7 @@
         </div>
         <a id="access-whatsapp" class="button ghost full hidden" href="#" target="_blank" rel="noopener">Falar com suporte no WhatsApp</a>
         <button id="access-refresh" class="button ghost full" type="button">Verificar liberação</button>
+        <div id="access-refresh-status" class="access-refresh-status hidden" role="status" aria-live="polite"></div>
         <button id="access-notifications" class="button ghost full" type="button">Ativar notificações</button>
         <button id="access-logout" class="link-button" type="button">Sair desta conta</button>
       </div>
@@ -137,13 +138,20 @@
       </div>
 
       <nav class="nav-list" aria-label="Principal">
-        <button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard</button>
+        <button class="nav-item active" data-view="dashboard"><span>▦</span> Dashboard Operacional</button>
         <button class="nav-item" data-view="devices"><span>▣</span> TVs</button>
         <button class="nav-item" data-view="monitoring"><span>◉</span> Monitoramento</button>
         <button class="nav-item" data-view="media"><span>▧</span> Mídias</button>
         <button class="nav-item" data-view="playlists"><span>▶</span> Playlists</button>
         <button class="nav-item hidden" data-view="campaigns"><span>◷</span> Programação avançada</button>
         <button class="nav-item" data-view="reports"><span>▤</span> Relatórios</button>
+        <div id="saas-admin-nav" class="saas-admin-nav hidden" aria-label="Administração SaaS">
+          <span class="nav-section-label">ADMINISTRAÇÃO SAAS</span>
+          <button class="nav-item" data-saas-view="dashboard"><span>▦</span> Dashboard SaaS</button>
+          <button class="nav-item" data-saas-view="clients"><span>▣</span> Clientes</button>
+          <button class="nav-item" data-saas-view="plans"><span>◇</span> Planos</button>
+          <button class="nav-item" data-saas-view="audit"><span>≡</span> Auditoria</button>
+        </div>
       </nav>
 
       <div class="sidebar-footer">
@@ -485,6 +493,11 @@
             </article>
           </div>
         </section>
+
+        <section id="view-saas-admin" class="view-section saas-admin-view hidden">
+          <div id="saas-master-loading" class="saas-master-loading">Carregando administração SaaS…</div>
+          <iframe id="saas-master-frame" class="saas-master-frame" title="Administração SaaS da Vision Mídia Digital"></iframe>
+        </section>
       </div>
     </main>
   </div>
@@ -768,5 +781,6 @@
   <script src="./config.js"></script>
   <script src="./app.js" defer></script>
   <script src="./payment-ui.js" defer></script>
+  <script src="./saas-shell.js" defer></script>
 </body>
 </html>

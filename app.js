@@ -1496,7 +1496,7 @@
 
   function setView(view) {
     const titles = {
-      dashboard: ['VISÃO GERAL', 'Dashboard'],
+      dashboard: ['VISÃO GERAL', 'Dashboard Operacional'],
       devices: ['DISPOSITIVOS', 'TVs'],
       monitoring: ['OPERAÇÃO', 'Monitoramento'],
       media: ['BIBLIOTECA', 'Mídias'],
@@ -2302,14 +2302,29 @@
     $('#company-form').addEventListener('submit', handleCreateCompany);
     $('#access-refresh').addEventListener('click', async () => {
       const button = $('#access-refresh');
+      const status = $('#access-refresh-status');
+      const setStatus = (message = '', type = '') => {
+        if (!status) return;
+        status.textContent = message;
+        status.className = `access-refresh-status ${type}`.trim();
+        status.classList.toggle('hidden', !message);
+      };
       setBusy(button, true, 'Verificando...');
+      setStatus('Consultando sua assinatura e as configurações de suporte…', 'pending');
       try {
         await loadPublicConfig();
         await enterAuthenticatedApp();
         const stillBlocked = !$('#access-screen').classList.contains('hidden');
-        if (stillBlocked) toast('Acesso ainda não liberado', 'Os dados foram atualizados. Se houver WhatsApp de suporte configurado, o botão já aparece abaixo.', 'error');
-        else toast('Acesso liberado', 'Seu painel já está disponível.');
+        if (stillBlocked) {
+          const reason = accessReason();
+          setStatus(reason?.message || 'Seu acesso ainda está aguardando liberação do administrador.', 'pending');
+          toast('Acesso ainda não liberado', 'Consulta concluída. Seus dados e o WhatsApp de suporte foram atualizados.', 'error');
+        } else {
+          setStatus('Acesso liberado. Abrindo seu painel…', 'success');
+          toast('Acesso liberado', 'Seu painel já está disponível.');
+        }
       } catch (error) {
+        setStatus(`Não foi possível verificar agora: ${error.message}`, 'error');
         toast('Falha ao verificar acesso', error.message, 'error');
       } finally {
         setBusy(button, false);
