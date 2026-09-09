@@ -8,7 +8,9 @@
   const esc = (v='') => String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
 
   function toast(title, message='', type='success') {
-    if(type==='success' && title!=='Salvo com sucesso' && /(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title))){message=message?`${title}. ${message}`:title;title='Salvo com sucesso'}
+    const writeFeedback=/(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title));
+    const readOnlyRefresh=/^(Relatório|Monitoramento|Status|Captura).*atualiz/i.test(String(title));
+    if(type==='success' && title!=='Salvo com sucesso' && writeFeedback && !readOnlyRefresh){message=message?`${title}. ${message}`:title;title='Salvo com sucesso'}
     let root = $('#master-toast-root');
     const dialog = $('dialog[open]');
     if (dialog) {
@@ -50,7 +52,6 @@
   async function master(body, retry=true){ const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/master-admin`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}); if(res.status===401&&retry&&state.session?.refresh_token){await refresh(); return master(body,false)} return parse(res); }
   async function savePlanRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-plan`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePlanRequest(body,false)}return parse(res)}
   async function saveCompanyRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-company`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return saveCompanyRequest(body,false)}return parse(res)}
-  async function savePaymentUrlRequest(companyId,paymentUrl,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/rest/v1/company_subscriptions?company_id=eq.${encodeURIComponent(companyId)}`,{method:'PATCH',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json',Prefer:'return=representation'},body:JSON.stringify({payment_url:paymentUrl||null}),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePaymentUrlRequest(companyId,paymentUrl,false)}return parse(res)}
   async function edgeRequest(name,body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/${name}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body||{}),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return edgeRequest(name,body,false)}return parse(res)}
   async function platformSettingsRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/platform-settings`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return platformSettingsRequest(body,false)}return parse(res)}
 
@@ -165,11 +166,11 @@
         manual_price_cents:reaisToCents($('#me-manual-price').value),
         limit_overrides:overrideObj(),
         billing_notes:$('#me-billing-notes').value.trim(),
+        payment_url:paymentUrl||null,
         player_audio_enabled:$('#me-player-audio').checked,
         player_autostart_enabled:$('#me-player-autostart').checked
       });
       if(!d?.ok || d?.subscription?.plan_id!==expectedPlanId) throw new Error('O servidor não confirmou o plano selecionado.');
-      await savePaymentUrlRequest(companyId,paymentUrl||null);
       await load();
       const persisted=companyById(companyId);
       if(persisted?.subscription?.plan_id!==expectedPlanId) throw new Error('O plano foi salvo, mas a confirmação do painel não corresponde.');

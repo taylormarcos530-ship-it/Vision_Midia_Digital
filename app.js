@@ -65,7 +65,9 @@
   }
 
   function toast(title, message = '', type = 'success', timeout = 3500) {
-    if (type === 'success' && title !== 'Salvo com sucesso' && /(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title))) {
+    const writeFeedback = /(salv|criad|atualiz|adicion|enviad|paread|programad|atribu|reordenad|substitu|configurad|alterad)/i.test(String(title));
+    const readOnlyRefresh = /^(Relatório|Monitoramento|Status|Captura).*atualiz/i.test(String(title));
+    if (type === 'success' && title !== 'Salvo com sucesso' && writeFeedback && !readOnlyRefresh) {
       message = message ? `${title}. ${message}` : title;
       title = 'Salvo com sucesso';
     }
