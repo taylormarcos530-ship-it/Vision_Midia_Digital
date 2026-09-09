@@ -119,13 +119,25 @@
     $('#me-receipt-date').textContent = dateTime(currentReceipt.submitted_at);
     $('#me-receipt-amount').textContent = money(currentReceipt.amount_cents ?? data.amount_cents);
     $('#me-receipt-file-name').textContent = currentReceipt.original_name || 'Comprovante';
+    const fileExpired = Boolean(currentReceipt.file_deleted_at);
+    const viewButton = $('#me-receipt-view');
+    if (viewButton) {
+      viewButton.disabled = fileExpired;
+      viewButton.textContent = fileExpired ? 'Arquivo removido' : 'Ver comprovante';
+      viewButton.title = fileExpired ? 'O arquivo foi eliminado após o prazo de retenção; o histórico do pagamento foi mantido.' : '';
+    }
     const review = $('#me-receipt-review-note');
     if (review) {
-      review.textContent = currentReceipt.status === 'rejected' && currentReceipt.review_notes
+      const retention = currentReceipt.file_deleted_at
+        ? ` Arquivo removido em ${dateTime(currentReceipt.file_deleted_at)}; histórico preservado.`
+        : currentReceipt.purge_after
+          ? ` O arquivo será removido automaticamente em ${dateTime(currentReceipt.purge_after)}; o histórico continuará salvo.`
+          : '';
+      review.textContent = (currentReceipt.status === 'rejected' && currentReceipt.review_notes
         ? `Motivo: ${currentReceipt.review_notes}`
         : currentReceipt.status === 'approved'
           ? `Confirmado em ${dateTime(currentReceipt.reviewed_at)}.`
-          : 'O envio do comprovante não libera o acesso até a confirmação do Master.';
+          : 'O envio do comprovante não libera o acesso até a confirmação do Master.') + retention;
     }
     const pending = currentReceipt.status === 'pending';
     $('#me-receipt-approve')?.classList.toggle('hidden', !pending);
@@ -179,6 +191,10 @@
 
   async function viewReceipt() {
     if (!currentReceipt?.id) return;
+    if (currentReceipt.file_deleted_at) {
+      statusMessage('O arquivo deste comprovante já foi removido pelo prazo de retenção de 30 dias. O histórico do pagamento permanece salvo.', 'success');
+      return;
+    }
     const button = $('#me-receipt-view');
     if (button) { button.disabled = true; button.textContent = 'Abrindo...'; }
     try {
