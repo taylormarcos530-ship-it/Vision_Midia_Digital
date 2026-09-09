@@ -30,7 +30,9 @@ jobs:
           set -euo pipefail
           mkdir -p _site
           cp index.html 404.html styles.css app.js config.js icon.svg manifest.webmanifest sw.js _site/
-          cp master.html master.css master.js _site/
+          cp master.html master.css master.js master-payment.js master-embed.js _site/
+          cp payment-ui.js saas-shell.js _site/
+          cp downloads.html downloads.css downloads.js _site/
           cp player.html player.css player.js player.webmanifest _site/
           printf '' > _site/.nojekyll
 
