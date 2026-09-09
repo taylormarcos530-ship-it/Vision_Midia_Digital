@@ -113,6 +113,36 @@
       <div class="form-grid two"><label>Plano<select id="me-plan"></select></label><label>Status da assinatura<select id="me-sub-status"><option value="pending_approval">Aguardando aprovação</option><option value="trialing">Teste</option><option value="active">Ativa</option><option value="past_due">Pagamento pendente</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select></label></div>
       <div class="form-grid two"><label>Situação do pagamento<select id="me-payment-status"><option value="pending">Pendente</option><option value="paid">Pago</option><option value="overdue">Vencido</option><option value="waived">Liberado manualmente</option></select></label><label>Vencimento<input id="me-due-date" type="date" /></label></div>
       <label>Link de pagamento Mercado Pago<input id="me-payment-url" type="url" maxlength="1200" placeholder="https://..." /><small>Enquanto a integração automática não estiver conectada, cole aqui o link de cobrança deste cliente. Ele verá o botão “Pagar agora”.</small></label>
+      <div class="limit-box pix-master-box">
+        <strong>Pagamento por PIX <small>(opcional)</small></strong>
+        <div class="form-grid two">
+          <label>Tipo da chave PIX<select id="me-pix-key-type"><option value="cpf">CPF</option><option value="cnpj">CNPJ</option><option value="email">E-mail</option><option value="phone">Telefone</option><option value="random">Chave aleatória</option><option value="other">Outra</option></select></label>
+          <label>Chave PIX<input id="me-pix-key" maxlength="77" placeholder="Informe a chave PIX" /></label>
+        </div>
+        <div class="form-grid two">
+          <label>Nome do recebedor<input id="me-pix-name" maxlength="25" placeholder="Nome que aparecerá no PIX" /></label>
+          <label>Cidade do recebedor<input id="me-pix-city" maxlength="15" placeholder="Ex.: ANAPOLIS" /></label>
+        </div>
+        <small>Quando a chave estiver configurada, o cliente verá QR Code, PIX Copia e Cola e a opção de enviar comprovante.</small>
+      </div>
+      <div id="me-receipt-box" class="limit-box receipt-master-box hidden">
+        <div class="receipt-master-head"><strong>Comprovante enviado pelo cliente</strong><span id="me-receipt-state" class="status pending">Aguardando análise</span></div>
+        <div class="receipt-master-meta">
+          <div><span>Enviado</span><strong id="me-receipt-date">—</strong></div>
+          <div><span>Valor</span><strong id="me-receipt-amount">—</strong></div>
+          <div><span>Arquivo</span><strong id="me-receipt-file-name">—</strong></div>
+        </div>
+        <p id="me-receipt-review-note" class="helper">O envio do comprovante não libera o acesso até a confirmação do Master.</p>
+        <div class="dialog-actions compact-actions">
+          <button id="me-receipt-view" class="button ghost" type="button">Ver comprovante</button>
+          <button id="me-receipt-reject" class="button ghost" type="button">Recusar comprovante</button>
+          <button id="me-receipt-approve" class="button primary" type="button">Aprovar e liberar</button>
+        </div>
+        <div id="me-receipt-preview" class="receipt-preview hidden">
+          <img id="me-receipt-image" class="hidden" alt="Comprovante de pagamento" />
+          <iframe id="me-receipt-pdf" class="hidden" title="Comprovante de pagamento em PDF"></iframe>
+        </div>
+      </div>
       <div class="dialog-actions compact-actions"><button id="me-mark-paid" class="button ghost" type="button">Confirmar pagamento e liberar</button></div>
       <div class="form-grid two"><label>Preço manual mensal (R$)<input id="me-manual-price" inputmode="decimal" placeholder="Vazio = preço do plano" /></label><label>Observação de cobrança<input id="me-billing-notes" maxlength="500" /></label></div>
       <div class="limit-box"><strong>Limites personalizados <small>(vazio = usar plano)</small></strong><div class="form-grid four"><label>TVs<input id="me-max-devices" type="number" min="0" /></label><label>Armazenamento MB<input id="me-storage-mb" type="number" min="0" /></label><label>Usuários<input id="me-max-users" type="number" min="1" /></label><label>Campanhas<input id="me-max-campaigns" type="number" min="0" /></label></div></div>
@@ -170,5 +200,6 @@
 
   <script src="./config.js"></script>
   <script src="./master.js" defer></script>
+  <script src="./master-payment.js" defer></script>
 </body>
 </html>
