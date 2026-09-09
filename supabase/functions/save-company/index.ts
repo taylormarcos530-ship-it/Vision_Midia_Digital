@@ -48,8 +48,12 @@ Deno.serve(async(req)=>{
     const manualPrice=body.manual_price_cents===null||body.manual_price_cents===''||body.manual_price_cents===undefined
       ? null
       : Math.max(0,Math.round(Number(body.manual_price_cents)))
+    const paymentUrl=body.payment_url===undefined
+      ? (String(current?.payment_url||'').trim()||null)
+      : (String(body.payment_url||'').trim()||null)
     if(!companyName||companyName.length<2||!planId)return J({error:'invalid_input'},400)
     if(manualPrice!==null&&!Number.isFinite(manualPrice))return J({error:'invalid_manual_price'},400)
+    if(paymentUrl&&(!/^https:\/\/\S+$/i.test(paymentUrl)||paymentUrl.length>1200))return J({error:'invalid_payment_url'},400)
     const overrides=body.limit_overrides&&typeof body.limit_overrides==='object'&&!Array.isArray(body.limit_overrides)?body.limit_overrides:{}
     const notes=String(body.billing_notes||'').trim()
     const previousSettings=(currentCompany?.settings&&typeof currentCompany.settings==='object')?currentCompany.settings:{}
@@ -72,6 +76,14 @@ Deno.serve(async(req)=>{
       p_actor_user_id:userData.user.id,
     })
     if(error)throw error
+
+    const {data:persistedSubscription,error:paymentUrlError}=await admin
+      .from('company_subscriptions')
+      .update({payment_url:paymentUrl})
+      .eq('company_id',companyId)
+      .select('*')
+      .single()
+    if(paymentUrlError)throw paymentUrlError
 
     const companySettings={
       ...previousSettings,
@@ -102,9 +114,9 @@ Deno.serve(async(req)=>{
       actor_user_id:userData.user.id,
       action:body.clear_cache===true?'company_player_cache_clear_requested':'company_billing_updated',
       company_id:companyId,
-      details:{plan_id:data?.subscription?.plan_id||planId,subscription_status:data?.subscription?.status||subscriptionStatus,payment_status:data?.subscription?.payment_status||paymentStatus,due_date:dueDate,audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision,source:'save-company-v3'},
+      details:{plan_id:persistedSubscription?.plan_id||data?.subscription?.plan_id||planId,subscription_status:persistedSubscription?.status||data?.subscription?.status||subscriptionStatus,payment_status:persistedSubscription?.payment_status||data?.subscription?.payment_status||paymentStatus,due_date:dueDate,payment_url_configured:Boolean(paymentUrl),audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision,source:'save-company-v4'},
     }).catch(()=>null)
-    return J({...data,player_settings:{audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}})
+    return J({...data,subscription:persistedSubscription,player_settings:{audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}})
   }catch(error){
     console.error('save-company',error)
     const msg=String(error?.message||'internal_error')
