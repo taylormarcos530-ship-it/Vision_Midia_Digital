@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#0b1220" />
+  <meta name="robots" content="noindex,nofollow" />
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" href="./icon.svg" type="image/svg+xml" />
+  <link rel="stylesheet" href="./downloads.css" />
+  <title>Vision Mídia Digital • Aplicativos</title>
+</head>
+<body>
+  <div class="page-shell">
+    <header class="downloads-header">
+      <div class="brand-row"><div class="brand-mark">V</div><div><strong>Vision Mídia Digital</strong><span>Aplicativos e instalações</span></div></div>
+      <div class="header-actions">
+        <a class="button ghost" href="./index.html">← Painel</a>
+        <a id="master-back" class="button ghost hidden" href="./master.html">Master SaaS</a>
+      </div>
+    </header>
+
+    <main class="downloads-main">
+      <section id="auth-warning" class="auth-warning hidden">
+        <h1>Entre no painel para acessar os aplicativos.</h1>
+        <p>Esta área é destinada a clientes e administradores da Vision Mídia Digital.</p>
+        <a class="button primary" href="./index.html">Entrar no painel</a>
+      </section>
+
+      <section id="downloads-content" class="hidden">
+        <div class="hero">
+          <span>APLICATIVOS / DOWNLOADS</span>
+          <h1>Instale o Vision onde sua operação precisar.</h1>
+          <p>TV Box, computador Windows e o próprio painel web ficam centralizados aqui para clientes e administradores.</p>
+        </div>
+
+        <div class="cards-grid">
+          <article class="download-card featured">
+            <div class="card-top"><span class="platform-icon">▣</span><span class="badge">ANDROID / TV BOX</span></div>
+            <h2>Vision Player para TV Box</h2>
+            <p>Aplicativo dedicado para Android e TV Box. Inicia o player e permite parear a tela com o painel Vision.</p>
+            <ul>
+              <li>Arquivo APK</li>
+              <li>Uso em TV Box / Android</li>
+              <li>Pareamento por código</li>
+            </ul>
+            <a id="android-apk-download" class="button primary disabled" aria-disabled="true">APK ainda não publicado</a>
+            <a class="text-link" href="./player.html" target="_blank" rel="noopener">Abrir Vision Player no navegador ↗</a>
+            <small id="android-apk-note">O APK permanente será conectado a este botão antes do deploy final.</small>
+          </article>
+
+          <article class="download-card">
+            <div class="card-top"><span class="platform-icon">▦</span><span class="badge">WINDOWS</span></div>
+            <h2>Vision Player para Windows</h2>
+            <p>No Windows, o Vision Player já pode ser usado e instalado como PWA pelo Chrome ou Microsoft Edge.</p>
+            <ol>
+              <li>Abra o Vision Player.</li>
+              <li>No navegador, escolha “Instalar aplicativo”.</li>
+              <li>Depois, abra-o como um programa normal do Windows.</li>
+            </ol>
+            <a class="button primary" href="./player.html" target="_blank" rel="noopener">Abrir Player para instalar</a>
+            <small>Não existe um .exe separado nesta versão; o modo PWA é o instalador atual do Windows.</small>
+          </article>
+
+          <article class="download-card">
+            <div class="card-top"><span class="platform-icon">V</span><span class="badge">PAINEL</span></div>
+            <h2>Painel Vision Mídia Digital</h2>
+            <p>Instale o próprio painel no computador ou celular para abrir como aplicativo, sem precisar procurar o site toda vez.</p>
+            <button id="install-panel-button" class="button primary" type="button">Instalar painel</button>
+            <p id="install-panel-status" class="status-text">Se o navegador permitir instalação, o botão abrirá a janela de instalação.</p>
+          </article>
+        </div>
+
+        <section class="help-panel">
+          <div><span>COMO USAR</span><h2>Depois de instalar o Player</h2></div>
+          <div class="steps">
+            <div><strong>1</strong><span>Abra o Vision Player na TV ou PC.</span></div>
+            <div><strong>2</strong><span>Copie o código exibido na tela.</span></div>
+            <div><strong>3</strong><span>No painel, vá em TVs → Parear TV.</span></div>
+            <div><strong>4</strong><span>Informe o código e conclua a vinculação.</span></div>
+          </div>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <script src="./config.js"></script>
+  <script src="./downloads.js" defer></script>
+</body>
+</html>
