@@ -82,6 +82,26 @@
       </div>
       <div class="access-actions">
         <a id="access-payment" class="button primary full hidden" target="_blank" rel="noopener">Pagar agora • Mercado Pago</a>
+        <div id="access-pix-card" class="pix-payment-card hidden">
+          <div class="pix-payment-head">
+            <div><span class="eyebrow">PAGAMENTO ALTERNATIVO</span><h3>Pagamento por PIX</h3></div>
+            <strong id="pix-amount">R$ 0,00</strong>
+          </div>
+          <div id="pix-qr" class="pix-qr" aria-label="QR Code PIX"></div>
+          <label class="pix-field">PIX Copia e Cola
+            <div class="pix-copy-line"><input id="pix-copy-code" type="text" readonly /><button id="pix-copy-button" class="button ghost" type="button">Copiar PIX</button></div>
+          </label>
+          <div class="pix-key-line"><span>Chave PIX</span><strong id="pix-key-display">—</strong></div>
+          <div class="pix-receipt-box">
+            <label>Comprovante de pagamento
+              <input id="pix-receipt-file" type="file" accept="image/jpeg,image/png,image/webp,application/pdf" />
+              <small>JPG, PNG, WEBP ou PDF • máximo 8 MB.</small>
+            </label>
+            <button id="pix-receipt-submit" class="button primary full" type="button">Enviar comprovante</button>
+            <div id="pix-receipt-status" class="pix-receipt-status hidden" role="status" aria-live="polite"></div>
+          </div>
+          <p class="form-hint">O envio do comprovante não libera o sistema automaticamente. O pagamento será confirmado pelo Master.</p>
+        </div>
         <a id="access-whatsapp" class="button ghost full hidden" href="#" target="_blank" rel="noopener">Falar com suporte no WhatsApp</a>
         <button id="access-refresh" class="button ghost full" type="button">Verificar liberação</button>
         <button id="access-notifications" class="button ghost full" type="button">Ativar notificações</button>
@@ -747,5 +767,6 @@
 
   <script src="./config.js"></script>
   <script src="./app.js" defer></script>
+  <script src="./payment-ui.js" defer></script>
 </body>
 </html>

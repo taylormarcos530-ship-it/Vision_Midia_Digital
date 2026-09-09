@@ -167,6 +167,10 @@
         limit_overrides:overrideObj(),
         billing_notes:$('#me-billing-notes').value.trim(),
         payment_url:paymentUrl||null,
+        pix_key:$('#me-pix-key')?.value.trim()||null,
+        pix_key_type:$('#me-pix-key-type')?.value||null,
+        pix_receiver_name:$('#me-pix-name')?.value.trim()||null,
+        pix_receiver_city:$('#me-pix-city')?.value.trim()||null,
         player_audio_enabled:$('#me-player-audio').checked,
         player_autostart_enabled:$('#me-player-autostart').checked
       });
