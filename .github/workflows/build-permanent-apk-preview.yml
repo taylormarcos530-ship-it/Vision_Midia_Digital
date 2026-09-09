@@ -1,0 +1,81 @@
+name: Build Permanent Vision Player Preview APK
+
+on:
+  push:
+    branches:
+      - feature/unified-master-panel
+    paths:
+      - '.github/workflows/build-permanent-apk-preview.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-commit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: feature/unified-master-panel
+          fetch-depth: 0
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Bundle current web player into APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+
+      - name: Validate player JavaScript
+        run: node --check player.js
+
+      - name: Build installable preview APK
+        run: gradle -p android-player --no-daemon assembleDebug
+
+      - name: Copy APK to permanent download path
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p downloads
+          cp android-player/app/build/outputs/apk/debug/app-debug.apk downloads/Vision-Player-preview.apk
+          test -s downloads/Vision-Player-preview.apk
+          sha256sum downloads/Vision-Player-preview.apk > downloads/Vision-Player-preview.sha256
+
+      - name: Upload validation artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-Player-preview
+          path: |
+            downloads/Vision-Player-preview.apk
+            downloads/Vision-Player-preview.sha256
+          retention-days: 30
+
+      - name: Commit permanent preview APK to branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/Vision-Player-preview.apk downloads/Vision-Player-preview.sha256
+          if git diff --cached --quiet; then
+            echo 'APK already up to date.'
+            exit 0
+          fi
+          git commit -m 'build: add permanent Vision Player preview APK'
+          git push origin HEAD:feature/unified-master-panel
