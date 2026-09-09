@@ -2300,7 +2300,21 @@
     $('#signup-form').addEventListener('submit', handleSignup);
     $('#forgot-password').addEventListener('click', handleForgotPassword);
     $('#company-form').addEventListener('submit', handleCreateCompany);
-    $('#access-refresh').addEventListener('click', () => enterAuthenticatedApp().catch(error => toast('Falha ao verificar acesso', error.message, 'error')));
+    $('#access-refresh').addEventListener('click', async () => {
+      const button = $('#access-refresh');
+      setBusy(button, true, 'Verificando...');
+      try {
+        await loadPublicConfig();
+        await enterAuthenticatedApp();
+        const stillBlocked = !$('#access-screen').classList.contains('hidden');
+        if (stillBlocked) toast('Acesso ainda não liberado', 'Os dados foram atualizados. Se houver WhatsApp de suporte configurado, o botão já aparece abaixo.', 'error');
+        else toast('Acesso liberado', 'Seu painel já está disponível.');
+      } catch (error) {
+        toast('Falha ao verificar acesso', error.message, 'error');
+      } finally {
+        setBusy(button, false);
+      }
+    });
     $('#access-logout').addEventListener('click', logout);
     $('#access-notifications').addEventListener('click', enableAccessNotifications);
     $('#logout-button').addEventListener('click', logout);

@@ -6,6 +6,7 @@
   const COMPANY_KEY = 'vision_midia_company_v1';
   const BUCKET = 'payment-receipts';
   const MAX_BYTES = 8 * 1024 * 1024;
+  const MAX_SOURCE_BYTES = 20 * 1024 * 1024;
   const ALLOWED = new Set(['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
   let loading = false;
 
@@ -89,6 +90,65 @@
       return uploadObject(path, file, false);
     }
     return parse(response);
+  }
+
+
+  async function deleteObject(path, retry = true) {
+    const session = readSession();
+    const response = await fetch(`${CONFIG.supabaseUrl}/storage/v1/object/${BUCKET}`, {
+      method: 'DELETE',
+      headers: {
+        apikey: CONFIG.supabasePublishableKey,
+        Authorization: `Bearer ${session?.access_token || ''}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ prefixes: [path] }),
+    });
+    if (response.status === 401 && retry && session?.refresh_token) {
+      await refreshSession();
+      return deleteObject(path, false);
+    }
+    return parse(response);
+  }
+
+  function canvasToWebp(canvas, quality) {
+    return new Promise((resolve, reject) => {
+      canvas.toBlob(blob => blob ? resolve(blob) : reject(new Error('Não foi possível compactar a imagem.')), 'image/webp', quality);
+    });
+  }
+
+  async function compressReceiptImage(file) {
+    if (!file.type.startsWith('image/')) return file;
+    if (file.size > MAX_SOURCE_BYTES) throw new Error('A imagem original deve ter no máximo 20 MB.');
+    const url = URL.createObjectURL(file);
+    try {
+      const image = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('Não foi possível ler a imagem do comprovante.'));
+        img.src = url;
+      });
+      const width = image.naturalWidth || image.width;
+      const height = image.naturalHeight || image.height;
+      if (!width || !height) throw new Error('Imagem do comprovante inválida.');
+      const maxSide = 1800;
+      const scale = Math.min(1, maxSide / Math.max(width, height));
+      const canvas = document.createElement('canvas');
+      canvas.width = Math.max(1, Math.round(width * scale));
+      canvas.height = Math.max(1, Math.round(height * scale));
+      const ctx = canvas.getContext('2d', { alpha: false });
+      if (!ctx) throw new Error('Seu navegador não conseguiu preparar a imagem.');
+      ctx.fillStyle = '#fff';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0, canvas.width, canvas.height);
+      let blob = await canvasToWebp(canvas, 0.76);
+      if (blob.size > MAX_BYTES) blob = await canvasToWebp(canvas, 0.58);
+      if (blob.size > MAX_BYTES) throw new Error('A imagem continuou acima de 8 MB mesmo após a compactação.');
+      const base = (file.name || 'comprovante').replace(/\.[^.]+$/, '').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100) || 'comprovante';
+      return new File([blob], `${base}.webp`, { type: 'image/webp', lastModified: Date.now() });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
   }
 
   function notice(title, message = '', type = 'success') {
@@ -188,33 +248,47 @@
     const companyId = localStorage.getItem(COMPANY_KEY) || '';
     const session = readSession();
     const userId = session?.user?.id || '';
+    let uploadedPath = '';
 
     if (!companyId || !userId) return setMessage('Sua sessão não está pronta. Atualize a página e tente novamente.', 'error');
     if (!file) return setMessage('Selecione a imagem ou PDF do comprovante.', 'error');
     if (!ALLOWED.has(file.type)) return setMessage('Formato inválido. Use JPG, PNG, WEBP ou PDF.', 'error');
-    if (file.size <= 0 || file.size > MAX_BYTES) return setMessage('O comprovante deve ter no máximo 8 MB.', 'error');
+    if (file.size <= 0) return setMessage('O arquivo do comprovante está vazio.', 'error');
+    if (file.type === 'application/pdf' && file.size > MAX_BYTES) return setMessage('O PDF deve ter no máximo 8 MB.', 'error');
 
-    const safe = (file.name || 'comprovante').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120);
-    const path = `${companyId}/receipts/${userId}/${crypto.randomUUID()}-${safe}`;
     button.disabled = true;
     button.dataset.oldText = button.textContent;
-    button.textContent = 'Enviando...';
-    setMessage('Enviando comprovante...', 'pending');
     try {
-      await uploadObject(path, file);
+      let uploadFile = file;
+      if (file.type.startsWith('image/')) {
+        button.textContent = 'Compactando...';
+        setMessage('Compactando a imagem para WEBP...', 'pending');
+        uploadFile = await compressReceiptImage(file);
+      }
+      if (uploadFile.size <= 0 || uploadFile.size > MAX_BYTES) throw new Error('O comprovante deve ter no máximo 8 MB após a compactação.');
+
+      const safe = (uploadFile.name || 'comprovante').replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-120);
+      uploadedPath = `${companyId}/receipts/${userId}/${crypto.randomUUID()}-${safe}`;
+      button.textContent = 'Enviando...';
+      setMessage(uploadFile.type === 'image/webp' ? 'Imagem compactada. Enviando comprovante...' : 'Enviando comprovante...', 'pending');
+      await uploadObject(uploadedPath, uploadFile);
       await receiptRequest({
         action: 'submit',
         company_id: companyId,
-        storage_path: path,
+        storage_path: uploadedPath,
         original_name: file.name,
-        mime_type: file.type,
-        size_bytes: file.size,
+        mime_type: uploadFile.type,
+        size_bytes: uploadFile.size,
       });
+      uploadedPath = '';
       input.value = '';
       setMessage('Comprovante enviado. Aguardando confirmação do Master.', 'success');
-      notice('Salvo com sucesso', 'Comprovante enviado para análise.');
+      notice('Salvo com sucesso', file.type.startsWith('image/') ? 'Imagem compactada em WEBP e enviada para análise.' : 'Comprovante enviado para análise.');
       await loadPix();
     } catch (error) {
+      if (uploadedPath && Number(error?.status || 0) > 0 && Number(error.status) < 500) {
+        deleteObject(uploadedPath).catch(() => {});
+      }
       const friendly = /payment_already_settled/i.test(error.message)
         ? 'Este pagamento já foi confirmado.'
         : /pix_not_configured/i.test(error.message)
