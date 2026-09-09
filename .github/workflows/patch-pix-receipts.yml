@@ -1,0 +1,46 @@
+name: Patch PIX Receipts Frontend
+on:
+  push:
+    branches: [feature/pix-receipts]
+    paths:
+      - '.github/patch_pix_receipts.py'
+      - '.github/workflows/patch-pix-receipts.yml'
+permissions:
+  contents: write
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/pix-receipts
+          fetch-depth: 0
+      - name: Apply scoped patch
+        run: python .github/patch_pix_receipts.py
+      - name: Validate JavaScript
+        run: |
+          node --check app.js
+          node --check master.js
+          node --check payment-ui.js
+          node --check master-payment.js
+      - name: Validate PIX integration markers
+        run: |
+          grep -q 'access-pix-card' index.html
+          grep -q 'payment-ui.js' index.html
+          grep -q 'me-pix-key' master.html
+          grep -q 'me-receipt-box' master.html
+          grep -q 'master-payment.js' master.html
+          grep -q "pix_key:\$('#me-pix-key')" master.js
+          grep -q 'PIX_RECEIPTS_UI' styles.css
+          grep -q 'PIX_RECEIPTS_MASTER' master.css
+      - name: Remove temporary patch files
+        run: rm -f .github/patch_pix_receipts.py .github/workflows/patch-pix-receipts.yml
+      - name: Commit feature
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git diff --cached --check
+          git commit -m 'feat: add PIX payment receipts'
+          git push origin feature/pix-receipts
