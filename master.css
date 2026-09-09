@@ -21,3 +21,6 @@ body.master-embedded .master-content{max-width:none;margin:0;padding:20px}
 body.master-embedded .hero{margin-top:0}
 body.master-embedded #master-auth,body.master-embedded #master-denied{min-height:100vh}
 @media(max-width:720px){body.master-embedded .master-content{padding:12px}}
+
+/* DOWNLOAD_CENTER_LINK */
+.nav-download-link{display:flex;align-items:center;text-decoration:none;color:inherit}
