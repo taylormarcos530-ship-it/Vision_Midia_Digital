@@ -84,8 +84,8 @@
     button.classList.remove('disabled');
     button.removeAttribute('aria-disabled');
     button.textContent = 'Baixar APK para TV Box';
-    button.setAttribute('download', 'Vision-Player-TVBox.apk');
-    if (note) note.textContent = 'Baixe o APK, instale no TV Box e depois faça o pareamento pelo código exibido.';
+    button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+    if (note) note.textContent = 'Versão de validação: baixe o APK, instale no TV Box e faça o pareamento pelo código exibido. O APK comercial assinado será gerado antes da publicação final.';
   }
 
   function setupPanelInstall() {
