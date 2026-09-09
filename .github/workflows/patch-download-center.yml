@@ -1,0 +1,43 @@
+name: Patch Download Center
+
+on:
+  push:
+    branches: [feature/unified-master-panel]
+    paths:
+      - '.github/patch_download_center.py'
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply scoped patch
+        run: python .github/patch_download_center.py
+      - name: Validate JavaScript
+        run: node --check downloads.js
+      - name: Validate focused markers
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q 'Aplicativos / Downloads' index.html
+          grep -q 'Aplicativos / Downloads' master.html
+          grep -q 'downloads.html' sw.js
+          grep -q 'downloads.js' sw.js
+      - name: Remove temporary patch files
+        run: rm -f .github/patch_download_center.py .github/workflows/patch-download-center.yml
+      - name: Commit changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add index.html master.html styles.css master.css sw.js .github
+          if git diff --cached --quiet; then
+            echo 'No changes to commit.'
+          else
+            git commit -m 'feat: add downloads menu for clients and Master'
+            git push
+          fi
