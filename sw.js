@@ -1,6 +1,6 @@
-const CACHE = 'vision-midia-shell-v6';
+const CACHE = 'vision-midia-shell-v7';
 const SHELL = [
-  './', './index.html', './styles.css', './config.js', './app.js', './manifest.webmanifest', './icon.svg',
+  './', './index.html', './styles.css', './config.js', './app.js', './payment-ui.js', './manifest.webmanifest', './icon.svg',
   './player.html', './player.css', './player.js', './player.webmanifest'
 ];
 
