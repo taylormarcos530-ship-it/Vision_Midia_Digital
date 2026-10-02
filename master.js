@@ -2,7 +2,8 @@
   'use strict';
   const CONFIG = window.VISION_CONFIG;
   const SESSION_KEY = 'vision_midia_session_v1';
-  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [] };
+  const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
+  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [], loginVisualDraft: null };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   let lastActionButton = null;
@@ -72,6 +73,137 @@
   function bytes(n) { n=Number(n||0); if(n<1024) return `${n} B`; const u=['KB','MB','GB','TB']; let v=n/1024,i=0; while(v>=1024&&i<u.length-1){v/=1024;i++} return `${v.toFixed(v>=10?1:2)} ${u[i]}`; }
   function dt(v){ if(!v) return '—'; try{return new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v))}catch{return '—'} }
   function numOrBlank(v){ return v === null || v === undefined ? '' : v; }
+
+  function readLoginVisualPreview(){
+    try{
+      const raw=localStorage.getItem(LOGIN_VISUAL_PREVIEW_KEY);
+      return raw?JSON.parse(raw):null;
+    }catch{return null}
+  }
+  function writeLoginVisualPreview(value){
+    try{
+      if(value)localStorage.setItem(LOGIN_VISUAL_PREVIEW_KEY,JSON.stringify(value));
+      else localStorage.removeItem(LOGIN_VISUAL_PREVIEW_KEY);
+      return true;
+    }catch{return false}
+  }
+  function baseLoginVisualConfig(){
+    const c=state.platformConfig||{};
+    return{
+      imageDataUrl:'',
+      fit:c.login_image_fit||'cover',
+      position:c.login_image_position||'center',
+      overlay:Number(c.login_image_overlay??42),
+      title:c.login_image_title||'Sua operação visual, organizada em um só lugar.',
+      subtitle:c.login_image_subtitle||'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.',
+    };
+  }
+  function currentLoginVisualConfig(){
+    return state.loginVisualDraft||readLoginVisualPreview()||baseLoginVisualConfig();
+  }
+  function updateLoginVisualMasterPreview(){
+    const cfg=currentLoginVisualConfig();
+    const box=$('#login-visual-master-preview');
+    const img=$('#login-visual-master-image');
+    if(!box||!img)return;
+    box.style.setProperty('--login-master-fit',['cover','contain'].includes(cfg.fit)?cfg.fit:'cover');
+    box.style.setProperty('--login-master-position',cfg.position||'center');
+    box.style.setProperty('--login-master-overlay',String(Math.max(0,Math.min(1,Number(cfg.overlay||0)/100))));
+    $('#login-visual-master-title').textContent=cfg.title||'Sua operação visual, organizada em um só lugar.';
+    $('#login-visual-master-subtitle').textContent=cfg.subtitle||'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.';
+    if(cfg.imageDataUrl){
+      img.src=cfg.imageDataUrl;
+      img.classList.remove('hidden');
+      box.dataset.hasImage='true';
+    }else{
+      img.removeAttribute('src');
+      img.classList.add('hidden');
+      box.dataset.hasImage='false';
+    }
+  }
+  function collectLoginVisualDraft(){
+    const existing=currentLoginVisualConfig();
+    const draft={
+      ...existing,
+      fit:$('#lv-fit')?.value||'cover',
+      position:$('#lv-position')?.value||'center',
+      overlay:Number($('#lv-overlay')?.value||42),
+      title:($('#lv-title')?.value||'').trim()||'Sua operação visual, organizada em um só lugar.',
+      subtitle:($('#lv-subtitle')?.value||'').trim()||'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.',
+      updatedAt:new Date().toISOString(),
+    };
+    state.loginVisualDraft=draft;
+    return draft;
+  }
+  async function compressLoginVisualFile(file){
+    if(!file)return null;
+    if(!/^image\/(jpeg|png|webp)$/i.test(file.type||''))throw new Error('Use uma imagem JPG, PNG ou WEBP.');
+    if(file.size>8*1024*1024)throw new Error('A imagem pode ter no máximo 8 MB.');
+    const dataUrl=await new Promise((resolve,reject)=>{
+      const reader=new FileReader();
+      reader.onerror=()=>reject(new Error('Não foi possível ler a imagem.'));
+      reader.onload=()=>resolve(String(reader.result||''));
+      reader.readAsDataURL(file);
+    });
+    const img=await new Promise((resolve,reject)=>{
+      const el=new Image();
+      el.onerror=()=>reject(new Error('Imagem inválida.'));
+      el.onload=()=>resolve(el);
+      el.src=dataUrl;
+    });
+    const maxWidth=1600,maxHeight=1200;
+    const scale=Math.min(1,maxWidth/img.naturalWidth,maxHeight/img.naturalHeight);
+    const width=Math.max(1,Math.round(img.naturalWidth*scale));
+    const height=Math.max(1,Math.round(img.naturalHeight*scale));
+    const canvas=document.createElement('canvas');
+    canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext('2d');
+    if(!ctx)throw new Error('Seu navegador não conseguiu preparar a imagem.');
+    ctx.drawImage(img,0,0,width,height);
+    return canvas.toDataURL('image/webp',0.82);
+  }
+  async function handleLoginVisualFile(event){
+    const file=event.target.files?.[0];
+    if(!file)return;
+    formStatus('#lv-status','Preparando imagem...','pending');
+    try{
+      const imageDataUrl=await compressLoginVisualFile(file);
+      const draft=collectLoginVisualDraft();
+      draft.imageDataUrl=imageDataUrl;
+      state.loginVisualDraft=draft;
+      updateLoginVisualMasterPreview();
+      formStatus('#lv-status','✅ Imagem preparada. Clique em “Salvar no preview”.','success');
+      toast('Imagem preparada','A prévia já está mostrando o novo visual.');
+    }catch(e){
+      event.target.value='';
+      formStatus('#lv-status',`❌ ${e.message}`,'error');
+      toast('Erro ao preparar imagem',e.message,'error');
+    }
+  }
+  function saveLoginVisualPreview(event){
+    event.preventDefault();
+    const b=$('#lv-save');busy(b,true,'Salvando...');
+    try{
+      const draft=collectLoginVisualDraft();
+      if(!writeLoginVisualPreview(draft))throw new Error('O navegador não conseguiu salvar a imagem. Tente uma imagem menor.');
+      state.loginVisualDraft={...draft};
+      updateLoginVisualMasterPreview();
+      formStatus('#lv-status','✅ Visual do login salvo neste preview.','success');
+      toast('Salvo com sucesso','A tela de login deste preview já está atualizada.');
+    }catch(e){
+      formStatus('#lv-status',`❌ ${e.message}`,'error');
+      toast('Erro ao salvar visual',e.message,'error');
+    }finally{busy(b,false)}
+  }
+  function removeLoginVisualImage(){
+    const draft=collectLoginVisualDraft();
+    draft.imageDataUrl='';
+    state.loginVisualDraft=draft;
+    updateLoginVisualMasterPreview();
+    $('#lv-file').value='';
+    formStatus('#lv-status','Imagem removida da prévia. Salve para confirmar.','pending');
+  }
+
   function reaisToCents(v){ const t=String(v||'').trim().replace(/\./g,'').replace(',','.'); if(!t) return null; const n=Number(t); return Number.isFinite(n)?Math.round(n*100):null; }
   function saveSession(s){ state.session=s; if(s) localStorage.setItem(SESSION_KEY,JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); }
   function savedSession(){ try{const s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); return s?.access_token&&s?.refresh_token?s:null}catch{return null} }
@@ -140,6 +272,16 @@
     $('#ps-signup-message').value=c.signup_whatsapp_message||'';
     $('#ps-renewal-message').value=c.renewal_whatsapp_message||'';
     $('#ps-signup-enabled').checked=c.signup_enabled!==false;
+
+    state.loginVisualDraft=readLoginVisualPreview()||baseLoginVisualConfig();
+    const visual=currentLoginVisualConfig();
+    if($('#lv-fit'))$('#lv-fit').value=visual.fit||'cover';
+    if($('#lv-position'))$('#lv-position').value=visual.position||'center';
+    if($('#lv-overlay'))$('#lv-overlay').value=String(Number(visual.overlay??42));
+    if($('#lv-overlay-value'))$('#lv-overlay-value').textContent=`${Number(visual.overlay??42)}%`;
+    if($('#lv-title'))$('#lv-title').value=visual.title||'Sua operação visual, organizada em um só lugar.';
+    if($('#lv-subtitle'))$('#lv-subtitle').value=visual.subtitle||'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.';
+    updateLoginVisualMasterPreview();
   }
   function renderAudit(){ const rows=state.data.audits||[]; $('#master-audit-body').innerHTML=rows.map(a=>`<tr><td>${esc(dt(a.created_at))}</td><td><strong>${esc(a.action)}</strong></td><td>${esc(companyById(a.company_id)?.name||'—')}</td><td>${esc(JSON.stringify(a.details||{}).slice(0,220))}</td></tr>`).join(''); }
   function render(){ renderMetrics(); renderDashboard(); renderClients(); renderPlans(); renderPlatformSettings(); renderAudit(); }
@@ -375,7 +517,7 @@
     const b=$('#me-clear-cache'); busy(b,true,'Solicitando...');
     try{await saveCompanyRequest({company_id:id,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,clear_cache:true});formStatus('#me-status','✅ Limpeza de cache enviada. As TVs baixarão novamente as mídias na próxima sincronização.','success');toast('Comando enviado','Cache da conta será renovado.');await load()}catch(e){formStatus('#me-status',`❌ ${e.message}`,'error');toast('Erro ao enviar comando',e.message,'error')}finally{busy(b,false)}
   }
-  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
+  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
   async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){saveSession(null);show('master-auth');toast('Sessão expirada','Entre novamente.','error')} }
   boot();
