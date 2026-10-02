@@ -7,6 +7,16 @@
 
   const $ = (selector) => document.querySelector(selector);
 
+  function actionFeedback(message, type = 'success') {
+    const el = $('#downloads-action-status');
+    if (!el) return;
+    el.textContent = message;
+    el.className = `download-action-status ${type}`;
+    el.classList.remove('hidden');
+    clearTimeout(el._hideTimer);
+    el._hideTimer = setTimeout(() => el.classList.add('hidden'), 4200);
+  }
+
   function readSession() {
     try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }
     catch { return null; }
@@ -70,6 +80,9 @@
   }
 
   async function switchAccount() {
+    const button = $('#downloads-switch-account');
+    if (button) { button.disabled = true; button.textContent = 'Saindo...'; }
+    actionFeedback('Saindo da conta...', 'pending');
     const session = readSession();
     try {
       if (session?.access_token) {
@@ -123,6 +136,7 @@
     button.addEventListener('click', async () => {
       if (!deferredInstallPrompt) {
         status.textContent = 'Se o navegador não abriu a instalação, use o menu do Chrome/Edge e escolha “Instalar aplicativo”.';
+        actionFeedback('✕ Não foi possível abrir o instalador automaticamente. Use o menu do navegador.', 'error');
         return;
       }
       deferredInstallPrompt.prompt();
@@ -130,10 +144,12 @@
       deferredInstallPrompt = null;
       if (choice?.outcome === 'accepted') {
         button.disabled = true;
-        button.textContent = 'Instalação iniciada';
+        button.textContent = '✓ Instalação iniciada';
         status.textContent = 'O painel está sendo instalado neste dispositivo.';
+        actionFeedback('✓ Instalação iniciada com sucesso.');
       } else {
         status.textContent = 'Instalação cancelada. Você pode tentar novamente pelo menu do navegador.';
+        actionFeedback('✕ Instalação cancelada.', 'error');
       }
     });
   }
@@ -148,8 +164,9 @@
   window.addEventListener('appinstalled', () => {
     const button = $('#install-panel-button');
     const status = $('#install-panel-status');
-    if (button) { button.disabled = true; button.textContent = 'Painel instalado'; }
+    if (button) { button.disabled = true; button.textContent = '✓ Painel instalado'; }
     if (status) status.textContent = 'Instalação concluída.';
+    actionFeedback('✓ Painel instalado com sucesso.');
   });
 
   async function boot() {
@@ -168,6 +185,15 @@
     setupApkButton();
     setupPanelInstall();
     $('#downloads-switch-account')?.addEventListener('click', switchAccount);
+    $('#android-apk-download')?.addEventListener('click', event => {
+      if (event.currentTarget.classList.contains('disabled')) {
+        event.preventDefault();
+        actionFeedback('✕ APK indisponível no momento.', 'error');
+        return;
+      }
+      actionFeedback('✓ Download do APK iniciado.');
+    });
+    $('#panel-back')?.addEventListener('click', () => actionFeedback('Voltando ao painel...', 'pending'));
 
     if (await detectMaster(session)) $('#master-back')?.classList.remove('hidden');
 
