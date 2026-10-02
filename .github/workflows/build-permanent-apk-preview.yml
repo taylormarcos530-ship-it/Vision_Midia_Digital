@@ -84,6 +84,23 @@ jobs:
           test -s downloads/Vision-Player-preview.apk
           sha256sum downloads/Vision-Player-preview.apk > downloads/Vision-Player-preview.sha256
 
+      - name: Record Player source fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os
+          files = ['player.html','player.css','player.js','config.js','icon.svg','player.webmanifest','sw.js']
+          payload = ''.join(f"{name}\n{Path(name).read_text()}\n" for name in files)
+          data = {
+              'source_sha256': hashlib.sha256(payload.encode()).hexdigest(),
+              'git_sha': os.environ.get('GITHUB_SHA', ''),
+              'files': files,
+          }
+          Path('downloads/Vision-Player-preview.source.json').write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
       - name: Upload validation artifact
         uses: actions/upload-artifact@v4
         with:
@@ -91,6 +108,7 @@ jobs:
           path: |
             downloads/Vision-Player-preview.apk
             downloads/Vision-Player-preview.sha256
+            downloads/Vision-Player-preview.source.json
           retention-days: 30
 
       - name: Commit permanent preview APK to triggering branch
@@ -100,7 +118,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add downloads/Vision-Player-preview.apk downloads/Vision-Player-preview.sha256
+          git add downloads/Vision-Player-preview.apk downloads/Vision-Player-preview.sha256 downloads/Vision-Player-preview.source.json
           if git diff --cached --quiet; then
             echo 'APK already up to date.'
             exit 0
