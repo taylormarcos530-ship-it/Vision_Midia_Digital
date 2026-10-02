@@ -1991,20 +1991,69 @@
     } finally { setBusy(button, false); }
   }
 
+  let passwordRecoveryCooldownTimer = null;
+
+  function passwordRecoveryWaitSeconds(error) {
+    const message = String(error?.message || error || '');
+    const match = message.match(/(?:after|in)\s+(\d+)\s*seconds?/i);
+    if (match) return Math.max(1, Number(match[1]) || 0);
+    if (/security purposes|rate.?limit|too many/i.test(message)) return 30;
+    return 0;
+  }
+
+  function startPasswordRecoveryCooldown(seconds = 30) {
+    const button = $('#forgot-password');
+    if (!button) return;
+    clearInterval(passwordRecoveryCooldownTimer);
+    let remaining = Math.max(1, Math.ceil(Number(seconds) || 30));
+    button.disabled = true;
+
+    const render = () => {
+      button.textContent = remaining > 0 ? `Reenviar em ${remaining}s` : 'Esqueci minha senha';
+      if (remaining <= 0) {
+        clearInterval(passwordRecoveryCooldownTimer);
+        passwordRecoveryCooldownTimer = null;
+        button.disabled = false;
+        return;
+      }
+      remaining -= 1;
+    };
+
+    render();
+    passwordRecoveryCooldownTimer = setInterval(render, 1000);
+  }
+
   async function handleForgotPassword() {
+    const button = $('#forgot-password');
+    if (button?.disabled) return;
+
     const email = $('#login-email').value.trim();
     if (!email) {
       toast('Informe seu e-mail', 'Preencha o e-mail para receber a recuperação.', 'error');
       $('#login-email').focus();
       return;
     }
+
+    setBusy(button, true, 'Enviando...');
     try {
       await authRequest('/recover', {
         body: { email, redirect_to: `${location.origin}${location.pathname}` },
       });
-      toast('Recuperação enviada', 'Confira sua caixa de entrada.');
+      toast('Recuperação enviada', 'Confira sua caixa de entrada. Você poderá solicitar outro link em 30 segundos.');
+      setBusy(button, false);
+      startPasswordRecoveryCooldown(30);
+      return;
     } catch (error) {
-      toast('Falha ao enviar recuperação', error.message, 'error');
+      const wait = passwordRecoveryWaitSeconds(error);
+      if (wait > 0) {
+        toast('Aguarde para reenviar', `Por segurança, aguarde ${wait} segundos para solicitar outro link de recuperação.`, 'error');
+        setBusy(button, false);
+        startPasswordRecoveryCooldown(wait);
+        return;
+      }
+      toast('Falha ao enviar recuperação', 'Não foi possível enviar o link agora. Confira o e-mail e tente novamente.', 'error');
+    } finally {
+      if (!button?.disabled) setBusy(button, false);
     }
   }
 
