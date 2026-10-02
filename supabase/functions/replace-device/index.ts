@@ -85,6 +85,13 @@ Deno.serve(async(req)=>{
       if(accessError)throw accessError
     }
 
+    const {error:commandCleanupError}=await admin.from('device_commands').update({
+      status:'cancelled',
+      completed_at:new Date().toISOString(),
+      error_message:'TV substituída antes da execução do comando.',
+    }).eq('company_id',companyId).eq('device_id',oldDeviceId).in('status',['pending','sent'])
+    if(commandCleanupError)console.warn('replace-device command cleanup',commandCleanupError.message||commandCleanupError)
+
     await admin.from('device_claim_attempts').insert({user_id:user.id,success:true})
     const {error:auditError}=await admin.from('master_audit_logs').insert({
       actor_user_id:user.id,
