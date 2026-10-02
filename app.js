@@ -58,7 +58,39 @@
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const $ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  let lastActionButton = null;
+  let lastActionAt = 0;
+
+  function isFeedbackActionButton(button) {
+    if (!button) return false;
+    return !button.matches('.nav-item,.auth-tab,[data-view],[data-saas-view],[data-close-dialog],[data-action="open-sidebar"],[data-action="close-sidebar"]');
+  }
+
+  function trackActionButton(button) {
+    if (!isFeedbackActionButton(button)) return;
+    lastActionButton = button;
+    lastActionAt = Date.now();
+  }
+
+  function applyButtonFeedback(type) {
+    const button = lastActionButton;
+    if (!button || !button.isConnected || Date.now() - lastActionAt > 45000) return;
+    const resultText = type === 'error' ? '✕ Erro' : '✓ Sucesso';
+    button.dataset.feedbackResult = resultText;
+    if (!button.disabled) {
+      const original = button.dataset.originalText || button.dataset.feedbackOriginal || button.textContent;
+      button.dataset.feedbackOriginal = original;
+      button.textContent = resultText;
+      clearTimeout(button._visionFeedbackTimer);
+      button._visionFeedbackTimer = setTimeout(() => {
+        if (!button.isConnected || button.disabled) return;
+        button.textContent = button.dataset.feedbackOriginal || original;
+        delete button.dataset.feedbackOriginal;
+        delete button.dataset.feedbackResult;
+      }, 1400);
+    }
+  }
 
   function escapeHtml(value = '') {
     return String(value)
@@ -72,12 +104,25 @@
   function setBusy(button, busy, busyText = 'Salvando...') {
     if (!button) return;
     if (busy) {
-      button.dataset.originalText = button.textContent;
+      button.dataset.originalText = button.dataset.originalText || button.textContent;
       button.textContent = busyText;
       button.disabled = true;
     } else {
-      button.textContent = button.dataset.originalText || button.textContent;
       button.disabled = false;
+      const resultText = button.dataset.feedbackResult;
+      if (resultText) {
+        button.textContent = resultText;
+        delete button.dataset.feedbackResult;
+        clearTimeout(button._visionFeedbackTimer);
+        button._visionFeedbackTimer = setTimeout(() => {
+          if (!button.isConnected || button.disabled) return;
+          button.textContent = button.dataset.originalText || button.textContent;
+          delete button.dataset.originalText;
+        }, 1400);
+      } else {
+        button.textContent = button.dataset.originalText || button.textContent;
+        delete button.dataset.originalText;
+      }
     }
   }
 
@@ -93,6 +138,7 @@
     el.className = `toast ${type}`;
     el.innerHTML = `<strong>${escapeHtml(title)}</strong>${message ? `<span>${escapeHtml(message)}</span>` : ''}`;
     root.appendChild(el);
+    applyButtonFeedback(type);
     setTimeout(() => el.remove(), timeout);
   }
 
@@ -2467,6 +2513,8 @@
   }
 
   function bindEvents() {
+    document.addEventListener('click', event => trackActionButton(event.target.closest('button')), true);
+    document.addEventListener('submit', event => trackActionButton(event.submitter), true);
     $$('.auth-tab').forEach(btn => btn.addEventListener('click', () => switchAuthTab(btn.dataset.authTab)));
     $('#login-form').addEventListener('submit', handleLogin);
     $('#signup-form').addEventListener('submit', handleSignup);
