@@ -86,12 +86,13 @@ Deno.serve(async(req)=>{
     }
 
     await admin.from('device_claim_attempts').insert({user_id:user.id,success:true})
-    await admin.from('master_audit_logs').insert({
+    const {error:auditError}=await admin.from('master_audit_logs').insert({
       actor_user_id:user.id,
       action:'device_replaced',
       company_id:companyId,
       details:{old_device_id:oldDeviceId,new_device_id:data?.device?.id||null,source:masterAllowed&&!companyAllowed?'master':'company_panel'}
-    }).catch(()=>null)
+    })
+    if(auditError)console.warn('replace-device audit',auditError)
     return J(data||{ok:true,replaced:true})
   }catch(error){
     console.error('replace-device',error)
