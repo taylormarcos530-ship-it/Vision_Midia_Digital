@@ -2529,16 +2529,92 @@
     $$('[data-playlist-weekday]').forEach(input => { input.checked = days.has(Number(input.dataset.playlistWeekday)); });
     playlistScheduleStatus();
     syncPlaylistScheduleFormVisibility();
+    updatePlaylistScheduleSummary();
     openDialog('playlist-schedule-dialog');
+  }
+
+  function playlistScheduleSelectedWeekdays() {
+    return $('[data-playlist-weekday]')
+      .filter(input => input.checked)
+      .map(input => Number(input.dataset.playlistWeekday));
+  }
+
+  function playlistSchedulePeriodSummary(startDate, endDate) {
+    if (!startDate && !endDate) return 'sem limite de datas';
+    if (startDate && endDate) return `${formatDateShort(startDate)} → ${formatDateShort(endDate)}`;
+    if (startDate) return `a partir de ${formatDateShort(startDate)}`;
+    return `até ${formatDateShort(endDate)}`;
+  }
+
+  function updatePlaylistScheduleSummary() {
+    const enabled = $('#playlist-schedule-enabled')?.checked !== false;
+    const summary = $('#playlist-schedule-summary');
+    const detail = $('#playlist-schedule-summary-detail');
+    const note = $('#playlist-schedule-time-note');
+    if (!summary || !detail) return;
+
+    if (!enabled) {
+      summary.textContent = 'Sempre disponível';
+      detail.textContent = 'Sem restrição de data, horário ou dia da semana.';
+      note?.classList.add('hidden');
+      return;
+    }
+
+    const startDate = $('#playlist-schedule-start-date')?.value || '';
+    const endDate = $('#playlist-schedule-end-date')?.value || '';
+    const allDay = $('#playlist-schedule-all-day')?.checked !== false;
+    const startTime = $('#playlist-schedule-start-time')?.value || '';
+    const endTime = $('#playlist-schedule-end-time')?.value || '';
+    const weekdays = playlistScheduleSelectedWeekdays();
+    const orderedDays = [1,2,3,4,5,6,0].filter(day => weekdays.includes(day));
+    const daysText = weekdays.length === 7
+      ? 'Todos os dias'
+      : orderedDays.length
+        ? orderedDays.map(day => WEEKDAY_NAMES[day]).join(', ')
+        : 'Nenhum dia selecionado';
+
+    let timeText = 'dia inteiro';
+    let crossesMidnight = false;
+    if (!allDay) {
+      if (startTime && endTime) {
+        crossesMidnight = startTime > endTime;
+        timeText = `${startTime} → ${endTime}${crossesMidnight ? ' (+1 dia)' : ''}`;
+      } else {
+        timeText = 'horário incompleto';
+      }
+    }
+
+    summary.textContent = `${daysText} • ${timeText}`;
+    detail.textContent = `Período: ${playlistSchedulePeriodSummary(startDate, endDate)}.`;
+    if (note) {
+      note.classList.toggle('hidden', allDay);
+      note.textContent = crossesMidnight
+        ? 'Esta janela atravessa a meia-noite. O trecho após 00:00 continua pertencendo ao dia em que a programação começou.'
+        : 'Se a hora final for menor que a inicial, a programação atravessa a meia-noite. Ex.: 22:00 → 02:00.';
+    }
+  }
+
+  function setPlaylistWeekdayPreset(preset) {
+    const values = preset === 'weekdays' ? new Set([1,2,3,4,5])
+      : preset === 'weekend' ? new Set([0,6])
+      : new Set([0,1,2,3,4,5,6]);
+    $('[data-playlist-weekday]').forEach(input => {
+      input.checked = values.has(Number(input.dataset.playlistWeekday));
+    });
+    playlistScheduleStatus();
+    updatePlaylistScheduleSummary();
   }
 
   function syncPlaylistScheduleFormVisibility() {
     const enabled = $('#playlist-schedule-enabled')?.checked !== false;
     const allDay = $('#playlist-schedule-all-day')?.checked !== false;
-    $$('.schedule-date-fields input').forEach(input => input.disabled = !enabled);
+    $('.schedule-date-fields input').forEach(input => input.disabled = !enabled);
     $('#playlist-schedule-all-day').disabled = !enabled;
-    $$('[data-playlist-weekday]').forEach(input => input.disabled = !enabled);
+    $('[data-playlist-weekday]').forEach(input => input.disabled = !enabled);
+    $('[data-playlist-weekday-preset]').forEach(button => button.disabled = !enabled);
     $('#playlist-schedule-time-fields').classList.toggle('hidden', !enabled || allDay);
+    $('#playlist-schedule-time-note')?.classList.toggle('hidden', !enabled || allDay);
+    updatePlaylistScheduleSummary();
   }
 
   async function applyPlaylistSchedule(event) {
@@ -2547,7 +2623,7 @@
     if (!ids.length) return;
     const enabled = $('#playlist-schedule-enabled').checked;
     const allDay = $('#playlist-schedule-all-day').checked;
-    const weekdays = $$('[data-playlist-weekday]').filter(input => input.checked).map(input => Number(input.dataset.playlistWeekday));
+    const weekdays = playlistScheduleSelectedWeekdays();
     const startDate = $('#playlist-schedule-start-date').value || null;
     const endDate = $('#playlist-schedule-end-date').value || null;
     const startTime = enabled && !allDay ? ($('#playlist-schedule-start-time').value || null) : null;
@@ -2555,6 +2631,7 @@
     if (enabled && !weekdays.length) return playlistScheduleStatus('❌ Selecione pelo menos um dia da semana.', 'error');
     if (startDate && endDate && endDate < startDate) return playlistScheduleStatus('❌ A data final não pode ser anterior à inicial.', 'error');
     if (enabled && !allDay && (!startTime || !endTime)) return playlistScheduleStatus('❌ Informe a hora inicial e final.', 'error');
+    if (enabled && !allDay && startTime === endTime) return playlistScheduleStatus('❌ A hora inicial e final não podem ser iguais. Use “Dia inteiro” para exibir durante todo o dia.', 'error');
     const button = $('#playlist-schedule-save');
     setBusy(button, true, 'Aplicando...');
     playlistScheduleStatus('Salvando programação...', 'pending');
@@ -2572,12 +2649,21 @@
   async function clearPlaylistSchedule() {
     const ids = state.scheduleTargetItemIds.filter(Boolean);
     if (!ids.length) return;
+    const button = $('#playlist-schedule-clear');
+    setBusy(button, true, 'Alterando...');
+    playlistScheduleStatus('Alterando para exibição sempre disponível...', 'pending');
     try {
       await Promise.all(ids.map(id => restRequest('playlist_items', { method:'PATCH', query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body:{schedule_enabled:false,start_date:null,end_date:null,start_time:null,end_time:null,weekdays:[0,1,2,3,4,5,6]}, prefer:'return=minimal' })));
       await loadAllData();
-      closeDialog('playlist-schedule-dialog');
+      playlistScheduleStatus('✅ Agora estas mídias ficam sempre disponíveis.', 'success');
       toast('Programação removida', 'As mídias voltaram a ficar disponíveis sempre.');
-    } catch (error) { playlistScheduleStatus(`❌ ${error.message}`, 'error'); }
+      setTimeout(() => closeDialog('playlist-schedule-dialog'), 550);
+    } catch (error) {
+      playlistScheduleStatus(`❌ ${error.message}`, 'error');
+      toast('Erro ao remover programação', error.message, 'error');
+    } finally {
+      setBusy(button, false);
+    }
   }
 
   async function setSelectedPlaylistEnabled(enabled) {
@@ -2769,8 +2855,14 @@
     $('#branding-open-player').addEventListener('click', () => window.open($('#branding-player-url').value || './player.html','_blank','noopener'));
     $('#playlist-schedule-form').addEventListener('submit', applyPlaylistSchedule);
     $('#playlist-schedule-clear').addEventListener('click', clearPlaylistSchedule);
-    $('#playlist-schedule-enabled').addEventListener('change', syncPlaylistScheduleFormVisibility);
-    $('#playlist-schedule-all-day').addEventListener('change', syncPlaylistScheduleFormVisibility);
+    $('#playlist-schedule-enabled').addEventListener('change', () => { playlistScheduleStatus(); syncPlaylistScheduleFormVisibility(); });
+    $('#playlist-schedule-all-day').addEventListener('change', () => { playlistScheduleStatus(); syncPlaylistScheduleFormVisibility(); });
+    ['#playlist-schedule-start-date','#playlist-schedule-end-date','#playlist-schedule-start-time','#playlist-schedule-end-time'].forEach(selector => {
+      $(selector)?.addEventListener('input', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); });
+      $(selector)?.addEventListener('change', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); });
+    });
+    $('[data-playlist-weekday]').forEach(input => input.addEventListener('change', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); }));
+    $('[data-playlist-weekday-preset]').forEach(button => button.addEventListener('click', () => setPlaylistWeekdayPreset(button.dataset.playlistWeekdayPreset)));
     $('#playlist-bulk-schedule').addEventListener('click', () => openPlaylistScheduleDialog());
     $('#playlist-bulk-enable').addEventListener('click', () => setSelectedPlaylistEnabled(true));
     $('#playlist-bulk-disable').addEventListener('click', () => setSelectedPlaylistEnabled(false));
