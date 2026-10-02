@@ -389,6 +389,8 @@
 
   async function applyDeviceSettings(settings = {}) {
     state.audioEnabled = settings.audio_enabled !== false;
+    const currentVideo = $('#media-stage video');
+    if (currentVideo) currentVideo.muted = !state.audioEnabled;
     const revision = Number(settings.cache_revision || 0);
     const previous = Number(localStorage.getItem(CACHE_REV_KEY) || 0);
     if (revision !== previous) {
