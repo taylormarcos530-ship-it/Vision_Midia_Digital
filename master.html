@@ -73,6 +73,70 @@
               <button id="ps-save" class="button primary" type="submit">Salvar configurações</button>
             </form>
           </article>
+
+          <article class="panel login-visual-settings-panel">
+            <div class="panel-head">
+              <div><small>APARÊNCIA</small><h3>Imagem lateral da tela de login</h3></div>
+              <span class="login-visual-preview-badge">PREVIEW</span>
+            </div>
+            <p class="helper">Personalize o grande painel visual do lado esquerdo do login. Neste preview a configuração fica salva neste navegador; a persistência global já fica preparada para o deploy oficial.</p>
+            <div class="login-visual-settings-grid">
+              <div class="login-visual-master-preview" id="login-visual-master-preview" data-has-image="false">
+                <img id="login-visual-master-image" class="hidden" alt="Prévia da imagem do login" />
+                <div class="login-visual-master-overlay"></div>
+                <div class="login-visual-master-copy">
+                  <span>VISION MÍDIA DIGITAL</span>
+                  <strong id="login-visual-master-title">Sua operação visual, organizada em um só lugar.</strong>
+                  <small id="login-visual-master-subtitle">Gerencie telas, conteúdos, playlists e campanhas com controle profissional.</small>
+                </div>
+              </div>
+
+              <form id="login-visual-form" class="stack login-visual-form">
+                <label>Imagem lateral
+                  <input id="lv-file" type="file" accept="image/jpeg,image/png,image/webp" />
+                  <small>JPG, PNG ou WEBP. O preview converte e compacta automaticamente para WEBP.</small>
+                </label>
+
+                <div class="form-grid two">
+                  <label>Enquadramento
+                    <select id="lv-fit">
+                      <option value="cover">Preencher área</option>
+                      <option value="contain">Mostrar imagem inteira</option>
+                    </select>
+                  </label>
+                  <label>Posição
+                    <select id="lv-position">
+                      <option value="center">Centro</option>
+                      <option value="top">Topo</option>
+                      <option value="bottom">Base</option>
+                      <option value="left">Esquerda</option>
+                      <option value="right">Direita</option>
+                    </select>
+                  </label>
+                </div>
+
+                <label>Escurecimento da imagem
+                  <div class="login-visual-range-row">
+                    <input id="lv-overlay" type="range" min="0" max="80" step="5" value="42" />
+                    <strong id="lv-overlay-value">42%</strong>
+                  </div>
+                </label>
+
+                <label>Título sobre a imagem
+                  <input id="lv-title" maxlength="120" value="Sua operação visual, organizada em um só lugar." />
+                </label>
+                <label>Subtítulo
+                  <textarea id="lv-subtitle" rows="2" maxlength="220">Gerencie telas, conteúdos, playlists e campanhas com controle profissional.</textarea>
+                </label>
+
+                <div id="lv-status" class="form-status hidden" role="status" aria-live="polite"></div>
+                <div class="login-visual-actions">
+                  <button id="lv-remove" class="button ghost" type="button">Remover imagem</button>
+                  <button id="lv-save" class="button primary" type="submit">Salvar no preview</button>
+                </div>
+              </form>
+            </div>
+          </article>
         </section>
 
         <section id="master-view-clients" class="master-view hidden">
