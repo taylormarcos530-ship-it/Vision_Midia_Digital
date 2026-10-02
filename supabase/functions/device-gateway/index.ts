@@ -188,6 +188,12 @@ async function authenticateDevice(admin, req) {
   if (deviceError) throw deviceError
   if (!device || device.status === 'disabled') return null
 
+  if (device.access_status === 'pending') return { ...device, access_block: 'pending' }
+  if (device.access_status === 'blocked') return { ...device, access_block: 'blocked' }
+  if (device.access_expires_at && new Date(device.access_expires_at).getTime() <= Date.now()) {
+    return { ...device, access_block: 'expired' }
+  }
+
   const [{ data: company, error: companyError }, { data: subscription, error: subscriptionError }] = await Promise.all([
     admin.from('companies').select('status').eq('id', device.company_id).maybeSingle(),
     admin.from('company_subscriptions').select('status').eq('company_id', device.company_id).maybeSingle(),
@@ -217,6 +223,9 @@ Deno.serve(async (req) => {
     const device = await authenticateDevice(admin, req)
     if (!device) return json({ error: 'invalid_device_token' }, 401)
     if (device.account_blocked) return json({ error: 'account_suspended', message: 'Conta suspensa. Entre em contato com o administrador da plataforma.' }, 403)
+    if (device.access_block === 'pending') return json({ error: 'device_access_pending', message: 'Esta TV está aguardando autorização do Master.' }, 403)
+    if (device.access_block === 'blocked') return json({ error: 'device_access_blocked', message: 'O acesso desta TV foi bloqueado pelo Master.' }, 403)
+    if (device.access_block === 'expired') return json({ error: 'device_access_expired', message: 'A autorização desta TV expirou.', access_expires_at: device.access_expires_at }, 403)
 
     const body = await req.json().catch(() => ({}))
     const action = body?.action
@@ -347,7 +356,7 @@ Deno.serve(async (req) => {
       if (!resolved.playlistId) {
         return json({
           version: await sha256Hex(JSON.stringify({ device: device.updated_at, program: resolved.program })),
-          device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {} },
+          device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
           program: resolved.program,
           playlist: null,
           items: [],
@@ -435,7 +444,7 @@ Deno.serve(async (req) => {
 
       return json({
         version: await sha256Hex(versionSource),
-        device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {} },
+        device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
         program: resolved.program,
         playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
         items,
