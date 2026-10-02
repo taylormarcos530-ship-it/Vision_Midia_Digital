@@ -33,7 +33,8 @@
   }
 
   function applyLoginVisual(serverConfig = {}) {
-    const local = readLoginVisualPreview() || {};
+    const serverSupportsLoginVisual = Object.prototype.hasOwnProperty.call(serverConfig || {}, 'login_image_fit');
+    const local = serverSupportsLoginVisual ? {} : (readLoginVisualPreview() || {});
     const config = {
       imageUrl: local.imageDataUrl || serverConfig.login_image_url || '',
       fit: local.fit || serverConfig.login_image_fit || 'cover',
