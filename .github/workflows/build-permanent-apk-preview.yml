@@ -23,11 +23,18 @@ jobs:
   build-and-commit:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout branch
+      - name: Checkout triggering ref
         uses: actions/checkout@v4
         with:
-          ref: main
           fetch-depth: 0
+
+      - name: Record preview source
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Building ref: $GITHUB_REF"
+          echo "Building commit: $GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -86,7 +93,8 @@ jobs:
             downloads/Vision-Player-preview.sha256
           retention-days: 30
 
-      - name: Commit permanent preview APK to branch
+      - name: Commit permanent preview APK to triggering branch
+        if: github.ref_type == 'branch'
         shell: bash
         run: |
           set -euo pipefail
@@ -98,4 +106,4 @@ jobs:
             exit 0
           fi
           git commit -m 'build: add permanent Vision Player preview APK'
-          git push origin HEAD:main
+          git push origin "HEAD:$GITHUB_REF_NAME"
