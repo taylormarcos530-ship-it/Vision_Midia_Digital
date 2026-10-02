@@ -641,3 +641,15 @@ textarea { resize: vertical; min-height: 90px; }
 .device-setting-chip { display:inline-flex; align-items:center; gap:5px; padding:5px 8px; border-radius:999px; font-size:9px; font-weight:800; border:1px solid var(--line); }
 .device-setting-chip.on { color:#8ce7ce; background:rgba(37,208,167,.08); border-color:rgba(37,208,167,.2); }
 .device-setting-chip.off { color:#a8b4c6; background:rgba(255,255,255,.025); }
+
+.device-playback-health{display:grid;gap:5px;margin:10px 0;padding:10px 11px;border:1px solid var(--line);border-radius:11px;background:rgba(255,255,255,.025)}
+.device-playback-health strong{font-size:11px}
+.device-playback-health span{font-size:10px;color:var(--muted);line-height:1.45}
+.device-playback-health.success{border-color:rgba(37,208,167,.24);background:rgba(37,208,167,.06)}
+.device-playback-health.success strong{color:#8ce7ce}
+.device-playback-health.warning{border-color:rgba(244,206,122,.28);background:rgba(244,206,122,.06)}
+.device-playback-health.warning strong{color:#f4ce7a}
+.device-playback-health.error{border-color:rgba(255,99,119,.28);background:rgba(255,99,119,.06)}
+.device-playback-health.error strong{color:#ff9cab}
+.device-health-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:3px}
+.status-dot.pending{color:#f4ce7a}
