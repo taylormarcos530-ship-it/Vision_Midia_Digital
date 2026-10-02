@@ -587,14 +587,100 @@
   }
 
   function statusLabel(value) {
-    return ({ pending: 'pendente', online: 'online', offline: 'offline', disabled: 'desativada' })[value] || value;
+    return ({ pending: 'aguardando autorização', online: 'online', offline: 'offline', disabled: 'desativada' })[value] || value;
   }
 
   function effectiveDeviceStatus(device) {
     if (device.status === 'disabled') return 'disabled';
+    if (device.access_status === 'pending') return 'pending';
     if (!device.last_seen_at) return device.paired_at ? 'offline' : (device.status || 'pending');
     const stale = Date.now() - new Date(device.last_seen_at).getTime() > 90_000;
     return stale ? 'offline' : 'online';
+  }
+
+  const LOCAL_WEEKDAY_INDEX_APP = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
+  function appLocalClock(timeZone) {
+    let zone = timeZone || state.company?.timezone || 'America/Sao_Paulo';
+    let formatter;
+    try {
+      formatter = new Intl.DateTimeFormat('en-US', { timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', weekday:'short', hourCycle:'h23' });
+    } catch {
+      zone = 'America/Sao_Paulo';
+      formatter = new Intl.DateTimeFormat('en-US', { timeZone: zone, year:'numeric', month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', second:'2-digit', weekday:'short', hourCycle:'h23' });
+    }
+    const parts = Object.fromEntries(formatter.formatToParts(new Date()).filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+    const year = Number(parts.year), month = Number(parts.month), day = Number(parts.day);
+    const calendar = new Date(Date.UTC(year, month - 1, day));
+    const previous = new Date(calendar.getTime() - 86400000);
+    return {
+      dateKey: `${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,
+      previousDateKey: `${previous.getUTCFullYear()}-${String(previous.getUTCMonth()+1).padStart(2,'0')}-${String(previous.getUTCDate()).padStart(2,'0')}`,
+      weekday: LOCAL_WEEKDAY_INDEX_APP[parts.weekday] ?? calendar.getUTCDay(),
+      previousWeekday: previous.getUTCDay(),
+      seconds: Number(parts.hour) * 3600 + Number(parts.minute) * 60 + Number(parts.second),
+    };
+  }
+
+  function scheduleTimeSeconds(value) {
+    if (!value) return null;
+    const [h='0', m='0', sec='0'] = String(value).split(':');
+    const total = Number(h) * 3600 + Number(m) * 60 + Number(sec);
+    return Number.isFinite(total) ? total : null;
+  }
+
+  function playlistItemActiveNow(item) {
+    if (!item?.enabled) return false;
+    if (!item.schedule_enabled) return true;
+    const clock = appLocalClock(state.company?.timezone);
+    const start = scheduleTimeSeconds(item.start_time);
+    const end = scheduleTimeSeconds(item.end_time);
+    let dateKey = clock.dateKey;
+    let weekday = clock.weekday;
+
+    if (start != null && end != null) {
+      if (start < end) {
+        if (clock.seconds < start || clock.seconds >= end) return false;
+      } else {
+        if (clock.seconds >= start) {
+          // same calendar day
+        } else if (clock.seconds < end) {
+          dateKey = clock.previousDateKey;
+          weekday = clock.previousWeekday;
+        } else return false;
+      }
+    }
+
+    if (item.start_date && dateKey < item.start_date) return false;
+    if (item.end_date && dateKey > item.end_date) return false;
+    const days = Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6];
+    return days.includes(weekday);
+  }
+
+  function devicePlaybackHealth(device) {
+    const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
+    if (!assignment?.playlist_id) {
+      return { level:'warning', title:'Sem playlist atribuída', message:'Selecione uma playlist padrão para esta TV.', playlistId:null };
+    }
+    const playlist = state.playlists.find(row => row.id === assignment.playlist_id);
+    const items = state.playlistItems.filter(row => row.playlist_id === assignment.playlist_id);
+    const enabledItems = items.filter(row => row.enabled);
+    const activeItems = enabledItems.filter(playlistItemActiveNow);
+
+    if (device.access_status === 'pending') {
+      return {
+        level:'warning',
+        title:'TV pareada • aguardando autorização',
+        message:`A playlist “${playlist?.name || 'atribuída'}” está vinculada, mas o Player só recebe o conteúdo depois que o Master liberar o acesso.`,
+        playlistId: assignment.playlist_id,
+      };
+    }
+    if (!enabledItems.length) {
+      return { level:'error', title:'Playlist sem mídias ativas', message:'A playlist está atribuída, mas todas as mídias estão desativadas.', playlistId:assignment.playlist_id };
+    }
+    if (!activeItems.length) {
+      return { level:'warning', title:'Playlist atribuída • sem mídia ativa agora', message:'As mídias existem, mas estão fora da data, dia da semana ou horário programado.', playlistId:assignment.playlist_id };
+    }
+    return { level:'success', title:`Playlist “${playlist?.name || 'atribuída'}” pronta`, message:`${activeItems.length} mídia(s) ativa(s) neste momento.`, playlistId:assignment.playlist_id };
   }
 
   function formatLastSeen(value) {
@@ -725,6 +811,7 @@
       const assignment = state.deviceAssignments.find(a => a.device_id === device.id);
       const shot = latestScreenshotForDevice(device.id);
       const captureUi = captureUiForDevice(device, shot);
+      const playbackHealth = devicePlaybackHealth(device);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
       const capturePending = state.deviceCaptureStates.get(device.id)?.status === 'pending';
       return `
@@ -759,8 +846,16 @@
         </div>
 
         <div class="device-meta device-meta-pro">
-          <span>${escapeHtml(formatLastSeen(device.last_seen_at))}</span>
-          <span>${status === 'online' ? 'Sincronizando normalmente' : 'Aguardando o Player'}</span>
+          <span>${device.access_status === 'pending' ? 'Pareamento concluído' : escapeHtml(formatLastSeen(device.last_seen_at))}</span>
+          <span>${device.access_status === 'pending' ? 'Aguardando liberação do Master' : (status === 'online' ? 'Sincronizando normalmente' : 'Aguardando o Player')}</span>
+        </div>
+        <div class="device-playback-health ${playbackHealth.level}">
+          <strong>${escapeHtml(playbackHealth.title)}</strong>
+          <span>${escapeHtml(playbackHealth.message)}</span>
+          <div class="device-health-actions">
+            ${playbackHealth.playlistId ? `<button type="button" class="small-icon-button" data-edit-playlist-items="${playbackHealth.playlistId}">Editar programação</button>` : ''}
+            ${device.access_status === 'pending' ? '<button type="button" class="small-icon-button" data-open-saas-access>Autorizar no Master</button>' : ''}
+          </div>
         </div>
         <div class="device-setting-chips">
           <span class="device-setting-chip ${device.settings?.audio_enabled === false ? 'off' : 'on'}">🔊 Áudio ${device.settings?.audio_enabled === false ? 'desligado' : 'ligado'}</span>
@@ -2605,6 +2700,17 @@
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
     document.addEventListener('click', event => {
+      const openSaasAccess = event.target.closest('[data-open-saas-access]');
+      if (openSaasAccess) {
+        const saasButton = document.querySelector('[data-saas-view="clients"]');
+        const saasGroup = document.querySelector('#saas-admin-nav');
+        if (saasButton && saasGroup && !saasGroup.classList.contains('hidden')) {
+          saasButton.click();
+        } else {
+          toast('Autorização necessária', 'Entre com uma conta Master/Admin para definir o prazo de acesso desta TV.', 'error');
+        }
+        return;
+      }
       const viewDevice = event.target.closest('[data-view-device]');
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
       const captureDevice = event.target.closest('[data-capture-device]');
