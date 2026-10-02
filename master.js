@@ -4,7 +4,7 @@
   const SESSION_KEY = 'vision_midia_session_v1';
   const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [] };
   const $ = (s, r = document) => r.querySelector(s);
-  const $ = (s, r = document) => [...r.querySelectorAll(s)];
+  const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   let lastActionButton = null;
   let lastActionAt = 0;
   const isFeedbackActionButton = button => button && !button.matches('[data-master-view],[data-go-master],[data-close]');
