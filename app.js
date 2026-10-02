@@ -1584,20 +1584,89 @@
     } finally { setBusy(button, false); }
   }
 
+  let recoveryCooldownTimer = null;
+
+  function recoveryCooldownSeconds(error) {
+    const message = String(error?.message || error || '');
+    const explicitWait = message.match(/after\s+(\d+)\s+seconds?/i) || message.match(/(\d+)\s+seconds?/i);
+    if (explicitWait) return Math.max(1, Number(explicitWait[1]) || 1);
+    return /(security purposes|rate.?limit|too many requests|over_email_send_rate_limit)/i.test(message) ? 30 : 0;
+  }
+
+  function startRecoveryCooldown(seconds, originalText = 'Esqueci minha senha') {
+    const button = $('#forgot-password');
+    if (!button) return;
+
+    if (recoveryCooldownTimer) clearInterval(recoveryCooldownTimer);
+    let remaining = Math.max(1, Math.ceil(Number(seconds) || 30));
+    button.dataset.recoveryOriginalText = button.dataset.recoveryOriginalText || originalText || 'Esqueci minha senha';
+    button.disabled = true;
+
+    const render = () => {
+      button.textContent = `Reenviar em ${remaining}s`;
+    };
+
+    render();
+    recoveryCooldownTimer = setInterval(() => {
+      remaining -= 1;
+      if (remaining <= 0) {
+        clearInterval(recoveryCooldownTimer);
+        recoveryCooldownTimer = null;
+        button.disabled = false;
+        button.textContent = button.dataset.recoveryOriginalText || 'Esqueci minha senha';
+        delete button.dataset.recoveryOriginalText;
+        return;
+      }
+      render();
+    }, 1000);
+  }
+
+  function friendlyRecoveryError(error) {
+    const message = String(error?.message || error || '');
+    if (/invalid.*email|email.*invalid/i.test(message)) return 'Informe um e-mail válido.';
+    return 'Não foi possível enviar a recuperação agora. Aguarde alguns instantes e tente novamente.';
+  }
+
   async function handleForgotPassword() {
+    const button = $('#forgot-password');
     const email = $('#login-email').value.trim();
     if (!email) {
       toast('Informe seu e-mail', 'Preencha o e-mail para receber a recuperação.', 'error');
       $('#login-email').focus();
       return;
     }
+    if (button?.disabled) return;
+
+    const originalText = button?.textContent || 'Esqueci minha senha';
+    if (button) {
+      button.disabled = true;
+      button.textContent = 'Enviando...';
+    }
+
     try {
       await authRequest('/recover', {
         body: { email, redirect_to: `${location.origin}${location.pathname}` },
       });
-      toast('Recuperação enviada', 'Confira sua caixa de entrada.');
+      toast('Recuperação enviada', 'Confira sua caixa de entrada. Você poderá reenviar em 30 segundos.');
+      startRecoveryCooldown(30, originalText);
     } catch (error) {
-      toast('Falha ao enviar recuperação', error.message, 'error');
+      const waitSeconds = recoveryCooldownSeconds(error);
+      if (waitSeconds) {
+        toast(
+          'Aguarde para reenviar',
+          `Por segurança, aguarde ${waitSeconds} segundo${waitSeconds === 1 ? '' : 's'} para solicitar outro link de recuperação.`,
+          'error',
+          5000,
+        );
+        startRecoveryCooldown(waitSeconds, originalText);
+        return;
+      }
+
+      if (button) {
+        button.disabled = false;
+        button.textContent = originalText;
+      }
+      toast('Não foi possível enviar recuperação', friendlyRecoveryError(error), 'error');
     }
   }
 
