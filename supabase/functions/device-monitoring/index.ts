@@ -89,6 +89,15 @@ Deno.serve(async (req) => {
     const action = body?.action
 
     if (action === 'heartbeat') {
+      const staleBefore = new Date(Date.now() - 90_000).toISOString()
+      const { error: staleSweepError } = await admin.from('devices')
+        .update({ status: 'offline' })
+        .eq('company_id', device.company_id)
+        .eq('status', 'online')
+        .lt('last_seen_at', staleBefore)
+        .is('retired_at', null)
+      if (staleSweepError) console.warn('device-monitoring stale sweep', staleSweepError.message || staleSweepError)
+
       const now = new Date().toISOString()
       const screenWidth = safeNumber(body?.screen_width, 1, 100000)
       const screenHeight = safeNumber(body?.screen_height, 1, 100000)
