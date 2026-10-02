@@ -356,12 +356,16 @@
         const headers = { apikey: CONFIG.supabasePublishableKey, 'Content-Type': 'application/json' };
         const [plansResponse, configResponse] = await Promise.all([
           fetch(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }),
-          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
+          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
         ]);
         if (!plansResponse.ok || !configResponse.ok) throw primaryError;
         const plans = await plansResponse.json();
         const configs = await configResponse.json();
-        data = { ok: true, plans: plans || [], config: configs?.[0] || {} };
+        const publicConfig = configs?.[0] || {};
+        if (publicConfig.login_image_path) {
+          publicConfig.login_image_url = `${CONFIG.supabaseUrl}/storage/v1/object/public/platform-public/${encodeURI(publicConfig.login_image_path)}`;
+        }
+        data = { ok: true, plans: plans || [], config: publicConfig };
       } catch (fallbackError) {
         const select = $('#signup-plan');
         if (select) select.innerHTML = '<option value="">Não foi possível carregar os planos</option>';
