@@ -7,8 +7,8 @@ const C={
 }
 const J=(d:unknown,s=200)=>new Response(JSON.stringify(d),{status:s,headers:{...C,'Content-Type':'application/json','Cache-Control':'no-store'}})
 const clean=(v:unknown,max=500)=>String(v??'').trim().slice(0,max)
-const LOGIN_VISUAL_BUCKET='vision-media'
-const LOGIN_VISUAL_PATH='platform/login/login-visual.webp'
+const LOGIN_VISUAL_BUCKET='platform-public'
+const LOGIN_VISUAL_PATH='login/login-visual.webp'
 function decodeDataUrl(value:unknown){
   const raw=String(value||'')
   const match=raw.match(/^data:image\/webp;base64,(.+)$/i)
@@ -21,9 +21,8 @@ function decodeDataUrl(value:unknown){
 }
 async function withLoginVisualUrl(admin:any,config:any){
   if(!config?.login_image_path)return config||{}
-  const {data,error}=await admin.storage.from(LOGIN_VISUAL_BUCKET).createSignedUrl(config.login_image_path,3600)
-  if(error)return config
-  return {...config,login_image_url:data?.signedUrl||null}
+  const {data}=admin.storage.from(LOGIN_VISUAL_BUCKET).getPublicUrl(config.login_image_path)
+  return {...config,login_image_url:data?.publicUrl||null}
 }
 function clients(){
   const pub=JSON.parse(Deno.env.get('SUPABASE_PUBLISHABLE_KEYS')||'{}').default||Deno.env.get('SUPABASE_ANON_KEY')
