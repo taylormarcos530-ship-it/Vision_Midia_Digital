@@ -95,6 +95,23 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs downloads/Vision-Player.apk
           sha256sum downloads/Vision-Player.apk > downloads/Vision-Player.sha256
 
+      - name: Record Player source fingerprint
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os
+          files = ['player.html','player.css','player.js','config.js','icon.svg','player.webmanifest','sw.js']
+          payload = ''.join(f"{name}\n{Path(name).read_text()}\n" for name in files)
+          data = {
+              'source_sha256': hashlib.sha256(payload.encode()).hexdigest(),
+              'git_sha': os.environ.get('GITHUB_SHA', ''),
+              'files': files,
+          }
+          Path('downloads/Vision-Player.source.json').write_text(json.dumps(data, indent=2) + '\n')
+          PY
+
       - name: Upload signed APK artifact
         uses: actions/upload-artifact@v4
         with:
@@ -102,6 +119,7 @@ jobs:
           path: |
             downloads/Vision-Player.apk
             downloads/Vision-Player.sha256
+            downloads/Vision-Player.source.json
           retention-days: 90
 
       - name: Commit signed APK to selected branch
@@ -111,7 +129,7 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add downloads/Vision-Player.apk downloads/Vision-Player.sha256
+          git add downloads/Vision-Player.apk downloads/Vision-Player.sha256 downloads/Vision-Player.source.json
           if git diff --cached --quiet; then
             echo 'Signed APK already up to date.'
             exit 0
