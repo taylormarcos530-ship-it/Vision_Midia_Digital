@@ -2087,17 +2087,29 @@
       toast('TV substituída com sucesso', 'A vaga do plano foi mantida e a programação foi transferida para a nova TV.');
       await loadAllData();
     } catch (error) {
+      let replacementConfirmed = false;
       try {
-        await loadAllData();
-        const oldStillActive = state.devices.some(device => device.id === oldDeviceId);
-        if (!oldStillActive) {
-          closeDialog('replace-device-dialog');
-          $('#replace-device-form').reset();
-          toast('TV substituída com sucesso', 'A troca foi concluída. O erro ocorreu apenas na confirmação final da auditoria.');
-          return;
-        }
-      } catch {}
-      toast('Não foi possível substituir a TV', error.message, 'error');
+        const rows = await restRequest('devices', {
+          query: `select=id,status,retired_at&company_id=eq.${encodeURIComponent(state.company.id)}&id=eq.${encodeURIComponent(oldDeviceId)}&limit=1`,
+        });
+        const oldDevice = rows?.[0] || null;
+        replacementConfirmed = !oldDevice || Boolean(oldDevice.retired_at) || oldDevice.status === 'disabled';
+      } catch {
+        try {
+          await loadAllData();
+          replacementConfirmed = !state.devices.some(device => device.id === oldDeviceId);
+        } catch {}
+      }
+
+      if (replacementConfirmed) {
+        closeDialog('replace-device-dialog');
+        $('#replace-device-form').reset();
+        toast('TV substituída com sucesso', 'A nova TV foi vinculada e a programação foi transferida. A confirmação final do servidor falhou apenas na auditoria.');
+        await loadAllData().catch(() => {});
+        return;
+      }
+
+      toast('Não foi possível substituir a TV', error.message || 'A substituição não foi confirmada.', 'error');
     } finally { setBusy(button, false); }
   }
 
