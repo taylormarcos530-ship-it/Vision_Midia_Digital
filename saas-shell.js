@@ -120,26 +120,32 @@
     });
   }
 
-  async function init() {
+  let permissionCheckNonce = 0;
+
+  async function refreshSaasAccess({ restore = true } = {}) {
     const group = $('#saas-admin-nav');
     if (!group || !CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) return;
-    bindSaasNav();
+    const nonce = ++permissionCheckNonce;
     const savedArea = readLocalValue(ACTIVE_AREA_KEY);
     const savedSaasView = readLocalValue(SAAS_VIEW_KEY);
     const restoreSaasView = VALID_VIEWS.has(savedSaasView) ? savedSaasView : 'dashboard';
-    if (savedArea === 'saas') openSaasView(restoreSaasView, null, { persist: false });
+
     try {
       const who = await whoAmI();
+      if (nonce !== permissionCheckNonce) return;
       const allowed = ['super_admin', 'admin'].includes(String(who?.role || ''));
       group.classList.toggle('hidden', !allowed);
       document.body.classList.toggle('has-saas-admin', allowed);
-      if (allowed && savedArea === 'saas') openSaasView(restoreSaasView, null, { persist: false });
-      if (!allowed && savedArea === 'saas') {
+
+      if (allowed && restore && savedArea === 'saas') {
+        openSaasView(restoreSaasView, null, { persist: false });
+      } else if (!allowed && savedArea === 'saas') {
         writeLocalValue(ACTIVE_AREA_KEY, 'operational');
         const fallback = readLocalValue(OPERATIONAL_VIEW_KEY) || 'dashboard';
         $(`[data-view="${fallback}"]`)?.click();
       }
     } catch (error) {
+      if (nonce !== permissionCheckNonce) return;
       group.classList.add('hidden');
       document.body.classList.remove('has-saas-admin');
       if (savedArea === 'saas') {
@@ -149,6 +155,14 @@
       }
       if (![401, 403].includes(Number(error?.status))) console.warn('SaaS admin bridge:', error);
     }
+  }
+
+  function init() {
+    const group = $('#saas-admin-nav');
+    if (!group || !CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) return;
+    bindSaasNav();
+    refreshSaasAccess({ restore: true });
+    window.addEventListener('vision-session-changed', () => refreshSaasAccess({ restore: true }));
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init, { once: true });
