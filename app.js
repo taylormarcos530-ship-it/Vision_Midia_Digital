@@ -9,7 +9,22 @@
 
   const SESSION_KEY = 'vision_midia_session_v1';
   const COMPANY_KEY = 'vision_midia_company_v1';
+  const VIEW_KEY = 'vision_midia_active_view_v1';
+  const ACTIVE_AREA_KEY = 'vision_midia_active_area_v1';
+  const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+
+  function readLocalValue(key) {
+    try { return localStorage.getItem(key); }
+    catch { return null; }
+  }
+
+  function writeLocalValue(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch {}
+  }
+
+  const savedOperationalView = readLocalValue(VIEW_KEY);
 
   const state = {
     session: null,
@@ -34,7 +49,7 @@
     draggingPlaylistItemId: null,
     report: null,
     reportLoading: false,
-    activeView: 'dashboard',
+    activeView: VALID_OPERATIONAL_VIEWS.has(savedOperationalView) ? savedOperationalView : 'dashboard',
     editingPlaylistId: null,
     viewingDeviceId: null,
     isBusy: false,
@@ -414,7 +429,8 @@
     showScreen('app');
     renderIdentity();
     await loadAllData();
-    setView(state.activeView);
+    const restoreSaasArea = readLocalValue(ACTIVE_AREA_KEY) === 'saas';
+    setView(state.activeView, { persist: !restoreSaasArea });
   }
 
   async function loadAllData() {
@@ -1500,7 +1516,7 @@
     } finally { setBusy(button, false); }
   }
 
-  function setView(view) {
+  function setView(view, { persist = true } = {}) {
     const titles = {
       dashboard: ['VISÃO GERAL', 'Dashboard Operacional'],
       devices: ['DISPOSITIVOS', 'TVs'],
@@ -1510,8 +1526,13 @@
       campaigns: ['PROGRAMAÇÃO', 'Campanhas'],
       reports: ['RELATÓRIOS', 'Prova de veiculação'],
     };
+    if (!VALID_OPERATIONAL_VIEWS.has(view)) view = 'dashboard';
     state.activeView = view;
-    $$('.view-section').forEach(section => section.classList.add('hidden'));
+    if (persist) {
+      writeLocalValue(VIEW_KEY, view);
+      writeLocalValue(ACTIVE_AREA_KEY, 'operational');
+    }
+    $('.view-section').forEach(section => section.classList.add('hidden'));
     $(`#view-${view}`)?.classList.remove('hidden');
     $$('.nav-item[data-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
     $('#view-kicker').textContent = titles[view]?.[0] || '';
