@@ -716,6 +716,10 @@
           <span>${escapeHtml(formatLastSeen(device.last_seen_at))}</span>
           <span>${status === 'online' ? 'Sincronizando normalmente' : 'Aguardando o Player'}</span>
         </div>
+        <div class="device-setting-chips">
+          <span class="device-setting-chip ${device.settings?.audio_enabled === false ? 'off' : 'on'}">🔊 Áudio ${device.settings?.audio_enabled === false ? 'desligado' : 'ligado'}</span>
+          <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
+        </div>
 
         <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
@@ -1908,10 +1912,17 @@
     event.preventDefault();
     const button = $('#device-save');
     const id = $('#device-id').value;
+    const currentDevice = id ? state.devices.find(device => device.id === id) : null;
+    const currentSettings = currentDevice?.settings && typeof currentDevice.settings === 'object' ? currentDevice.settings : {};
     const payload = {
       name: $('#device-name').value.trim(),
       platform: $('#device-platform').value,
       orientation: $('#device-orientation').value,
+      settings: {
+        ...currentSettings,
+        audio_enabled: $('#device-audio-enabled').checked,
+        autostart_enabled: $('#device-autostart-enabled').checked,
+      },
     };
     if (!payload.name) return;
     setBusy(button, true);
@@ -1950,6 +1961,9 @@
     $('#device-name').value = device.name;
     $('#device-platform').value = device.platform;
     $('#device-orientation').value = device.orientation;
+    const settings = device.settings && typeof device.settings === 'object' ? device.settings : {};
+    $('#device-audio-enabled').checked = settings.audio_enabled !== false;
+    $('#device-autostart-enabled').checked = settings.autostart_enabled !== false;
     $('#device-dialog-title').textContent = 'Editar TV';
     openDialog('device-dialog');
   }
