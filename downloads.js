@@ -100,24 +100,89 @@
     location.assign('./index.html');
   }
 
-  function setupApkButton() {
+  const PLAYER_SOURCE_FILES = [
+    './player.html',
+    './player.css',
+    './player.js',
+    './config.js',
+    './icon.svg',
+    './player.webmanifest',
+    './sw.js',
+  ];
+
+  async function sha256Hex(value) {
+    if (!crypto?.subtle) throw new Error('Validação criptográfica indisponível.');
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
+    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
+  }
+
+  async function currentPlayerSourceHash() {
+    let payload = '';
+    for (const file of PLAYER_SOURCE_FILES) {
+      const response = await fetch(file, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Não foi possível validar ${file}.`);
+      payload += `${file}\n${await response.text()}\n`;
+    }
+    return sha256Hex(payload);
+  }
+
+  function disableApkButton(button, note, label, message) {
+    button.removeAttribute('href');
+    button.classList.add('disabled');
+    button.setAttribute('aria-disabled', 'true');
+    button.textContent = label;
+    if (note) note.textContent = message;
+  }
+
+  async function setupApkButton() {
     const button = $('#android-apk-download');
     const note = $('#android-apk-note');
     const url = String(CONFIG.androidPlayerApkUrl || '').trim();
+    const manifestUrl = String(CONFIG.androidPlayerApkManifestUrl || '').trim();
     if (!button) return;
-    if (!url) {
-      button.removeAttribute('href');
-      button.classList.add('disabled');
-      button.setAttribute('aria-disabled', 'true');
-      button.textContent = 'APK ainda não publicado';
+
+    if (!url || !manifestUrl) {
+      disableApkButton(button, note, 'APK ainda não publicado', 'A build do Vision Player ainda não foi publicada para esta versão.');
       return;
     }
-    button.href = url;
-    button.classList.remove('disabled');
-    button.removeAttribute('aria-disabled');
-    button.textContent = 'Baixar APK para TV Box';
-    button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
-    if (note) note.textContent = 'Versão de validação: baixe o APK, instale no TV Box e faça o pareamento pelo código exibido. O APK comercial assinado será gerado antes da publicação final.';
+
+    disableApkButton(button, note, 'Validando APK...', 'Confirmando se o APK foi gerado com a mesma versão do Player deste painel.');
+
+    try {
+      const [manifestResponse, currentHash] = await Promise.all([
+        fetch(manifestUrl, { cache: 'no-store' }),
+        currentPlayerSourceHash(),
+      ]);
+      if (!manifestResponse.ok) throw new Error('Manifesto da build não encontrado.');
+      const manifest = await manifestResponse.json();
+      const apkHash = String(manifest?.source_sha256 || '').trim().toLowerCase();
+      if (!apkHash || apkHash !== currentHash.toLowerCase()) {
+        disableApkButton(
+          button,
+          note,
+          'APK aguardando nova compilação',
+          'O Player web foi atualizado depois da última build do APK. Gere uma nova build antes de instalar no TV Box.'
+        );
+        return;
+      }
+
+      button.href = url;
+      button.classList.remove('disabled');
+      button.removeAttribute('aria-disabled');
+      button.textContent = 'Baixar APK para TV Box';
+      button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+      if (note) {
+        const shortSha = String(manifest?.git_sha || '').slice(0, 10);
+        note.textContent = `APK validado com os mesmos arquivos do Player${shortSha ? ` • build ${shortSha}` : ''}. Instale no TV Box e faça o pareamento pelo código exibido.`;
+      }
+    } catch (error) {
+      disableApkButton(
+        button,
+        note,
+        'APK aguardando nova compilação',
+        'Não foi possível confirmar que o APK corresponde ao Player atual. Gere uma nova build antes de instalar.'
+      );
+    }
   }
 
   function setupPanelInstall() {
@@ -182,7 +247,7 @@
     saveSession(session);
     warning?.classList.add('hidden');
     content?.classList.remove('hidden');
-    setupApkButton();
+    await setupApkButton();
     setupPanelInstall();
     $('#downloads-switch-account')?.addEventListener('click', switchAccount);
     $('#android-apk-download')?.addEventListener('click', event => {
