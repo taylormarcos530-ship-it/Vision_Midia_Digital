@@ -3,6 +3,9 @@
 
   const CONFIG = window.VISION_CONFIG;
   const SESSION_KEY = 'vision_midia_session_v1';
+  const SAAS_VIEW_KEY = 'vision_midia_saas_view_v1';
+  const ACTIVE_AREA_KEY = 'vision_midia_active_area_v1';
+  const OPERATIONAL_VIEW_KEY = 'vision_midia_active_view_v1';
   const VALID_VIEWS = new Set(['dashboard', 'clients', 'plans', 'audit']);
   const TITLES = {
     dashboard: ['PLATAFORMA', 'Dashboard SaaS'],
@@ -12,7 +15,17 @@
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
-  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const $ = (selector, root = document) => [...root.querySelectorAll(selector)];
+
+  function readLocalValue(key) {
+    try { return localStorage.getItem(key); }
+    catch { return null; }
+  }
+
+  function writeLocalValue(key, value) {
+    try { localStorage.setItem(key, value); }
+    catch {}
+  }
 
   function readSession() {
     try { return JSON.parse(localStorage.getItem(SESSION_KEY) || 'null'); }
@@ -76,8 +89,12 @@
     if ($('#view-title')) $('#view-title').textContent = title[1];
   }
 
-  function openSaasView(view, sourceButton = null) {
+  function openSaasView(view, sourceButton = null, { persist = true } = {}) {
     if (!VALID_VIEWS.has(view)) view = 'dashboard';
+    if (persist) {
+      writeLocalValue(SAAS_VIEW_KEY, view);
+      writeLocalValue(ACTIVE_AREA_KEY, 'saas');
+    }
     const section = $('#view-saas-admin');
     const frame = $('#saas-master-frame');
     if (!section || !frame) return;
@@ -107,14 +124,29 @@
     const group = $('#saas-admin-nav');
     if (!group || !CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) return;
     bindSaasNav();
+    const savedArea = readLocalValue(ACTIVE_AREA_KEY);
+    const savedSaasView = readLocalValue(SAAS_VIEW_KEY);
+    const restoreSaasView = VALID_VIEWS.has(savedSaasView) ? savedSaasView : 'dashboard';
+    if (savedArea === 'saas') openSaasView(restoreSaasView, null, { persist: false });
     try {
       const who = await whoAmI();
       const allowed = ['super_admin', 'admin'].includes(String(who?.role || ''));
       group.classList.toggle('hidden', !allowed);
       document.body.classList.toggle('has-saas-admin', allowed);
+      if (allowed && savedArea === 'saas') openSaasView(restoreSaasView, null, { persist: false });
+      if (!allowed && savedArea === 'saas') {
+        writeLocalValue(ACTIVE_AREA_KEY, 'operational');
+        const fallback = readLocalValue(OPERATIONAL_VIEW_KEY) || 'dashboard';
+        $(`[data-view="${fallback}"]`)?.click();
+      }
     } catch (error) {
       group.classList.add('hidden');
       document.body.classList.remove('has-saas-admin');
+      if (savedArea === 'saas') {
+        writeLocalValue(ACTIVE_AREA_KEY, 'operational');
+        const fallback = readLocalValue(OPERATIONAL_VIEW_KEY) || 'dashboard';
+        $(`[data-view="${fallback}"]`)?.click();
+      }
       if (![401, 403].includes(Number(error?.status))) console.warn('SaaS admin bridge:', error);
     }
   }
