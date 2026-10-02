@@ -51,9 +51,22 @@ Deno.serve(async(req)=>{
     const paymentUrl=body.payment_url===undefined
       ? (String(current?.payment_url||'').trim()||null)
       : (String(body.payment_url||'').trim()||null)
+    const pixKey=body.pix_key===undefined
+      ? (String(current?.pix_key||'').trim()||null)
+      : (String(body.pix_key||'').trim().slice(0,120)||null)
+    const incomingPixType=body.pix_key_type===undefined?String(current?.pix_key_type||'').trim():String(body.pix_key_type||'').trim()
+    const pixKeyType=pixKey?(incomingPixType||'other'):null
+    const pixReceiverName=pixKey
+      ? (body.pix_receiver_name===undefined?String(current?.pix_receiver_name||'').trim():String(body.pix_receiver_name||'').trim()).slice(0,25)
+      : null
+    const pixReceiverCity=pixKey
+      ? (body.pix_receiver_city===undefined?String(current?.pix_receiver_city||'').trim():String(body.pix_receiver_city||'').trim()).slice(0,15)
+      : null
     if(!companyName||companyName.length<2||!planId)return J({error:'invalid_input'},400)
     if(manualPrice!==null&&!Number.isFinite(manualPrice))return J({error:'invalid_manual_price'},400)
     if(paymentUrl&&(!/^https:\/\/\S+$/i.test(paymentUrl)||paymentUrl.length>1200))return J({error:'invalid_payment_url'},400)
+    if(pixKeyType&&!['cpf','cnpj','email','phone','random','other'].includes(pixKeyType))return J({error:'invalid_pix_key_type'},400)
+    if(pixKey&&(!pixReceiverName||!pixReceiverCity))return J({error:'invalid_pix_config'},400)
     const overrides=body.limit_overrides&&typeof body.limit_overrides==='object'&&!Array.isArray(body.limit_overrides)?body.limit_overrides:{}
     const notes=String(body.billing_notes||'').trim()
     const previousSettings=(currentCompany?.settings&&typeof currentCompany.settings==='object')?currentCompany.settings:{}
@@ -77,13 +90,19 @@ Deno.serve(async(req)=>{
     })
     if(error)throw error
 
-    const {data:persistedSubscription,error:paymentUrlError}=await admin
+    const {data:persistedSubscription,error:paymentConfigError}=await admin
       .from('company_subscriptions')
-      .update({payment_url:paymentUrl})
+      .update({
+        payment_url:paymentUrl,
+        pix_key:pixKey,
+        pix_key_type:pixKeyType,
+        pix_receiver_name:pixReceiverName,
+        pix_receiver_city:pixReceiverCity,
+      })
       .eq('company_id',companyId)
       .select('*')
       .single()
-    if(paymentUrlError)throw paymentUrlError
+    if(paymentConfigError)throw paymentConfigError
 
     const companySettings={
       ...previousSettings,
@@ -110,12 +129,25 @@ Deno.serve(async(req)=>{
       }
     }
 
-    await admin.from('master_audit_logs').insert({
+    const {error:auditError}=await admin.from('master_audit_logs').insert({
       actor_user_id:userData.user.id,
       action:body.clear_cache===true?'company_player_cache_clear_requested':'company_billing_updated',
       company_id:companyId,
-      details:{plan_id:persistedSubscription?.plan_id||data?.subscription?.plan_id||planId,subscription_status:persistedSubscription?.status||data?.subscription?.status||subscriptionStatus,payment_status:persistedSubscription?.payment_status||data?.subscription?.payment_status||paymentStatus,due_date:dueDate,payment_url_configured:Boolean(paymentUrl),audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision,source:'save-company-v4'},
-    }).catch(()=>null)
+      details:{
+        plan_id:persistedSubscription?.plan_id||data?.subscription?.plan_id||planId,
+        subscription_status:persistedSubscription?.status||data?.subscription?.status||subscriptionStatus,
+        payment_status:persistedSubscription?.payment_status||data?.subscription?.payment_status||paymentStatus,
+        due_date:dueDate,
+        payment_url_configured:Boolean(paymentUrl),
+        pix_configured:Boolean(pixKey),
+        pix_key_type:pixKeyType,
+        audio_enabled:audioEnabled,
+        autostart_enabled:autostartEnabled,
+        cache_revision:cacheRevision,
+        source:'save-company-v6'
+      },
+    })
+    if(auditError)console.warn('save-company audit',auditError.message)
     return J({...data,subscription:persistedSubscription,player_settings:{audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}})
   }catch(error){
     console.error('save-company',error)
