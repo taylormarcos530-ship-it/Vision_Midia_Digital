@@ -680,33 +680,99 @@
     </div>
   </dialog>
 
-  <dialog id="playlist-schedule-dialog" class="app-dialog">
-    <form id="playlist-schedule-form" class="dialog-body" method="dialog">
-      <div class="dialog-header"><div><span class="eyebrow">PROGRAMAÇÃO</span><h3>Quando estas mídias aparecem?</h3><p class="dialog-subtitle"><span id="playlist-schedule-count">1 mídia</span> selecionada(s).</p></div><button class="icon-button" data-close-dialog="playlist-schedule-dialog" type="button">×</button></div>
-      <label class="switch-line"><input id="playlist-schedule-enabled" type="checkbox" checked /> Usar programação para as mídias selecionadas</label>
-      <div class="form-grid two schedule-date-fields">
-        <label>Data inicial <input id="playlist-schedule-start-date" type="date" /></label>
-        <label>Data final <input id="playlist-schedule-end-date" type="date" /></label>
+  <dialog id="playlist-schedule-dialog" class="app-dialog playlist-schedule-dialog">
+    <form id="playlist-schedule-form" class="dialog-body playlist-schedule-body" method="dialog">
+      <div class="dialog-header schedule-dialog-header">
+        <div>
+          <span class="eyebrow">PROGRAMAÇÃO</span>
+          <h3>Programação de exibição</h3>
+          <p class="dialog-subtitle">Defina quando <strong id="playlist-schedule-count">1 mídia</strong> deve aparecer na TV.</p>
+        </div>
+        <button class="icon-button" data-close-dialog="playlist-schedule-dialog" type="button" aria-label="Fechar">×</button>
       </div>
-      <label class="switch-line"><input id="playlist-schedule-all-day" type="checkbox" checked /> Dia inteiro</label>
-      <div id="playlist-schedule-time-fields" class="form-grid two hidden">
-        <label>Hora inicial <input id="playlist-schedule-start-time" type="time" /></label>
-        <label>Hora final <input id="playlist-schedule-end-time" type="time" /></label>
+
+      <label class="schedule-master-switch">
+        <input id="playlist-schedule-enabled" type="checkbox" checked />
+        <span>
+          <strong>Usar programação</strong>
+          <small>Desative para deixar as mídias disponíveis o tempo todo.</small>
+        </span>
+      </label>
+
+      <div class="schedule-live-summary">
+        <div><span>COMO FICARÁ</span><strong id="playlist-schedule-summary">Sempre disponível</strong></div>
+        <small id="playlist-schedule-summary-detail">Sem restrição de data, horário ou dia da semana.</small>
       </div>
-      <fieldset class="weekday-fieldset"><legend>Dias da semana</legend><div class="weekday-grid">
-        <label><input type="checkbox" data-playlist-weekday="1" checked /> Seg</label>
-        <label><input type="checkbox" data-playlist-weekday="2" checked /> Ter</label>
-        <label><input type="checkbox" data-playlist-weekday="3" checked /> Qua</label>
-        <label><input type="checkbox" data-playlist-weekday="4" checked /> Qui</label>
-        <label><input type="checkbox" data-playlist-weekday="5" checked /> Sex</label>
-        <label><input type="checkbox" data-playlist-weekday="6" checked /> Sáb</label>
-        <label><input type="checkbox" data-playlist-weekday="0" checked /> Dom</label>
-      </div></fieldset>
+
+      <section class="schedule-section">
+        <div class="schedule-section-head">
+          <span class="schedule-step">1</span>
+          <div><strong>Período</strong><small>Datas são opcionais. Deixe vazio para não limitar início ou fim.</small></div>
+        </div>
+        <div class="form-grid two schedule-date-fields">
+          <label>Data inicial
+            <input id="playlist-schedule-start-date" type="date" />
+          </label>
+          <label>Data final
+            <input id="playlist-schedule-end-date" type="date" />
+          </label>
+        </div>
+      </section>
+
+      <section class="schedule-section">
+        <div class="schedule-section-head">
+          <span class="schedule-step">2</span>
+          <div><strong>Horário</strong><small>Use dia inteiro ou informe uma janela específica.</small></div>
+        </div>
+        <label class="switch-row compact schedule-all-day-switch">
+          <input id="playlist-schedule-all-day" type="checkbox" checked />
+          <span><strong>Dia inteiro</strong><small>Exibir durante todo o dia nos dias escolhidos.</small></span>
+        </label>
+        <div id="playlist-schedule-time-fields" class="form-grid two hidden">
+          <label>Hora inicial
+            <input id="playlist-schedule-start-time" type="time" step="60" />
+          </label>
+          <label>Hora final
+            <input id="playlist-schedule-end-time" type="time" step="60" />
+          </label>
+        </div>
+        <div id="playlist-schedule-time-note" class="schedule-helper hidden">Se a hora final for menor que a inicial, a programação atravessa a meia-noite. Ex.: 22:00 → 02:00.</div>
+      </section>
+
+      <section class="schedule-section">
+        <div class="schedule-section-head">
+          <span class="schedule-step">3</span>
+          <div><strong>Dias da semana</strong><small>Escolha em quais dias esta regra pode entrar no ar.</small></div>
+        </div>
+        <div class="weekday-presets">
+          <button class="small-icon-button" type="button" data-playlist-weekday-preset="all">Todos</button>
+          <button class="small-icon-button" type="button" data-playlist-weekday-preset="weekdays">Seg–Sex</button>
+          <button class="small-icon-button" type="button" data-playlist-weekday-preset="weekend">Fim de semana</button>
+        </div>
+        <fieldset class="weekday-fieldset schedule-weekday-fieldset">
+          <legend class="sr-only">Dias da semana</legend>
+          <div class="weekday-grid">
+            <label><input type="checkbox" data-playlist-weekday="1" checked /><span>Seg</span></label>
+            <label><input type="checkbox" data-playlist-weekday="2" checked /><span>Ter</span></label>
+            <label><input type="checkbox" data-playlist-weekday="3" checked /><span>Qua</span></label>
+            <label><input type="checkbox" data-playlist-weekday="4" checked /><span>Qui</span></label>
+            <label><input type="checkbox" data-playlist-weekday="5" checked /><span>Sex</span></label>
+            <label><input type="checkbox" data-playlist-weekday="6" checked /><span>Sáb</span></label>
+            <label><input type="checkbox" data-playlist-weekday="0" checked /><span>Dom</span></label>
+          </div>
+        </fieldset>
+      </section>
+
       <div id="playlist-schedule-status" class="form-status hidden" role="status" aria-live="polite"></div>
-      <div class="dialog-actions"><button id="playlist-schedule-clear" class="button ghost" type="button">Remover programação</button><button class="button ghost" data-close-dialog="playlist-schedule-dialog" type="button">Cancelar</button><button id="playlist-schedule-save" class="button primary" type="submit">Aplicar programação</button></div>
+
+      <div class="dialog-actions schedule-dialog-actions">
+        <button id="playlist-schedule-clear" class="button ghost schedule-always-button" type="button">Exibir sempre</button>
+        <span class="schedule-action-spacer"></span>
+        <button class="button ghost" data-close-dialog="playlist-schedule-dialog" type="button">Cancelar</button>
+        <button id="playlist-schedule-save" class="button primary" type="submit">Salvar programação</button>
+      </div>
     </form>
   </dialog>
-
 
 
   <dialog id="campaign-dialog" class="app-dialog large-dialog">
