@@ -24,3 +24,10 @@ body.master-embedded #master-auth,body.master-embedded #master-denied{min-height
 
 /* DOWNLOAD_CENTER_LINK */
 .nav-download-link{display:flex;align-items:center;text-decoration:none;color:inherit}
+
+.device-access-list{display:grid;gap:10px;margin-top:14px}
+.device-access-row{display:grid;grid-template-columns:minmax(180px,1fr) minmax(160px,.8fr) minmax(150px,.8fr) auto;gap:10px;align-items:end;border:1px solid #24324c;background:#0d1525;border-radius:12px;padding:12px}
+.device-access-row .device-access-info{align-self:center}.device-access-row .device-access-info strong,.device-access-row .device-access-info small{display:block}.device-access-row .device-access-info small{color:#7f91ae;margin-top:3px}
+.device-access-row label{margin:0}.device-access-row .access-current{font-size:12px;font-weight:800}
+.access-current.pending{color:#f4ce7a}.access-current.blocked,.access-current.expired{color:#ff9daa}.access-current.active{color:#7ee0b8}
+@media(max-width:760px){.device-access-row{grid-template-columns:1fr}.device-access-row .small-button{width:100%}}
