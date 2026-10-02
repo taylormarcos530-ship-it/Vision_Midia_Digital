@@ -202,14 +202,28 @@
       </header>
 
       <div class="content-area">
-        <section id="view-dashboard" class="view-section">
-          <div class="hero-panel">
-            <div>
-              <span class="eyebrow">BEM-VINDO</span>
+        <section id="view-dashboard" class="view-section premium-view">
+          <div class="hero-panel executive-hero">
+            <div class="executive-hero-copy">
+              <span class="eyebrow">CENTRAL OPERACIONAL</span>
               <h2 id="dashboard-company-title">Sua mídia, sob controle.</h2>
-              <p>Monitore sua estrutura e avance para a próxima etapa do seu digital signage.</p>
+              <p>Veja a saúde da operação, acompanhe telas conectadas e acesse as tarefas mais importantes sem procurar pelo menu.</p>
+              <div class="executive-hero-meta">
+                <span><i class="pulse-dot"></i> Operação monitorada</span>
+                <span>Conteúdo privado</span>
+                <span>Sincronização automática</span>
+              </div>
             </div>
-            <button class="button primary" data-action="quick-device">+ Adicionar TV</button>
+            <div class="executive-command-panel">
+              <span class="command-label">AÇÕES RÁPIDAS</span>
+              <button class="button primary command-primary" data-action="quick-device">+ Parear nova TV</button>
+              <div class="command-grid">
+                <button class="button ghost" data-go-view="media">Biblioteca</button>
+                <button class="button ghost" data-go-view="playlists">Playlists</button>
+                <button class="button ghost" data-go-view="monitoring">Monitorar</button>
+                <button class="button ghost" data-go-view="reports">Relatórios</button>
+              </div>
+            </div>
           </div>
 
           <div class="metrics-grid">
@@ -265,13 +279,18 @@
           </div>
         </section>
 
-        <section id="view-devices" class="view-section hidden">
-          <div class="section-toolbar">
-            <div>
-              <h2>TVs</h2>
-              <p>Pareie e acompanhe os dispositivos vinculados à empresa.</p>
+        <section id="view-devices" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-devices">
+            <div class="module-heading">
+              <span class="module-icon">▣</span>
+              <div><span class="eyebrow">DISPOSITIVOS</span><h2>TVs e Players</h2><p>Cadastre, acompanhe e mantenha todas as telas da operação em um único lugar.</p></div>
             </div>
             <button id="add-device-button" class="button primary">+ Parear TV</button>
+          </div>
+          <div class="module-guide">
+            <div><strong>1</strong><span><b>Instale o Player</b><small>Android, TV Box ou navegador.</small></span></div>
+            <div><strong>2</strong><span><b>Pareie a tela</b><small>Use o código exibido na TV.</small></span></div>
+            <div><strong>3</strong><span><b>Atribua conteúdo</b><small>Escolha a playlist padrão.</small></span></div>
           </div>
 
           <div id="device-plan-usage" class="plan-usage-banner">
@@ -320,13 +339,19 @@
           </div>
         </section>
 
-        <section id="view-monitoring" class="view-section hidden">
-          <div class="section-toolbar">
-            <div>
-              <h2>Monitoramento operacional</h2>
-              <p>Acompanhe conexão, sincronização, cache e falhas das TVs em tempo quase real.</p>
+        <section id="view-monitoring" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-monitoring">
+            <div class="module-heading">
+              <span class="module-icon">⌁</span>
+              <div><span class="eyebrow">CENTRAL DE SAÚDE</span><h2>Monitoramento operacional</h2><p>Priorize falhas, confira sincronização e identifique rapidamente qual TV precisa de atenção.</p></div>
             </div>
-            <button id="monitor-refresh" class="button primary" type="button">Atualizar status</button>
+            <button id="monitor-refresh" class="button primary" type="button">↻ Atualizar status</button>
+          </div>
+          <div class="monitor-legend">
+            <span><i class="legend-dot online"></i> Online</span>
+            <span><i class="legend-dot warning"></i> Atenção</span>
+            <span><i class="legend-dot error"></i> Falha</span>
+            <small>Atualização automática a cada 30 segundos</small>
           </div>
 
           <div class="metrics-grid monitoring-metrics">
@@ -363,15 +388,18 @@
           </article>
         </section>
 
-        <section id="view-media" class="view-section hidden">
-          <div class="section-toolbar">
-            <div>
-              <h2>Biblioteca de mídias</h2>
-              <p>Envie imagens e vídeos. JPEG/PNG são otimizadas automaticamente para WebP em alta qualidade, mantendo a resolução original quando já estiver até 4K.</p>
+        <section id="view-media" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-media">
+            <div class="module-heading">
+              <span class="module-icon">▧</span>
+              <div><span class="eyebrow">BIBLIOTECA</span><h2>Mídias</h2><p>Organize os ativos visuais da empresa com upload privado, otimização automática e uso direto nas playlists.</p></div>
             </div>
             <label class="button primary upload-button">+ Enviar mídia
               <input id="media-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden />
             </label>
+          </div>
+          <div class="module-context-row">
+            <span>🔒 Storage privado</span><span>⚡ Imagens otimizadas</span><span>▰ Imagem e vídeo</span>
           </div>
           <div id="media-progress" class="progress-panel hidden">
             <div class="spinner"></div>
@@ -385,13 +413,16 @@
           </div>
         </section>
 
-        <section id="view-playlists" class="view-section hidden">
-          <div class="section-toolbar">
-            <div>
-              <h2>Playlists</h2>
-              <p>Organize as mídias na ordem em que serão reproduzidas.</p>
+        <section id="view-playlists" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-playlists">
+            <div class="module-heading">
+              <span class="module-icon">▶</span>
+              <div><span class="eyebrow">PROGRAMAÇÃO DE CONTEÚDO</span><h2>Playlists</h2><p>Monte sequências de exibição, ajuste duração e programe quando cada conteúdo deve entrar no ar.</p></div>
             </div>
             <button id="add-playlist-button" class="button primary">+ Nova playlist</button>
+          </div>
+          <div class="workflow-strip">
+            <span><b>01</b> Escolha as mídias</span><i>→</i><span><b>02</b> Organize a ordem</span><i>→</i><span><b>03</b> Defina a programação</span>
           </div>
           <div id="playlists-grid" class="cards-grid"></div>
           <div id="playlists-empty" class="empty-panel hidden">
@@ -402,11 +433,11 @@
         </section>
 
 
-        <section id="view-campaigns" class="view-section hidden">
-          <div class="section-toolbar">
-            <div>
-              <h2>Programação e campanhas</h2>
-              <p>Programe playlists por data, horário, dia da semana e prioridade. A playlist padrão continua como fallback.</p>
+        <section id="view-campaigns" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-campaigns">
+            <div class="module-heading">
+              <span class="module-icon">◷</span>
+              <div><span class="eyebrow">AGENDA DE EXIBIÇÃO</span><h2>Campanhas</h2><p>Controle períodos, horários, prioridade e telas-alvo sem perder a playlist padrão como segurança.</p></div>
             </div>
             <button id="add-campaign-button" class="button primary">+ Nova campanha</button>
           </div>
@@ -423,16 +454,16 @@
           </div>
         </section>
 
-        <section id="view-reports" class="view-section hidden">
-          <div class="section-toolbar report-toolbar">
-            <div>
-              <h2>Prova de veiculação</h2>
-              <p>Comprove o que foi exibido por campanha, TV e mídia, com histórico detalhado de reprodução.</p>
+        <section id="view-reports" class="view-section premium-view hidden">
+          <div class="section-toolbar report-toolbar module-hero module-hero-reports">
+            <div class="module-heading">
+              <span class="module-icon">▤</span>
+              <div><span class="eyebrow">PROVA DE VEICULAÇÃO</span><h2>Relatórios</h2><p>Transforme eventos reais do Player em evidência comercial por campanha, TV, mídia e período.</p></div>
             </div>
             <div class="report-actions">
               <button id="report-export-csv" class="button ghost" type="button">Exportar CSV</button>
-              <button id="report-print" class="button ghost" type="button">Imprimir / PDF</button>
-              <button id="report-refresh" class="button primary" type="button">Atualizar relatório</button>
+              <button id="report-print" class="button ghost" type="button">PDF</button>
+              <button id="report-refresh" class="button primary" type="button">↻ Atualizar</button>
             </div>
           </div>
 
