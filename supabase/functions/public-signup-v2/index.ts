@@ -61,7 +61,8 @@ Deno.serve(async(req)=>{
     if(pendingError)throw pendingError
 
     await attempts.update({success:true}).eq('id',attempt.id)
-    await attempts.delete().lt('attempted_at',new Date(Date.now()-24*60*60*1000).toISOString()).catch(()=>null)
+    const {error:cleanupError}=await attempts.delete().lt('attempted_at',new Date(Date.now()-24*60*60*1000).toISOString())
+    if(cleanupError)console.warn('public-signup-v2 cleanup',cleanupError.message||cleanupError)
     return json({ok:true,user_id:createdUserId,company:pending?.company||null,plan:pending?.plan||null,status:'pending_approval'},201)
   }catch(error){
     console.error('public-signup-v2',error)
