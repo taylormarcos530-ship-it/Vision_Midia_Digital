@@ -659,28 +659,20 @@
   function devicePlaybackHealth(device) {
     const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
     if (!assignment?.playlist_id) {
-      return { level:'warning', title:'Sem playlist atribuída', message:'Selecione uma playlist padrão para esta TV.', playlistId:null };
+      return { level:'warning', playlistName:'Nenhuma', stateLabel:'Sem playlist', playlistId:null };
     }
     const playlist = state.playlists.find(row => row.id === assignment.playlist_id);
     const items = state.playlistItems.filter(row => row.playlist_id === assignment.playlist_id);
     const enabledItems = items.filter(row => row.enabled);
     const activeItems = enabledItems.filter(playlistItemActiveNow);
 
-    if (device.access_status === 'pending') {
-      return {
-        level:'warning',
-        title:'TV pareada • aguardando autorização',
-        message:`A playlist “${playlist?.name || 'atribuída'}” está vinculada, mas o Player só recebe o conteúdo depois que o Master liberar o acesso.`,
-        playlistId: assignment.playlist_id,
-      };
-    }
     if (!enabledItems.length) {
-      return { level:'error', title:'Playlist sem mídias ativas', message:'A playlist está atribuída, mas todas as mídias estão desativadas.', playlistId:assignment.playlist_id };
+      return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:'Sem mídia ativa', playlistId:assignment.playlist_id };
     }
     if (!activeItems.length) {
-      return { level:'warning', title:'Playlist atribuída • sem mídia ativa agora', message:'As mídias existem, mas estão fora da data, dia da semana ou horário programado.', playlistId:assignment.playlist_id };
+      return { level:'warning', playlistName:playlist?.name || 'Playlist', stateLabel:'Fora da programação agora', playlistId:assignment.playlist_id };
     }
-    return { level:'success', title:`Playlist “${playlist?.name || 'atribuída'}” pronta`, message:`${activeItems.length} mídia(s) ativa(s) neste momento.`, playlistId:assignment.playlist_id };
+    return { level:'success', playlistName:playlist?.name || 'Playlist', stateLabel:'Pronta para exibir', playlistId:assignment.playlist_id };
   }
 
   function formatLastSeen(value) {
@@ -797,6 +789,29 @@
     };
   }
 
+  async function authorizeDevicePermanently(deviceId) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return;
+    const button = document.querySelector(`[data-authorize-device="${CSS.escape(deviceId)}"]`);
+    setBusy(button, true, 'Liberando...');
+    try {
+      await functionRequest('master-company-devices', {
+        body: {
+          action: 'set_access',
+          company_id: state.company.id,
+          device_id: deviceId,
+          mode: 'permanent',
+        },
+      });
+      toast('TV liberada', `${device.name}: acesso permanente ativado com sucesso.`);
+      await loadAllData();
+    } catch (error) {
+      toast('Erro ao liberar TV', error.message || 'Não foi possível liberar esta TV.', 'error');
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
   function renderDevices() {
     renderDevicePlanUsage();
     const grid = $('#devices-grid');
@@ -845,16 +860,22 @@
           </details>
         </div>
 
-        <div class="device-meta device-meta-pro">
-          <span>${device.access_status === 'pending' ? 'Pareamento concluído' : escapeHtml(formatLastSeen(device.last_seen_at))}</span>
-          <span>${device.access_status === 'pending' ? 'Aguardando liberação do Master' : (status === 'online' ? 'Sincronizando normalmente' : 'Aguardando o Player')}</span>
-        </div>
-        <div class="device-playback-health ${playbackHealth.level}">
-          <strong>${escapeHtml(playbackHealth.title)}</strong>
-          <span>${escapeHtml(playbackHealth.message)}</span>
-          <div class="device-health-actions">
-            ${playbackHealth.playlistId ? `<button type="button" class="small-icon-button" data-edit-playlist-items="${playbackHealth.playlistId}">Editar programação</button>` : ''}
-            ${device.access_status === 'pending' ? '<button type="button" class="small-icon-button" data-open-saas-access>Autorizar no Master</button>' : ''}
+        <div class="device-simple-summary">
+          <div class="device-summary-row">
+            <span>Acesso</span>
+            <strong class="${device.access_status === 'pending' ? 'warn' : 'ok'}">${device.access_status === 'pending' ? 'Aguardando' : 'Liberado'}</strong>
+            ${device.access_status === 'pending' ? `<button type="button" class="small-icon-button master-only-device-action" data-authorize-device="${device.id}">Liberar TV</button>` : ''}
+          </div>
+          <div class="device-summary-row">
+            <span>Playlist</span>
+            <strong>${escapeHtml(playbackHealth.playlistName)}</strong>
+            ${playbackHealth.playlistId ? `<button type="button" class="small-icon-button" data-edit-playlist-items="${playbackHealth.playlistId}">Ajustar</button>` : ''}
+          </div>
+          <div class="device-summary-note ${playbackHealth.level}">
+            ${escapeHtml(playbackHealth.stateLabel)}
+          </div>
+          <div class="device-summary-note muted">
+            ${device.access_status === 'pending' ? 'TV já pareada. Falta liberar o acesso.' : (status === 'online' ? 'TV conectada e sincronizando.' : escapeHtml(formatLastSeen(device.last_seen_at)))}
           </div>
         </div>
         <div class="device-setting-chips">
@@ -2700,17 +2721,8 @@
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
     document.addEventListener('click', event => {
-      const openSaasAccess = event.target.closest('[data-open-saas-access]');
-      if (openSaasAccess) {
-        const saasButton = document.querySelector('[data-saas-view="clients"]');
-        const saasGroup = document.querySelector('#saas-admin-nav');
-        if (saasButton && saasGroup && !saasGroup.classList.contains('hidden')) {
-          saasButton.click();
-        } else {
-          toast('Autorização necessária', 'Entre com uma conta Master/Admin para definir o prazo de acesso desta TV.', 'error');
-        }
-        return;
-      }
+      const authorizeDevice = event.target.closest('[data-authorize-device]');
+      if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
       const viewDevice = event.target.closest('[data-view-device]');
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
       const captureDevice = event.target.closest('[data-capture-device]');
