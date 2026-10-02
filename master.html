@@ -48,9 +48,22 @@
       </header>
 
       <div class="master-content">
-        <section id="master-view-dashboard" class="master-view">
-          <div class="hero"><div><span>CONTROLE DA PLATAFORMA</span><h2>Vision Mídia Digital como SaaS.</h2><p>Clientes, assinaturas, usuários e capacidade em um único painel.</p></div><button class="button primary" data-open-client>+ Novo cliente</button></div>
-          <div class="metrics">
+        <section id="master-view-dashboard" class="master-view premium-master-view">
+          <div class="hero master-executive-hero">
+            <div class="master-executive-copy">
+              <span>CONTROLE DA PLATAFORMA</span>
+              <h2>Operação SaaS em visão executiva.</h2>
+              <p>Acompanhe clientes, receita, capacidade e risco operacional sem misturar gestão comercial com operação das TVs.</p>
+              <div class="master-hero-flags"><span>Multiempresa</span><span>Billing manual</span><span>Auditoria ativa</span></div>
+            </div>
+            <div class="master-command-card">
+              <small>AÇÃO PRINCIPAL</small>
+              <button class="button primary" data-open-client>+ Novo cliente</button>
+              <button class="button ghost" data-go-master="clients">Gerenciar clientes</button>
+              <button class="button ghost" data-go-master="plans">Planos</button>
+            </div>
+          </div>
+          <div class="metrics master-kpi-grid">
             <article><span>Clientes</span><strong id="mm-companies">0 / 6</strong><small id="mm-companies-detail">Capacidade da plataforma</small></article>
             <article><span>MRR estimado</span><strong id="mm-mrr">R$ 0</strong><small>Assinaturas ativas + trial</small></article>
             <article><span>Usuários</span><strong id="mm-users">0</strong><small>Contas Auth</small></article>
@@ -62,6 +75,7 @@
             <article class="panel"><div class="panel-head"><div><small>AUDITORIA</small><h3>Últimas ações</h3></div><button class="text-button" data-go-master="audit">Ver histórico</button></div><div id="master-dashboard-audit" class="mini-list"></div></article>
           </div>
 
+          <div class="master-settings-workspace">
           <article class="panel platform-settings-panel">
             <div class="panel-head"><div><small>COMERCIAL</small><h3>Cadastro público e WhatsApp</h3></div></div>
             <form id="platform-settings-form" class="stack">
@@ -137,22 +151,36 @@
               </form>
             </div>
           </article>
+          </div>
         </section>
 
-        <section id="master-view-clients" class="master-view hidden">
-          <div class="section-head"><div><span>CONTAS</span><h2>Clientes e empresas</h2><p>Cadastre, pesquise, suspenda e altere o plano de cada operação.</p></div><button class="button primary" data-open-client>+ Novo cliente</button></div>
-          <div class="toolbar"><input id="master-client-search" type="search" placeholder="Buscar empresa ou e-mail..." /><select id="master-client-filter"><option value="">Todos os status</option><option value="active">Ativos</option><option value="pending_approval">Aguardando aprovação</option><option value="past_due">Pagamento pendente</option><option value="overdue">Vencidos</option><option value="suspended">Suspensos</option></select></div>
+        <section id="master-view-clients" class="master-view premium-master-view hidden">
+          <div class="section-head master-module-hero">
+            <div class="master-module-heading"><span class="master-module-icon">◫</span><div><span>CONTAS</span><h2>Clientes e empresas</h2><p>Gerencie ciclo de vida, assinatura, acesso e capacidade de cada operação.</p></div></div>
+            <button class="button primary" data-open-client>+ Novo cliente</button>
+          </div>
+          <div class="master-client-tools">
+            <div class="master-search-box"><span>⌕</span><input id="master-client-search" type="search" placeholder="Buscar empresa ou e-mail..." /></div>
+            <select id="master-client-filter"><option value="">Todos os status</option><option value="active">Ativos</option><option value="pending_approval">Aguardando aprovação</option><option value="past_due">Pagamento pendente</option><option value="overdue">Vencidos</option><option value="suspended">Suspensos</option></select>
+          </div>
           <div id="master-clients-list" class="client-list"></div>
           <div id="master-clients-empty" class="empty hidden">Nenhum cliente encontrado.</div>
         </section>
 
-        <section id="master-view-plans" class="master-view hidden">
-          <div class="section-head"><div><span>COMERCIAL</span><h2>Planos e limites</h2><p>Preço, TVs, armazenamento, usuários e campanhas.</p></div><button id="open-plan-button" class="button primary">+ Novo plano</button></div>
+        <section id="master-view-plans" class="master-view premium-master-view hidden">
+          <div class="section-head master-module-hero">
+            <div class="master-module-heading"><span class="master-module-icon">◇</span><div><span>COMERCIAL</span><h2>Planos e limites</h2><p>Estruture a oferta comercial por preço, TVs, armazenamento, usuários e campanhas.</p></div></div>
+            <button id="open-plan-button" class="button primary">+ Novo plano</button>
+          </div>
+          <div class="master-module-note"><strong>Catálogo comercial</strong><span>Use limites claros por plano e personalize exceções somente no cliente quando necessário.</span></div>
           <div id="master-plans-grid" class="plan-grid"></div>
         </section>
 
-        <section id="master-view-audit" class="master-view hidden">
-          <div class="section-head"><div><span>SEGURANÇA</span><h2>Auditoria Master</h2><p>Ações administrativas recentes registradas no backend.</p></div></div>
+        <section id="master-view-audit" class="master-view premium-master-view hidden">
+          <div class="section-head master-module-hero">
+            <div class="master-module-heading"><span class="master-module-icon">⌁</span><div><span>SEGURANÇA</span><h2>Auditoria Master</h2><p>Rastreie ações administrativas e alterações sensíveis da plataforma.</p></div></div>
+          </div>
+          <div class="master-module-note audit-note"><strong>Registro administrativo</strong><span>Use este histórico para identificar quem alterou clientes, planos, acessos e configurações da plataforma.</span></div>
           <div class="panel table-panel"><div class="table-scroll"><table><thead><tr><th>Data</th><th>Ação</th><th>Empresa</th><th>Detalhes</th></tr></thead><tbody id="master-audit-body"></tbody></table></div></div>
         </section>
       </div>
