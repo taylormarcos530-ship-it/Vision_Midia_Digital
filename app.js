@@ -2378,6 +2378,7 @@
     });
     $('#access-logout').addEventListener('click', logout);
     $('#access-notifications').addEventListener('click', enableAccessNotifications);
+    $('#switch-account-button').addEventListener('click', logout);
     $('#logout-button').addEventListener('click', logout);
     $('#refresh-button').addEventListener('click', async () => {
       try { await loadAllData(); toast('Dados atualizados'); }
