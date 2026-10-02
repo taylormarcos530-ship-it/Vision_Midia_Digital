@@ -30,6 +30,7 @@
     heartbeatTimer: null,
     syncTimer: null,
     commandTimer: null,
+    accessTimer: null,
     processingCommands: new Set(),
     lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
     currentMediaId: null,
@@ -166,6 +167,60 @@
     $('#player-status').textContent = text;
   }
 
+  function isAccessError(error) {
+    const code = String(error?.data?.error || error?.error || '');
+    return ['device_access_pending','device_access_blocked','device_access_expired','account_suspended'].includes(code);
+  }
+
+  function showAccessBlocked(errorOrData = {}) {
+    const data = errorOrData?.data || errorOrData || {};
+    const code = String(data.error || '');
+    let title = 'Acesso desta TV bloqueado';
+    let message = data.message || 'Entre em contato com o administrador.';
+    let expiry = 'O pareamento desta TV foi preservado.';
+
+    if (code === 'device_access_pending') {
+      title = 'Aguardando autorização';
+      message = 'Esta TV já foi vinculada. O Master precisa definir o período de acesso.';
+      expiry = 'Você não precisa instalar nem parear novamente.';
+    } else if (code === 'device_access_expired') {
+      title = 'Autorização expirada';
+      message = 'O prazo de funcionamento desta TV terminou. O Master pode renovar sem novo pareamento.';
+      expiry = data.access_expires_at ? `Vencimento: ${new Date(data.access_expires_at).toLocaleString('pt-BR')}` : 'Prazo encerrado.';
+    } else if (code === 'device_access_blocked') {
+      title = 'TV bloqueada pelo Master';
+      message = 'O acesso desta TV foi bloqueado. O vínculo permanece salvo para uma futura reativação.';
+    } else if (code === 'account_suspended') {
+      title = 'Conta suspensa';
+      message = data.message || 'A conta desta TV está suspensa.';
+    }
+
+    state.playlistNonce++;
+    try { clearCurrentObjectUrl(); } catch {}
+    $('#media-stage')?.replaceChildren();
+    $('#pairing-screen').classList.add('hidden');
+    $('#playback-screen').classList.add('hidden');
+    $('#access-screen').classList.remove('hidden');
+    $('#access-heading').textContent = title;
+    $('#access-message').textContent = message;
+    $('#access-expiry').textContent = expiry;
+    $('#access-status').textContent = 'A TV verificará a autorização automaticamente.';
+  }
+
+  function localAccessExpired() {
+    const expiresAt = state.manifest?.device?.access_expires_at;
+    return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
+  }
+
+  function enforceLocalAccess() {
+    if (!localAccessExpired()) return false;
+    showAccessBlocked({
+      error: 'device_access_expired',
+      access_expires_at: state.manifest?.device?.access_expires_at || null,
+    });
+    return true;
+  }
+
   function applyPairingBranding(branding = null) {
     const screen = $('#pairing-screen');
     const title = branding?.title || 'Vision Mídia Digital';
@@ -183,10 +238,12 @@
   function showPairing() {
     $('#pairing-screen').classList.remove('hidden');
     $('#playback-screen').classList.add('hidden');
+    $('#access-screen').classList.add('hidden');
   }
 
   function showPlayback() {
     $('#pairing-screen').classList.add('hidden');
+    $('#access-screen').classList.add('hidden');
     $('#playback-screen').classList.remove('hidden');
   }
 
@@ -270,7 +327,9 @@
     try {
       return await functionRequest('device-gateway', body, state.deviceToken);
     } catch (error) {
-      if (error.status === 401) {
+      if (error.status === 403 && isAccessError(error)) {
+        showAccessBlocked(error);
+      } else if (error.status === 401) {
         resetPairing(false);
         startPairing(true);
       }
@@ -283,7 +342,9 @@
     try {
       return await functionRequest('device-monitoring', body, state.deviceToken);
     } catch (error) {
-      if (error.status === 401) {
+      if (error.status === 403 && isAccessError(error)) {
+        showAccessBlocked(error);
+      } else if (error.status === 401) {
         resetPairing(false);
         startPairing(true);
       }
@@ -394,6 +455,7 @@
       state.manifest = manifest;
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
+      showPlayback();
       if (state.syncHadError) {
         queueDeviceEvent('sync_recovered', 'info', 'Sincronização com o servidor restabelecida.', {}, 60_000);
         state.syncHadError = false;
@@ -402,11 +464,10 @@
         ? `Campanha: ${manifest.program.campaign_name}`
         : 'Programação padrão';
       setStatus(navigator.onLine ? `Online • ${programLabel}` : `Offline • ${programLabel}`);
-      if (changed) {
-        state.playlistNonce++;
-        ensurePlaybackLoop();
-      }
+      if (changed) state.playlistNonce++;
+      ensurePlaybackLoop();
     } catch (error) {
+      if (isAccessError(error)) throw error;
       if (navigator.onLine) {
         state.syncHadError = true;
         queueDeviceEvent('sync_error', 'warning', 'Falha ao sincronizar a programação com o servidor.', {
@@ -688,22 +749,24 @@
 
   async function startPlayer() {
     if (!state.deviceToken) return startPairing();
-    showPlayback();
+    if (!enforceLocalAccess()) showPlayback();
     setStatus('Conectando…');
-    if (state.manifest) ensurePlaybackLoop();
+    if (state.manifest && !localAccessExpired()) ensurePlaybackLoop();
 
     queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, platform: detectPlatform() }, 60_000);
     try { await heartbeat(); await flushPlaybackQueue(); await flushDeviceEventQueue(); }
     catch { /* sync below handles visual state */ }
     try { await syncManifest(); }
-    catch { /* offline fallback is handled */ }
+    catch { /* offline fallback or access screen is handled */ }
 
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.accessTimer) clearInterval(state.accessTimer);
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 30_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
     pollDeviceCommands().catch(() => {});
   }
 
@@ -719,9 +782,11 @@
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.accessTimer) clearInterval(state.accessTimer);
     state.heartbeatTimer = null;
     state.syncTimer = null;
     state.commandTimer = null;
+    state.accessTimer = null;
     state.processingCommands.clear();
     localStorage.removeItem(DEVICE_TOKEN_KEY);
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
@@ -745,6 +810,21 @@
   async function bootstrap() {
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
     $('#new-code-button').addEventListener('click', () => { state.pairing = null; writeJson(PAIRING_KEY, null); startPairing(true); });
+    $('#access-retry-button').addEventListener('click', async () => {
+      const button = $('#access-retry-button');
+      button.disabled = true;
+      button.textContent = 'Verificando...';
+      $('#access-status').textContent = 'Consultando autorização no servidor…';
+      try {
+        await syncManifest();
+        $('#access-status').textContent = 'Autorização liberada.';
+      } catch (error) {
+        if (!isAccessError(error)) $('#access-status').textContent = navigator.onLine ? 'Não foi possível consultar agora.' : 'Sem internet. Tentaremos novamente automaticamente.';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Verificar autorização';
+      }
+    });
     $('#fullscreen-button').addEventListener('click', requestFullscreenAndWakeLock);
     $('#repair-button').addEventListener('click', async () => {
       if (!confirm('Parear esta tela novamente? A playlist atual será desvinculada desta TV.')) return;

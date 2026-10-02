@@ -128,6 +128,10 @@ Deno.serve(async (req) => {
         orientation,
         status: 'offline',
         paired_at: now,
+        access_status: 'pending',
+        access_expires_at: null,
+        access_updated_at: now,
+        access_updated_by: null,
         settings: { player: 'vision-web-v1' },
       })
       .select('*')

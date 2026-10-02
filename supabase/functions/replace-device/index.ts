@@ -59,6 +59,11 @@ Deno.serve(async(req)=>{
     if(pair.setup_company_id&&pair.setup_company_id!==companyId)return J({error:'branded_player_company_mismatch',message:'Este Player pertence a outra empresa.'},403)
     if(new Date(pair.expires_at).getTime()<=Date.now())return J({error:'expired_code',message:'O código expirou. Gere um novo código na TV.'},410)
 
+    const {data:oldAccess,error:oldAccessError}=await admin.from('devices')
+      .select('access_status,access_expires_at')
+      .eq('id',oldDeviceId).eq('company_id',companyId).maybeSingle()
+    if(oldAccessError)throw oldAccessError
+
     const {data,error}=await admin.rpc('replace_device_from_pairing',{
       p_company_id:companyId,
       p_old_device_id:oldDeviceId,
@@ -68,6 +73,17 @@ Deno.serve(async(req)=>{
       p_orientation:orientation,
     })
     if(error)throw error
+
+    const newDeviceId=data?.device?.id||null
+    if(newDeviceId&&oldAccess){
+      const {error:accessError}=await admin.from('devices').update({
+        access_status:oldAccess.access_status||'active',
+        access_expires_at:oldAccess.access_expires_at||null,
+        access_updated_at:new Date().toISOString(),
+        access_updated_by:user.id,
+      }).eq('id',newDeviceId).eq('company_id',companyId)
+      if(accessError)throw accessError
+    }
 
     await admin.from('device_claim_attempts').insert({user_id:user.id,success:true})
     await admin.from('master_audit_logs').insert({

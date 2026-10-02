@@ -3,8 +3,16 @@ name: Build Permanent Vision Player Preview APK
 on:
   push:
     branches:
-      - feature/unified-master-panel
+      - main
     paths:
+      - 'android-player/**'
+      - 'player.html'
+      - 'player.css'
+      - 'player.js'
+      - 'config.js'
+      - 'icon.svg'
+      - 'player.webmanifest'
+      - 'sw.js'
       - '.github/workflows/build-permanent-apk-preview.yml'
   workflow_dispatch:
 
@@ -18,7 +26,7 @@ jobs:
       - name: Checkout branch
         uses: actions/checkout@v4
         with:
-          ref: feature/unified-master-panel
+          ref: main
           fetch-depth: 0
 
       - name: Setup Java
@@ -78,4 +86,4 @@ jobs:
             exit 0
           fi
           git commit -m 'build: add permanent Vision Player preview APK'
-          git push origin HEAD:feature/unified-master-panel
+          git push origin HEAD:main

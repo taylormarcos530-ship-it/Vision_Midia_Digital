@@ -170,6 +170,17 @@
     </form>
   </dialog>
 
+  <dialog id="master-device-access-dialog" class="master-dialog large">
+    <div class="dialog-body">
+      <div class="dialog-head"><div><small>AUTORIZAÇÃO DAS TVs</small><h3 id="mda-title">Acesso das TVs</h3></div><button type="button" class="icon-button" data-close="master-device-access-dialog">×</button></div>
+      <p class="helper">O código de pareamento continua válido por 10 minutos. Aqui você define por quanto tempo cada TV já vinculada poderá funcionar. Renovar o prazo não exige reinstalar o APK nem parear novamente.</p>
+      <input id="mda-company-id" type="hidden" />
+      <div id="master-device-access-list" class="device-access-list"></div>
+      <div id="mda-status" class="form-status hidden" role="status" aria-live="polite"></div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-device-access-dialog">Fechar</button></div>
+    </div>
+  </dialog>
+
   <dialog id="master-users-dialog" class="master-dialog large">
     <div class="dialog-body">
       <div class="dialog-head"><div><small>ACESSOS</small><h3 id="mu-company-title">Usuários da empresa</h3></div><button type="button" class="icon-button" data-close="master-users-dialog">×</button></div>

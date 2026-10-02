@@ -2,7 +2,7 @@
   'use strict';
   const CONFIG = window.VISION_CONFIG;
   const SESSION_KEY = 'vision_midia_session_v1';
-  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [] };
+  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [] };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   const esc = (v='') => String(v).replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
@@ -99,7 +99,7 @@
       const subStatus=c.subscription?.status||'—';
       const maxD=limitValue(c,'max_devices'), maxU=limitValue(c,'max_users'), maxS=limitValue(c,'storage_limit_mb'), maxC=limitValue(c,'max_campaigns');
       const due=c.subscription?.current_period_end?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(new Date(c.subscription.current_period_end)):'Sem vencimento';
-      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')} • vence ${esc(due)}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${c.usage.devices&&['super_admin','admin'].includes(state.role)?`<button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
+      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')} • vence ${esc(due)}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${c.usage.devices&&['super_admin','admin'].includes(state.role)?`<button class="small-button" data-device-access-company="${c.id}">Acesso das TVs</button><button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
     }).join('');
   }
   function renderPlans(){ const plans=state.data.plans||[]; $('#master-plans-grid').innerHTML=plans.map(p=>`<article class="plan-card"><div class="client-top"><div><strong>${esc(p.name)}</strong><small>${esc(p.is_active?'Disponível':'Inativo')}</small></div><span class="status ${p.is_active?'active':'suspended'}">${p.is_active?'Ativo':'Inativo'}</span></div><div class="plan-price">${esc(money(p.monthly_price_cents))}<small>/mês</small></div><p>${esc(p.description||'')}</p><ul><li>${p.max_devices??'∞'} TV(s)</li><li>${p.storage_limit_mb==null?'Ilimitado':`${p.storage_limit_mb} MB`} de mídia</li><li>${p.max_users??'∞'} usuário(s)</li><li>${p.max_campaigns??'∞'} campanha(s)</li></ul><div class="client-actions"><button class="small-button" data-edit-plan="${p.id}">Editar plano</button></div></article>`).join(''); $('#open-plan-button').classList.toggle('hidden',state.role!=='super_admin'); }
@@ -191,6 +191,69 @@
     }finally{busy(b,false)}
   }
   async function toggleCompany(id,next){const c=companyById(id);if(!c)return;if(!confirm(`${next==='suspended'?'Suspender':'Reativar'} a conta “${c.name}”?`))return;try{await master({action:'update_company',company_id:id,company_status:next,subscription_status:next==='suspended'?'suspended':'active'});toast(next==='suspended'?'Conta suspensa':'Conta reativada');await load()}catch(e){toast('Não foi possível alterar a conta',e.message,'error')}}
+  function deviceAccessLabel(device){
+    const stateName=device?.access_state||'permanent';
+    if(stateName==='pending')return 'Aguardando autorização do Master';
+    if(stateName==='blocked')return 'Bloqueada pelo Master';
+    if(stateName==='expired')return 'Autorização expirada';
+    if(stateName==='temporary')return `Autorizada até ${dt(device.access_expires_at)}`;
+    return 'Permanente';
+  }
+  function renderMasterDeviceAccess(){
+    const root=$('#master-device-access-list');
+    if(!root)return;
+    const devices=state.accessDevices||[];
+    if(!devices.length){root.innerHTML='<div class="empty">Nenhuma TV vinculada a esta conta.</div>';return}
+    root.innerHTML=devices.map(device=>{
+      const current=deviceAccessLabel(device);
+      const cls=['pending','blocked','expired'].includes(device.access_state)?device.access_state:'active';
+      const dateValue=device.access_expires_at?String(device.access_expires_at).slice(0,10):'';
+      return `<div class="device-access-row" data-device-access-row="${device.id}">
+        <div class="device-access-info"><strong>${esc(device.name)}</strong><small>${esc(device.platform||'TV')} • ${device.last_seen_at?`último contato ${esc(dt(device.last_seen_at))}`:'sem contato recente'}</small><span class="access-current ${cls}">${esc(current)}</span></div>
+        <label>Novo prazo<select data-access-mode="${device.id}"><option value="permanent">Permanente</option><option value="10_minutes">10 minutos (teste)</option><option value="7_days">7 dias</option><option value="30_days">30 dias</option><option value="90_days">90 dias</option><option value="date">Até uma data</option><option value="block">Bloquear agora</option></select></label>
+        <label>Data específica<input data-access-date="${device.id}" type="date" value="${esc(dateValue)}" /></label>
+        <button class="small-button" type="button" data-save-device-access="${device.id}">Aplicar</button>
+      </div>`;
+    }).join('');
+  }
+  async function openMasterDeviceAccess(companyId){
+    const company=companyById(companyId); if(!company)return;
+    formStatus('#mda-status');
+    try{
+      const data=await edgeRequest('master-company-devices',{action:'list',company_id:companyId});
+      state.accessDevices=data?.devices||[];
+      $('#mda-company-id').value=companyId;
+      $('#mda-title').textContent=`Acesso das TVs • ${company.name}`;
+      renderMasterDeviceAccess();
+      openDialog('master-device-access-dialog');
+    }catch(error){toast('Não foi possível carregar as TVs',error.message,'error')}
+  }
+  async function saveMasterDeviceAccess(button){
+    const deviceId=button?.dataset?.saveDeviceAccess; if(!deviceId)return;
+    const companyId=$('#mda-company-id').value;
+    const mode=$(`[data-access-mode="${deviceId}"]`)?.value||'permanent';
+    const date=$(`[data-access-date="${deviceId}"]`)?.value||'';
+    let expiresAt=null;
+    if(mode==='date'){
+      if(!date){formStatus('#mda-status','❌ Escolha a data final da autorização.','error');return}
+      expiresAt=new Date(`${date}T23:59:59-03:00`).toISOString();
+      if(new Date(expiresAt).getTime()<=Date.now()){formStatus('#mda-status','❌ Escolha uma data futura.','error');return}
+    }
+    busy(button,true,'Aplicando...');
+    formStatus('#mda-status','Salvando autorização da TV...','pending');
+    try{
+      await edgeRequest('master-company-devices',{action:'set_access',company_id:companyId,device_id:deviceId,mode,expires_at:expiresAt});
+      const data=await edgeRequest('master-company-devices',{action:'list',company_id:companyId});
+      state.accessDevices=data?.devices||[];
+      renderMasterDeviceAccess();
+      formStatus('#mda-status','✅ Autorização atualizada. A TV receberá a mudança automaticamente.','success');
+      toast('Salvo com sucesso','Prazo de acesso da TV atualizado.');
+    }catch(error){
+      formStatus('#mda-status',`❌ ${error.message}`,'error');
+      toast('Erro ao atualizar acesso da TV',error.message,'error');
+    }finally{busy(button,false)}
+  }
+
   async function openMasterReplaceDevice(companyId){
     const c=companyById(companyId); if(!c)return;
     formStatus('#mr-status');
@@ -283,7 +346,7 @@
     const b=$('#me-clear-cache'); busy(b,true,'Solicitando...');
     try{await saveCompanyRequest({company_id:id,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,clear_cache:true});formStatus('#me-status','✅ Limpeza de cache enviada. As TVs baixarão novamente as mídias na próxima sincronização.','success');toast('Comando enviado','Cache da conta será renovado.');await load()}catch(e){formStatus('#me-status',`❌ ${e.message}`,'error')}finally{busy(b,false)}
   }
-  function bind(){ $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
+  function bind(){ $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
   async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){saveSession(null);show('master-auth');toast('Sessão expirada','Entre novamente.','error')} }
   boot();
