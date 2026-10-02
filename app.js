@@ -210,10 +210,11 @@
   }
 
   function saveSession(session) {
-    state.session = session;
+    state.session = session || null;
     state.user = session?.user || null;
     if (session) localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     else localStorage.removeItem(SESSION_KEY);
+    window.dispatchEvent(new CustomEvent('vision-session-changed', { detail: { authenticated: Boolean(session?.access_token) } }));
   }
 
   function loadSavedSession() {
