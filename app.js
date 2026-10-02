@@ -2610,7 +2610,7 @@
     const values = preset === 'weekdays' ? new Set([1,2,3,4,5])
       : preset === 'weekend' ? new Set([0,6])
       : new Set([0,1,2,3,4,5,6]);
-    $('[data-playlist-weekday]').forEach(input => {
+    $$('[data-playlist-weekday]').forEach(input => {
       input.checked = values.has(Number(input.dataset.playlistWeekday));
     });
     playlistScheduleStatus();
@@ -2620,10 +2620,10 @@
   function syncPlaylistScheduleFormVisibility() {
     const enabled = $('#playlist-schedule-enabled')?.checked !== false;
     const allDay = $('#playlist-schedule-all-day')?.checked !== false;
-    $('.schedule-date-fields input').forEach(input => input.disabled = !enabled);
+    $$('.schedule-date-fields input').forEach(input => input.disabled = !enabled);
     $('#playlist-schedule-all-day').disabled = !enabled;
-    $('[data-playlist-weekday]').forEach(input => input.disabled = !enabled);
-    $('[data-playlist-weekday-preset]').forEach(button => button.disabled = !enabled);
+    $$('[data-playlist-weekday]').forEach(input => input.disabled = !enabled);
+    $$('[data-playlist-weekday-preset]').forEach(button => button.disabled = !enabled);
     $('#playlist-schedule-time-fields').classList.toggle('hidden', !enabled || allDay);
     $('#playlist-schedule-time-note')?.classList.toggle('hidden', !enabled || allDay);
     updatePlaylistScheduleSummary();
@@ -2873,8 +2873,8 @@
       $(selector)?.addEventListener('input', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); });
       $(selector)?.addEventListener('change', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); });
     });
-    $('[data-playlist-weekday]').forEach(input => input.addEventListener('change', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); }));
-    $('[data-playlist-weekday-preset]').forEach(button => button.addEventListener('click', () => setPlaylistWeekdayPreset(button.dataset.playlistWeekdayPreset)));
+    $$('[data-playlist-weekday]').forEach(input => input.addEventListener('change', () => { playlistScheduleStatus(); updatePlaylistScheduleSummary(); }));
+    $$('[data-playlist-weekday-preset]').forEach(button => button.addEventListener('click', () => setPlaylistWeekdayPreset(button.dataset.playlistWeekdayPreset)));
     $('#playlist-bulk-schedule').addEventListener('click', () => openPlaylistScheduleDialog());
     $('#playlist-bulk-enable').addEventListener('click', () => setSelectedPlaylistEnabled(true));
     $('#playlist-bulk-disable').addEventListener('click', () => setSelectedPlaylistEnabled(false));
