@@ -765,3 +765,19 @@ textarea { resize: vertical; min-height: 90px; }
   .device-card-pro{max-width:none}
   .device-card-pro .device-screen{aspect-ratio:16/9}
 }
+
+/* Simplified TV status */
+.device-simple-summary{display:grid;gap:5px;margin:7px 0;padding:7px 8px;border:1px solid var(--line);border-radius:9px;background:rgba(255,255,255,.025)}
+.device-summary-row{display:grid;grid-template-columns:58px minmax(0,1fr) auto;gap:6px;align-items:center;font-size:8.5px}
+.device-summary-row>span{color:var(--muted)}
+.device-summary-row>strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:9px}
+.device-summary-row>strong.ok{color:#8ce7ce}
+.device-summary-row>strong.warn{color:#f4ce7a}
+.device-summary-row .small-icon-button{min-height:25px;padding:3px 6px;font-size:8px}
+.device-summary-note{font-size:8px;line-height:1.35;padding-top:2px}
+.device-summary-note.success{color:#8ce7ce}
+.device-summary-note.warning{color:#f4ce7a}
+.device-summary-note.error{color:#ff9cab}
+.device-summary-note.muted{color:var(--muted)}
+.master-only-device-action{display:none!important}
+body.has-saas-admin .master-only-device-action{display:inline-flex!important}
