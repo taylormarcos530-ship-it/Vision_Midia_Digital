@@ -585,6 +585,12 @@
       if (usage.limit) return `Limite do plano atingido. Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'} e você já está usando ${usage.used}. Para adicionar outra, substitua uma TV ou altere o plano.`;
       return 'Limite de TVs do plano atingido. Fale com o administrador para ajustar seu plano.';
     }
+    if (/expired_code|código expirou|codigo expirou/i.test(message)) return 'Código expirado. Gere um novo código no Vision Player da TV e tente novamente.';
+    if (/invalid_code|código inválido|codigo invalido|já utilizado|ja utilizado/i.test(message)) return 'Código inválido ou já utilizado. Confira os 6 dígitos exibidos na TV ou gere um novo código.';
+    if (/code_already_claimed/i.test(message)) return 'Esse código acabou de ser utilizado. Gere um novo código no Vision Player.';
+    if (/branded_player_company_mismatch/i.test(message)) return 'Este Vision Player está vinculado a outra empresa.';
+    if (/rate_limited/i.test(message)) return 'Muitas tentativas de pareamento. Aguarde alguns minutos e tente novamente.';
+    if (/forbidden/i.test(message)) return 'Seu usuário não tem permissão para parear TVs nesta empresa.';
     return message;
   }
 
@@ -1631,13 +1637,23 @@
   async function handlePairDevice(event) {
     event.preventDefault();
     const button = $('#pair-device-save');
+    const status = $('#pair-device-status');
+    const setPairStatus = (message = '', type = '') => {
+      if (!status) return;
+      status.textContent = message;
+      status.className = `access-refresh-status ${type}`.trim();
+      status.classList.toggle('hidden', !message);
+    };
     const code = $('#pair-device-code').value.replace(/\D/g, '');
     const name = $('#pair-device-name').value.trim();
     if (code.length !== 6 || !name) {
-      toast('Confira o código', 'Informe os 6 dígitos exibidos no Vision Player.', 'error');
+      const message = 'Informe os 6 dígitos exibidos no Vision Player e um nome para a TV.';
+      setPairStatus(message, 'error');
+      toast('Confira o código', message, 'error');
       return;
     }
     setBusy(button, true, 'Vinculando...');
+    setPairStatus('Validando o código e vinculando esta TV…', 'pending');
     try {
       await functionRequest('claim-device', {
         body: {
@@ -1647,12 +1663,15 @@
           orientation: $('#pair-device-orientation').value,
         },
       });
+      setPairStatus('TV vinculada com sucesso.', 'success');
       closeDialog('pair-device-dialog');
       $('#pair-device-form').reset();
       toast('TV pareada', 'O Vision Player receberá o acesso automaticamente.');
       await loadAllData();
     } catch (error) {
-      toast('Não foi possível parear', friendlyPairDeviceError(error), 'error', 6500);
+      const message = friendlyPairDeviceError(error);
+      setPairStatus(message, 'error');
+      toast('Não foi possível parear', message, 'error', 6500);
       renderDevicePlanUsage();
     } finally { setBusy(button, false); }
   }
@@ -1661,6 +1680,11 @@
     $('#pair-device-code').value = '';
     $('#pair-device-name').value = '';
     $('#pair-device-orientation').value = 'auto';
+    const status = $('#pair-device-status');
+    if (status) {
+      status.textContent = '';
+      status.className = 'access-refresh-status hidden';
+    }
     openDialog('pair-device-dialog');
     setTimeout(() => $('#pair-device-code')?.focus(), 50);
   }
