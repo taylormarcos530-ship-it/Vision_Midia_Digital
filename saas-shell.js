@@ -15,7 +15,7 @@
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
-  const $ = (selector, root = document) => [...root.querySelectorAll(selector)];
+  const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
