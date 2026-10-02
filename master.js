@@ -210,7 +210,7 @@
       const dateValue=device.access_expires_at?String(device.access_expires_at).slice(0,10):'';
       return `<div class="device-access-row" data-device-access-row="${device.id}">
         <div class="device-access-info"><strong>${esc(device.name)}</strong><small>${esc(device.platform||'TV')} • ${device.last_seen_at?`último contato ${esc(dt(device.last_seen_at))}`:'sem contato recente'}</small><span class="access-current ${cls}">${esc(current)}</span></div>
-        <label>Novo prazo<select data-access-mode="${device.id}"><option value="permanent">Permanente</option><option value="7_days">7 dias</option><option value="30_days">30 dias</option><option value="90_days">90 dias</option><option value="date">Até uma data</option><option value="block">Bloquear agora</option></select></label>
+        <label>Novo prazo<select data-access-mode="${device.id}"><option value="permanent">Permanente</option><option value="10_minutes">10 minutos (teste)</option><option value="7_days">7 dias</option><option value="30_days">30 dias</option><option value="90_days">90 dias</option><option value="date">Até uma data</option><option value="block">Bloquear agora</option></select></label>
         <label>Data específica<input data-access-date="${device.id}" type="date" value="${esc(dateValue)}" /></label>
         <button class="small-button" type="button" data-save-device-access="${device.id}">Aplicar</button>
       </div>`;
