@@ -53,6 +53,8 @@
     editingPlaylistId: null,
     viewingDeviceId: null,
     isBusy: false,
+    deviceCaptureStates: new Map(),
+    autoCaptureRequested: new Set(),
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -611,6 +613,58 @@
     return message;
   }
 
+  function friendlyScreenshotError(error) {
+    const message = String(error?.message || error || 'Falha ao capturar a tela.');
+    if (/Nenhuma imagem ou vídeo está sendo exibido/i.test(message)) {
+      return 'A TV está online, mas o conteúdo atual é um link/site ou ainda não carregou uma imagem ou vídeo. Por segurança do navegador, páginas incorporadas não podem ser fotografadas pelo Player web.';
+    }
+    if (/mídia ainda não está pronta para captura/i.test(message)) {
+      return 'A mídia ainda estava carregando. Aguarde alguns segundos e tente capturar novamente.';
+    }
+    if (/Canvas indisponível/i.test(message)) {
+      return 'Este dispositivo não liberou a captura de tela pelo navegador.';
+    }
+    return message;
+  }
+
+  function captureUiForDevice(device, shot) {
+    const status = effectiveDeviceStatus(device);
+    const capture = state.deviceCaptureStates.get(device.id) || null;
+    if (capture?.status === 'pending') {
+      return {
+        className: 'capture-pending',
+        body: '<div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Capturando tela…</strong><small>Aguardando resposta do Vision Player.</small></div>',
+        caption: 'Solicitando nova captura…',
+      };
+    }
+    if (capture?.status === 'error') {
+      return {
+        className: 'capture-error',
+        body: `<div class="device-capture-state"><span class="device-preview-symbol">!</span><strong>Não foi possível capturar</strong><small>${escapeHtml(capture.message || 'Tente novamente.')}</small><button class="small-icon-button capture-retry-button" type="button" data-capture-device="${device.id}">Tentar novamente</button></div>`,
+        caption: 'Captura indisponível',
+      };
+    }
+    if (shot?.storage_path) {
+      return {
+        className: 'has-screenshot',
+        body: '<div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Carregando captura…</strong></div>',
+        caption: `Última captura: ${escapeHtml(formatLastSeen(shot.captured_at))}`,
+      };
+    }
+    if (status === 'online') {
+      return {
+        className: 'capture-empty',
+        body: `<div class="device-capture-state"><span class="device-preview-symbol">▣</span><strong>TV conectada • sem captura</strong><small>Peça uma imagem do que está sendo exibido agora.</small><button class="small-icon-button capture-retry-button" type="button" data-capture-device="${device.id}">Capturar agora</button></div>`,
+        caption: 'Sem captura disponível',
+      };
+    }
+    return {
+      className: 'capture-empty',
+      body: '<div class="device-capture-state"><span class="device-preview-symbol">▣</span><strong>Sem captura disponível</strong><small>A TV está offline. A miniatura aparecerá quando o Player responder.</small></div>',
+      caption: 'Aguardando conexão da TV',
+    };
+  }
+
   function renderDevices() {
     renderDevicePlanUsage();
     const grid = $('#devices-grid');
@@ -624,26 +678,45 @@
       const status = effectiveDeviceStatus(device);
       const assignment = state.deviceAssignments.find(a => a.device_id === device.id);
       const shot = latestScreenshotForDevice(device.id);
+      const captureUi = captureUiForDevice(device, shot);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
+      const capturePending = state.deviceCaptureStates.get(device.id)?.status === 'pending';
       return `
-      <article class="device-card">
+      <article class="device-card device-card-pro" data-device-card="${device.id}">
         <div class="device-card-head">
-          <div class="device-card-title"><strong>${escapeHtml(device.name)}</strong><span>${escapeHtml(platformLabel(device.platform))}</span></div>
-          <div class="card-menu">
-            <button class="small-icon-button view-tv-button" data-view-device="${device.id}" title="Ver a captura atual desta TV em tamanho maior">👁 Ver TV</button>
-            <button class="small-icon-button capture-button" data-capture-device="${device.id}" title="Capturar o que está passando agora">📷 Capturar</button>
-            ${['owner','admin'].includes(state.companyRole) ? `<button class="small-icon-button" data-replace-device="${device.id}" title="Trocar esta TV por uma nova sem consumir outra vaga do plano">⇄ Substituir</button>` : ''}
-            <button class="small-icon-button" data-edit-device="${device.id}" title="Editar">✎</button>
-            <button class="small-icon-button" data-delete-device="${device.id}" title="Excluir">×</button>
+          <div class="device-card-title">
+            <strong>${escapeHtml(device.name)}</strong>
+            <span>${escapeHtml(platformLabel(device.platform))}${device.app_version ? ` • ${escapeHtml(device.app_version)}` : ''}</span>
           </div>
+          <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
-        <div class="device-screen ${shot ? 'has-screenshot' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}">${shot ? '<span>Carregando captura…</span>' : '▣'}</div>
-        ${shot ? `<div class="screenshot-meta">Última captura: ${escapeHtml(formatMonitorDateTime(shot.captured_at))}</div>` : ''}
-        <div class="device-meta">
-          <span class="status-dot ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
+
+        <div class="device-screen ${captureUi.className}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}">
+          ${captureUi.body}
+        </div>
+        <div class="device-screen-footer">
+          <span data-device-capture-caption="${device.id}">${captureUi.caption}</span>
           <span>${escapeHtml(orientationLabel(device.orientation))}</span>
         </div>
-        <div class="device-last-seen">${escapeHtml(formatLastSeen(device.last_seen_at))}${device.app_version ? ` • ${escapeHtml(device.app_version)}` : ''}</div>
+
+        <div class="device-card-actions">
+          <button class="small-icon-button view-tv-button" data-view-device="${device.id}" type="button" title="Abrir a última captura em tamanho maior">👁 Ver TV</button>
+          <button class="small-icon-button capture-button" data-capture-device="${device.id}" type="button" ${capturePending ? 'disabled' : ''} title="Solicitar uma nova captura ao Player">${capturePending ? 'Capturando…' : '📷 Capturar'}</button>
+          <details class="device-more-menu">
+            <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋮</summary>
+            <div class="device-more-popover">
+              ${['owner','admin'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-replace-device="${device.id}">⇄ Substituir TV</button>` : ''}
+              <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
+              <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
+            </div>
+          </details>
+        </div>
+
+        <div class="device-meta device-meta-pro">
+          <span>${escapeHtml(formatLastSeen(device.last_seen_at))}</span>
+          <span>${status === 'online' ? 'Sincronizando normalmente' : 'Aguardando o Player'}</span>
+        </div>
+
         <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
             <option value="">${state.playlists.length ? 'Nenhuma playlist' : 'Crie uma playlist primeiro'}</option>
@@ -652,7 +725,24 @@
         </label>
       </article>`;
     }).join('');
+
     hydrateDeviceScreenshots();
+    scheduleAutomaticDeviceCaptures();
+  }
+
+  function scheduleAutomaticDeviceCaptures() {
+    for (const device of state.devices) {
+      if (effectiveDeviceStatus(device) !== 'online') continue;
+      if (latestScreenshotForDevice(device.id)) continue;
+      if (state.autoCaptureRequested.has(device.id)) continue;
+      if (state.deviceCaptureStates.get(device.id)?.status === 'pending') continue;
+      state.autoCaptureRequested.add(device.id);
+      setTimeout(() => {
+        const current = state.devices.find(item => item.id === device.id);
+        if (!current || effectiveDeviceStatus(current) !== 'online' || latestScreenshotForDevice(device.id)) return;
+        requestDeviceScreenshot(device.id, { quiet: true, automatic: true }).catch(() => {});
+      }, 2500);
+    }
   }
 
   async function hydrateDeviceScreenshots() {
@@ -663,13 +753,22 @@
         const url = await getSignedMediaUrl(shot.storage_path);
         const img = new Image();
         img.alt = 'Captura da TV';
-        img.src = url;
+        await new Promise((resolve, reject) => {
+          img.onload = resolve;
+          img.onerror = () => reject(new Error('Não foi possível carregar a miniatura.'));
+          img.src = url;
+        });
         target.replaceChildren(img);
+        target.classList.add('has-screenshot');
+        target.classList.remove('capture-empty', 'capture-error', 'capture-pending');
         target.dataset.loaded = '1';
-      } catch { target.textContent = 'Captura indisponível'; }
+      } catch {
+        target.classList.remove('has-screenshot', 'capture-pending');
+        target.classList.add('capture-error');
+        target.innerHTML = '<div class="device-capture-state"><span class="device-preview-symbol">!</span><strong>Miniatura indisponível</strong><small>A captura existe, mas não pôde ser carregada agora.</small></div>';
+      }
     }
   }
-
 
   async function renderTvViewer(deviceId) {
     const device = state.devices.find(item => item.id === deviceId);
@@ -718,9 +817,14 @@
     }
   }
 
-  async function requestDeviceScreenshot(deviceId) {
+  async function requestDeviceScreenshot(deviceId, { quiet = false, automatic = false } = {}) {
     const device = state.devices.find(item => item.id === deviceId);
-    if (!device) return;
+    if (!device) return false;
+    if (state.deviceCaptureStates.get(deviceId)?.status === 'pending') return false;
+
+    state.deviceCaptureStates.set(deviceId, { status: 'pending', automatic });
+    renderDevices();
+
     try {
       const rows = await restRequest('device_commands', {
         method: 'POST',
@@ -729,21 +833,29 @@
       });
       const command = rows?.[0];
       if (!command?.id) throw new Error('O servidor não confirmou o pedido de captura.');
-      toast('Captura solicitada', `${device.name}: aguardando o Player responder.`);
+      if (!quiet) toast('Captura solicitada', `${device.name}: aguardando o Player responder.`);
+
       const deadline = Date.now() + 25000;
       while (Date.now() < deadline) {
         await new Promise(resolve => setTimeout(resolve, 1800));
         const result = await restRequest('device_commands', { query: `select=id,status,error_message&company_id=eq.${encodeURIComponent(state.company.id)}&id=eq.${encodeURIComponent(command.id)}&limit=1` });
         const row = result?.[0];
         if (row?.status === 'completed') {
+          state.deviceCaptureStates.delete(deviceId);
           await loadAllData();
-          toast('Captura concluída', `A imagem atual da ${device.name} foi recebida.`);
-          return;
+          if (!quiet) toast('Captura concluída', `A imagem atual da ${device.name} foi recebida.`);
+          return true;
         }
         if (row?.status === 'failed') throw new Error(row.error_message || 'O Player não conseguiu capturar a tela.');
       }
-      toast('Captura ainda pendente', 'A TV pode estar offline. O pedido ficará aguardando o Player.', 'error', 6000);
-    } catch (error) { toast('Erro ao capturar TV', error.message, 'error', 6000); }
+      throw new Error('A TV não respondeu ao pedido de captura em até 25 segundos.');
+    } catch (error) {
+      const message = friendlyScreenshotError(error);
+      state.deviceCaptureStates.set(deviceId, { status: 'error', message, automatic });
+      renderDevices();
+      if (!quiet) toast('Não foi possível capturar', message, 'error', 7500);
+      return false;
+    }
   }
 
   function renderPlayerBranding() {
