@@ -28,8 +28,9 @@
     if (!response.ok) return null;
     const next = await response.json().catch(() => null);
     if (!next?.access_token) return null;
-    saveSession(next);
-    return next;
+    const merged = { ...session, ...next, user: next.user || session.user || null };
+    saveSession(merged);
+    return merged;
   }
 
   async function validateSession(session) {
@@ -66,6 +67,24 @@
       const data = await response.json().catch(() => null);
       return Boolean(data?.role);
     } catch { return false; }
+  }
+
+  async function switchAccount() {
+    const session = readSession();
+    try {
+      if (session?.access_token) {
+        await fetch(`${CONFIG.supabaseUrl}/auth/v1/logout`, {
+          method: 'POST',
+          headers: {
+            apikey: CONFIG.supabasePublishableKey,
+            Authorization: `Bearer ${session.access_token}`,
+          },
+          cache: 'no-store',
+        });
+      }
+    } catch {}
+    saveSession(null);
+    location.assign('./index.html');
   }
 
   function setupApkButton() {
@@ -143,10 +162,12 @@
       return;
     }
 
+    saveSession(session);
     warning?.classList.add('hidden');
     content?.classList.remove('hidden');
     setupApkButton();
     setupPanelInstall();
+    $('#downloads-switch-account')?.addEventListener('click', switchAccount);
 
     if (await detectMaster(session)) $('#master-back')?.classList.remove('hidden');
 
