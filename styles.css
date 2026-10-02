@@ -781,3 +781,7 @@ textarea { resize: vertical; min-height: 90px; }
 .device-summary-note.muted{color:var(--muted)}
 .master-only-device-action{display:none!important}
 body.has-saas-admin .master-only-device-action{display:inline-flex!important}
+
+.monitor-event-actor{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:5px 0 2px}
+.monitor-event-actor strong{font-size:9px;color:#dce8f8}
+.monitor-event-actor span{font-size:8px;color:var(--muted);padding:2px 6px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025)}
