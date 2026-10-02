@@ -845,8 +845,18 @@
         $('#repair-button').disabled = false;
       }
     });
-    window.addEventListener('online', () => { if (state.deviceToken) { syncManifest().catch(() => {}); flushPlaybackQueue().catch(() => {}); flushDeviceEventQueue().catch(() => {}); } });
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && state.deviceToken) heartbeat().catch(() => {}); });
+    const resumeSync = () => {
+      if (!state.deviceToken) return;
+      heartbeat().catch(() => {});
+      syncManifest().catch(() => {});
+      flushPlaybackQueue().catch(() => {});
+      flushDeviceEventQueue().catch(() => {});
+    };
+    window.addEventListener('online', resumeSync);
+    window.addEventListener('focus', resumeSync);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resumeSync();
+    });
 
     if (state.deviceToken) await startPlayer();
     else await startPairing();
