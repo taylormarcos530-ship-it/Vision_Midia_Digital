@@ -1,4 +1,18 @@
 -- Prepared for official deploy; not applied by this preview block.
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'platform-public',
+  'platform-public',
+  true,
+  2097152,
+  array['image/webp']::text[]
+)
+on conflict (id) do update
+set public = excluded.public,
+    file_size_limit = excluded.file_size_limit,
+    allowed_mime_types = excluded.allowed_mime_types;
+
 alter table public.platform_public_config
   add column if not exists login_image_path text,
   add column if not exists login_image_fit text not null default 'cover',
