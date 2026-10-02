@@ -714,9 +714,9 @@
 
         const activeItems = (manifest.items || []).filter(item => itemScheduleActive(item, manifest.program?.timezone));
         if (!activeItems.length) {
-          hideIdle();
           $('#media-stage').replaceChildren();
-          await sleep(1000);
+          showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está dentro da programação atual. Revise data, dias da semana e horário no painel.');
+          await sleep(3000);
           continue;
         }
         const queue = manifest.playlist.shuffle ? shuffled(activeItems) : [...activeItems];
