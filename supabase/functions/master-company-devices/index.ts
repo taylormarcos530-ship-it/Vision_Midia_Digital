@@ -80,6 +80,8 @@ Deno.serve(async req => {
 
       if (mode === 'permanent') {
         accessStatus = 'active'
+      } else if (mode === '10_minutes') {
+        expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString()
       } else if (['7_days', '30_days', '90_days'].includes(mode)) {
         const days = Number(mode.split('_')[0])
         expiresAt = new Date(now.getTime() + days * 24 * 60 * 60 * 1000).toISOString()
