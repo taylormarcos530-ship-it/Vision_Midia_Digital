@@ -1533,7 +1533,7 @@
       writeLocalValue(VIEW_KEY, view);
       writeLocalValue(ACTIVE_AREA_KEY, 'operational');
     }
-    $('.view-section').forEach(section => section.classList.add('hidden'));
+    $$('.view-section').forEach(section => section.classList.add('hidden'));
     $(`#view-${view}`)?.classList.remove('hidden');
     $$('.nav-item[data-view]').forEach(btn => btn.classList.toggle('active', btn.dataset.view === view));
     $('#view-kicker').textContent = titles[view]?.[0] || '';
