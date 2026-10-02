@@ -785,3 +785,57 @@ body.has-saas-admin .master-only-device-action{display:inline-flex!important}
 .monitor-event-actor{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:5px 0 2px}
 .monitor-event-actor strong{font-size:9px;color:#dce8f8}
 .monitor-event-actor span{font-size:8px;color:var(--muted);padding:2px 6px;border:1px solid var(--line);border-radius:999px;background:rgba(255,255,255,.025)}
+
+/* Playlist scheduling — professional dialog */
+.playlist-schedule-dialog{width:min(700px,calc(100vw - 28px))}
+.playlist-schedule-body{gap:13px}
+.schedule-dialog-header{padding-bottom:2px}
+.schedule-dialog-header .dialog-subtitle{margin:6px 0 0;color:var(--muted);font-size:11px}
+.schedule-master-switch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:11px;align-items:center;padding:13px 14px;border:1px solid rgba(79,124,255,.28);border-radius:14px;background:linear-gradient(135deg,rgba(79,124,255,.10),rgba(79,124,255,.035));cursor:pointer}
+.schedule-master-switch input{width:18px;height:18px;margin:0}
+.schedule-master-switch span{display:grid;gap:2px}
+.schedule-master-switch strong{font-size:12px}
+.schedule-master-switch small{color:var(--muted);font-size:9.5px;line-height:1.4}
+.schedule-live-summary{display:grid;gap:4px;padding:12px 14px;border:1px solid rgba(37,208,167,.22);border-radius:13px;background:rgba(37,208,167,.055)}
+.schedule-live-summary>div{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.schedule-live-summary span{font-size:8px;font-weight:900;letter-spacing:.14em;color:#78d8c0}
+.schedule-live-summary strong{font-size:12px;color:#dffaf3}
+.schedule-live-summary small{font-size:9.5px;color:var(--muted);line-height:1.4}
+.schedule-section{display:grid;gap:11px;padding:13px;border:1px solid var(--line);border-radius:14px;background:rgba(255,255,255,.018)}
+.schedule-section-head{display:flex;align-items:flex-start;gap:9px}
+.schedule-section-head>div{display:grid;gap:2px}
+.schedule-section-head strong{font-size:11.5px}
+.schedule-section-head small{font-size:9px;color:var(--muted);line-height:1.4}
+.schedule-step{width:24px;height:24px;display:grid;place-items:center;flex:0 0 auto;border-radius:8px;background:#172842;border:1px solid #2b4266;color:#a9bfff;font-size:9px;font-weight:900}
+.schedule-all-day-switch{margin:0}
+.schedule-helper{padding:8px 10px;border-radius:9px;background:rgba(79,124,255,.06);border:1px solid rgba(79,124,255,.16);color:#9fb2d0;font-size:9px;line-height:1.45}
+.weekday-presets{display:flex;flex-wrap:wrap;gap:6px}
+.weekday-presets .small-icon-button{min-height:29px;padding:5px 9px;font-size:9px}
+.schedule-weekday-fieldset{padding:0;border:0}
+.schedule-weekday-fieldset legend{padding:0}
+.schedule-weekday-fieldset .weekday-grid{grid-template-columns:repeat(7,minmax(0,1fr));gap:6px}
+.schedule-weekday-fieldset .weekday-grid label{position:relative;display:grid;place-items:center;min-height:38px;padding:7px 4px;border-radius:10px;cursor:pointer;transition:border-color .15s ease,background .15s ease,transform .15s ease}
+.schedule-weekday-fieldset .weekday-grid label:hover{transform:translateY(-1px)}
+.schedule-weekday-fieldset .weekday-grid input{position:absolute;opacity:0;pointer-events:none}
+.schedule-weekday-fieldset .weekday-grid label:has(input:checked){border-color:rgba(79,124,255,.55);background:rgba(79,124,255,.13);color:#c8d5ff}
+.schedule-weekday-fieldset .weekday-grid label:has(input:disabled){opacity:.45;cursor:not-allowed;transform:none}
+.schedule-dialog-actions{align-items:center;border-top:1px solid rgba(255,255,255,.055);padding-top:12px}
+.schedule-action-spacer{flex:1}
+.schedule-always-button{border-color:rgba(244,206,122,.22)}
+.schedule-date-fields input:disabled,.playlist-schedule-dialog input:disabled{opacity:.45;cursor:not-allowed}
+.sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+
+@media(max-width:700px){
+  .playlist-schedule-dialog{width:min(100% - 16px,700px);max-height:calc(100vh - 16px)}
+  .playlist-schedule-body{padding:16px;gap:11px}
+  .schedule-section{padding:11px}
+  .schedule-weekday-fieldset .weekday-grid{grid-template-columns:repeat(4,1fr)}
+  .schedule-dialog-actions{display:grid;grid-template-columns:1fr 1fr}
+  .schedule-dialog-actions .schedule-action-spacer{display:none}
+  .schedule-dialog-actions .schedule-always-button{grid-column:1/-1}
+}
+@media(max-width:430px){
+  .schedule-weekday-fieldset .weekday-grid{grid-template-columns:repeat(3,1fr)}
+  .schedule-dialog-actions{grid-template-columns:1fr}
+  .schedule-dialog-actions .schedule-always-button{grid-column:auto}
+}
