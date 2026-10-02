@@ -3,7 +3,7 @@
   const CONFIG = window.VISION_CONFIG;
   const SESSION_KEY = 'vision_midia_session_v1';
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
-  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [], loginVisualDraft: null };
+  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [], loginVisualDraft: null, loginVisualRemoveRequested: false };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   let lastActionButton = null;
@@ -90,7 +90,7 @@
   function baseLoginVisualConfig(){
     const c=state.platformConfig||{};
     return{
-      imageDataUrl:'',
+      imageDataUrl:c.login_image_url||'',
       fit:c.login_image_fit||'cover',
       position:c.login_image_position||'center',
       overlay:Number(c.login_image_overlay??42),
@@ -171,6 +171,7 @@
       const draft=collectLoginVisualDraft();
       draft.imageDataUrl=imageDataUrl;
       state.loginVisualDraft=draft;
+      state.loginVisualRemoveRequested=false;
       updateLoginVisualMasterPreview();
       formStatus('#lv-status','✅ Imagem preparada. Clique em “Salvar no preview”.','success');
       toast('Imagem preparada','A prévia já está mostrando o novo visual.');
@@ -180,16 +181,40 @@
       toast('Erro ao preparar imagem',e.message,'error');
     }
   }
-  function saveLoginVisualPreview(event){
+  async function saveLoginVisualPreview(event){
     event.preventDefault();
     const b=$('#lv-save');busy(b,true,'Salvando...');
     try{
       const draft=collectLoginVisualDraft();
-      if(!writeLoginVisualPreview(draft))throw new Error('O navegador não conseguiu salvar a imagem. Tente uma imagem menor.');
-      state.loginVisualDraft={...draft};
-      updateLoginVisualMasterPreview();
-      formStatus('#lv-status','✅ Visual do login salvo neste preview.','success');
-      toast('Salvo com sucesso','A tela de login deste preview já está atualizada.');
+      const backendReady=Object.prototype.hasOwnProperty.call(state.platformConfig||{},'login_image_fit');
+
+      if(backendReady){
+        const payload={
+          action:'update_login_visual',
+          fit:draft.fit,
+          position:draft.position,
+          overlay:draft.overlay,
+          title:draft.title,
+          subtitle:draft.subtitle,
+          remove_image:state.loginVisualRemoveRequested===true,
+        };
+        if(/^data:image\/webp;base64,/i.test(draft.imageDataUrl||''))payload.image_base64=draft.imageDataUrl;
+        const result=await platformSettingsRequest(payload);
+        state.platformConfig=result.config||state.platformConfig||{};
+        writeLoginVisualPreview(null);
+        state.loginVisualDraft=baseLoginVisualConfig();
+        state.loginVisualRemoveRequested=false;
+        renderPlatformSettings();
+        formStatus('#lv-status','✅ Visual do login salvo para toda a plataforma.','success');
+        toast('Salvo com sucesso','A tela de login global foi atualizada.');
+      }else{
+        if(!writeLoginVisualPreview(draft))throw new Error('O navegador não conseguiu salvar a imagem. Tente uma imagem menor.');
+        state.loginVisualDraft={...draft};
+        state.loginVisualRemoveRequested=false;
+        updateLoginVisualMasterPreview();
+        formStatus('#lv-status','✅ Visual do login salvo neste preview.','success');
+        toast('Salvo com sucesso','A tela de login deste preview já está atualizada.');
+      }
     }catch(e){
       formStatus('#lv-status',`❌ ${e.message}`,'error');
       toast('Erro ao salvar visual',e.message,'error');
@@ -199,6 +224,7 @@
     const draft=collectLoginVisualDraft();
     draft.imageDataUrl='';
     state.loginVisualDraft=draft;
+    state.loginVisualRemoveRequested=true;
     updateLoginVisualMasterPreview();
     $('#lv-file').value='';
     formStatus('#lv-status','Imagem removida da prévia. Salve para confirmar.','pending');
@@ -274,6 +300,7 @@
     $('#ps-signup-enabled').checked=c.signup_enabled!==false;
 
     state.loginVisualDraft=readLoginVisualPreview()||baseLoginVisualConfig();
+    state.loginVisualRemoveRequested=false;
     const visual=currentLoginVisualConfig();
     if($('#lv-fit'))$('#lv-fit').value=visual.fit||'cover';
     if($('#lv-position'))$('#lv-position').value=visual.position||'center';
