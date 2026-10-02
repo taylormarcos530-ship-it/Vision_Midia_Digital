@@ -42,6 +42,9 @@
     campaigns: [],
     campaignDevices: [],
     deviceEvents: [],
+    deviceCommands: [],
+    companyMembers: [],
+    profiles: [],
     deviceScreenshots: [],
     playerBranding: null,
     selectedPlaylistItemIds: new Set(),
@@ -486,7 +489,7 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
@@ -495,6 +498,9 @@
         restRequest('campaigns', { query: `select=*&company_id=eq.${companyId}&order=priority.desc,created_at.desc` }),
         restRequest('campaign_devices', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('device_events', { query: `select=id,client_event_id,device_id,severity,event_code,message,details,occurred_at&company_id=eq.${companyId}&order=occurred_at.desc&limit=100` }),
+        restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
+        restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
+        restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
       ]);
       state.devices = devices || [];
       state.media = media || [];
@@ -504,6 +510,9 @@
       state.campaigns = campaigns || [];
       state.campaignDevices = campaignDevices || [];
       state.deviceEvents = deviceEvents || [];
+      state.deviceCommands = deviceCommands || [];
+      state.companyMembers = companyMembers || [];
+      state.profiles = profiles || [];
       const [screenshots, brandingRows] = await Promise.all([
         restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` }),
         restRequest('company_player_branding', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
@@ -1124,6 +1133,55 @@
     return ({ critical: 'Crítico', error: 'Erro', warning: 'Aviso', info: 'Informação' })[value] || value;
   }
 
+  function memberRoleLabel(role) {
+    return ({ owner:'Proprietário', admin:'Administrador', operator:'Operador', viewer:'Visualizador' })[role] || role || 'Usuário';
+  }
+
+  function operationalActor(userId) {
+    if (!userId) return { name:'Vision Player', detail:'Sistema automático' };
+    const profile = state.profiles.find(item => item.id === userId);
+    const member = state.companyMembers.find(item => item.user_id === userId);
+    const isCurrentUser = userId === state.user?.id;
+    const name = profile?.display_name || (isCurrentUser ? state.user?.email : '') || 'Usuário';
+    const role = memberRoleLabel(member?.role);
+    const detail = isCurrentUser && state.user?.email && profile?.display_name
+      ? `${role} • ${state.user.email}`
+      : role;
+    return { name, detail };
+  }
+
+  function commandEventLabel(command) {
+    const label = ({ screenshot:'Captura de tela' })[command.command_type] || command.command_type || 'Comando';
+    if (command.status === 'completed') return { severity:'info', message:`${label} concluída.`, code:`command_${command.command_type}_completed` };
+    if (command.status === 'failed') return { severity:'error', message:command.error_message || `${label} falhou.`, code:`command_${command.command_type}_failed` };
+    return { severity:'info', message:`${label} solicitada.`, code:`command_${command.command_type}_requested` };
+  }
+
+  function operationalEvents() {
+    const playerEvents = state.deviceEvents.map(event => ({
+      ...event,
+      source:'player',
+      actor: event.details?.actor_user_id ? operationalActor(event.details.actor_user_id) : { name:'Vision Player', detail:'Sistema automático' },
+      eventTime:event.occurred_at,
+    }));
+    const commandEvents = state.deviceCommands.map(command => {
+      const presentation = commandEventLabel(command);
+      return {
+        id:`command-${command.id}`,
+        device_id:command.device_id,
+        severity:presentation.severity,
+        event_code:presentation.code,
+        message:presentation.message,
+        actor:operationalActor(command.requested_by),
+        eventTime:command.completed_at || command.requested_at,
+        source:'user',
+      };
+    });
+    return [...playerEvents, ...commandEvents]
+      .sort((a,b) => new Date(b.eventTime || 0).getTime() - new Date(a.eventTime || 0).getTime())
+      .slice(0,150);
+  }
+
   function renderMonitoring() {
     const online = state.devices.filter(device => effectiveDeviceStatus(device) === 'online').length;
     const offline = state.devices.filter(device => effectiveDeviceStatus(device) === 'offline').length;
@@ -1185,20 +1243,22 @@
     }
 
     const severity = $('#monitor-severity-filter')?.value || '';
-    const events = state.deviceEvents.filter(event => !severity || event.severity === severity);
+    const events = operationalEvents().filter(event => !severity || event.severity === severity);
     const eventsList = $('#monitor-events-list');
     const eventsEmpty = $('#monitor-events-empty');
     eventsEmpty.classList.toggle('hidden', events.length > 0);
     eventsList.classList.toggle('hidden', events.length === 0);
     eventsList.innerHTML = events.map(event => {
       const device = state.devices.find(item => item.id === event.device_id);
+      const actor = event.actor || { name:'Vision Player', detail:'Sistema automático' };
       return `
         <div class="monitor-event ${escapeHtml(event.severity)}">
           <div class="monitor-event-icon">${event.severity === 'critical' ? '!' : event.severity === 'error' ? '×' : event.severity === 'warning' ? '!' : 'i'}</div>
           <div class="monitor-event-copy">
             <div><strong>${escapeHtml(device?.name || 'TV removida')}</strong><span class="event-severity ${escapeHtml(event.severity)}">${escapeHtml(eventSeverityLabel(event.severity))}</span></div>
             <p>${escapeHtml(event.message)}</p>
-            <small>${escapeHtml(formatMonitorDateTime(event.occurred_at))} • ${escapeHtml(event.event_code)}</small>
+            <div class="monitor-event-actor"><strong>${escapeHtml(actor.name)}</strong><span>${escapeHtml(actor.detail)}</span></div>
+            <small>${escapeHtml(formatMonitorDateTime(event.eventTime))} • ${escapeHtml(event.event_code)}</small>
           </div>
         </div>`;
     }).join('');
@@ -2027,6 +2087,16 @@
       toast('TV substituída com sucesso', 'A vaga do plano foi mantida e a programação foi transferida para a nova TV.');
       await loadAllData();
     } catch (error) {
+      try {
+        await loadAllData();
+        const oldStillActive = state.devices.some(device => device.id === oldDeviceId);
+        if (!oldStillActive) {
+          closeDialog('replace-device-dialog');
+          $('#replace-device-form').reset();
+          toast('TV substituída com sucesso', 'A troca foi concluída. O erro ocorreu apenas na confirmação final da auditoria.');
+          return;
+        }
+      } catch {}
       toast('Não foi possível substituir a TV', error.message, 'error');
     } finally { setBusy(button, false); }
   }
