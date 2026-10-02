@@ -11,6 +11,7 @@
   const COMPANY_KEY = 'vision_midia_company_v1';
   const VIEW_KEY = 'vision_midia_active_view_v1';
   const ACTIVE_AREA_KEY = 'vision_midia_active_area_v1';
+  const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
 
@@ -22,6 +23,45 @@
   function writeLocalValue(key, value) {
     try { localStorage.setItem(key, value); }
     catch {}
+  }
+
+  function readLoginVisualPreview() {
+    try {
+      const raw = localStorage.getItem(LOGIN_VISUAL_PREVIEW_KEY);
+      return raw ? JSON.parse(raw) : null;
+    } catch { return null; }
+  }
+
+  function applyLoginVisual(serverConfig = {}) {
+    const local = readLoginVisualPreview() || {};
+    const config = {
+      imageUrl: local.imageDataUrl || serverConfig.login_image_url || '',
+      fit: local.fit || serverConfig.login_image_fit || 'cover',
+      position: local.position || serverConfig.login_image_position || 'center',
+      overlay: Number.isFinite(Number(local.overlay)) ? Number(local.overlay) : Number(serverConfig.login_image_overlay ?? 42),
+      title: local.title || serverConfig.login_image_title || 'Sua operação visual, organizada em um só lugar.',
+      subtitle: local.subtitle || serverConfig.login_image_subtitle || 'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.',
+    };
+
+    const panel = $('#auth-visual');
+    const image = $('#auth-visual-image');
+    if (!panel || !image) return;
+
+    panel.style.setProperty('--auth-visual-fit', ['cover','contain'].includes(config.fit) ? config.fit : 'cover');
+    panel.style.setProperty('--auth-visual-position', config.position || 'center');
+    panel.style.setProperty('--auth-visual-overlay', String(Math.max(0, Math.min(1, Number(config.overlay || 0) / 100))));
+    $('#auth-visual-title').textContent = config.title;
+    $('#auth-visual-subtitle').textContent = config.subtitle;
+
+    if (config.imageUrl) {
+      image.src = config.imageUrl;
+      image.classList.remove('hidden');
+      panel.dataset.hasImage = 'true';
+    } else {
+      image.removeAttribute('src');
+      image.classList.add('hidden');
+      panel.dataset.hasImage = 'false';
+    }
   }
 
   const savedOperationalView = readLocalValue(VIEW_KEY);
@@ -329,6 +369,7 @@
       }
     }
     state.publicConfig = data || { config: {}, plans: [] };
+    applyLoginVisual(state.publicConfig.config || {});
     const select = $('#signup-plan');
     if (select) {
       const plans = state.publicConfig.plans || [];
