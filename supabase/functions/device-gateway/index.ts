@@ -342,6 +342,31 @@ Deno.serve(async (req) => {
       return json({ ok:true, commands: commands || [] })
     }
 
+    if (action === 'command_result') {
+      const commandId = String(body?.command_id || '')
+      const status = String(body?.status || 'completed')
+      if (!commandId || !['completed','failed'].includes(status)) return json({ error:'invalid_command_result' }, 400)
+      const { data: command, error: commandError } = await admin.from('device_commands')
+        .select('id,command_type,status')
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .maybeSingle()
+      if (commandError) throw commandError
+      if (!command) return json({ error:'command_not_found' }, 404)
+      if (!['restart_player'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
+      const update = status === 'completed'
+        ? { status:'completed', completed_at:new Date().toISOString(), error_message:null, result:{ acknowledged:true } }
+        : { status:'failed', completed_at:new Date().toISOString(), error_message:String(body?.error_message || 'command_failed').slice(0,500) }
+      const { error } = await admin.from('device_commands')
+        .update(update)
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+      if (error) throw error
+      return json({ ok:true })
+    }
+
     if (action === 'screenshot_result') {
       const commandId = String(body?.command_id || '')
       const { data: command, error: commandError } = await admin.from('device_commands')
