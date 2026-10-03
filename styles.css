@@ -2053,3 +2053,20 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     grid-column:auto;
   }
 }
+
+
+/* Configured TV orientation should be visible in the dashboard preview too. */
+.device-card-pro .device-screen.configured-portrait{
+  width:min(100%,190px);
+  min-height:0;
+  aspect-ratio:9 / 16;
+  margin:14px auto 8px;
+}
+.device-card-pro .device-screen.configured-landscape{
+  width:100%;
+  min-height:0;
+  aspect-ratio:16 / 9;
+}
+@media(max-width:640px){
+  .device-card-pro .device-screen.configured-portrait{width:min(100%,175px)}
+}
