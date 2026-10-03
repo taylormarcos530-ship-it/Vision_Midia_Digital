@@ -136,6 +136,7 @@
   let lastActionAt = 0;
   let accessGateRefreshing = false;
   let accessGateTimer = null;
+  let tvViewerResizeObserver = null;
 
   function isFeedbackActionButton(button) {
     if (!button) return false;
@@ -1480,6 +1481,78 @@
     }
   }
 
+  function resolvedTvViewerOrientation(device, shot = null) {
+    const configured = String(device?.orientation || 'auto').toLowerCase();
+    if (configured === 'portrait' || configured === 'landscape') return configured;
+
+    const reported = String(device?.reported_orientation || '').toLowerCase();
+    if (reported.includes('portrait')) return 'portrait';
+    if (reported.includes('landscape')) return 'landscape';
+
+    const width = Number(shot?.width || device?.screen_width || 0);
+    const height = Number(shot?.height || device?.screen_height || 0);
+    if (width > 0 && height > 0) return height > width ? 'portrait' : 'landscape';
+    return 'landscape';
+  }
+
+  function tvViewerFrameGeometry(device, shot = null) {
+    const orientation = resolvedTvViewerOrientation(device, shot);
+    let width = Number(shot?.width || 0);
+    let height = Number(shot?.height || 0);
+
+    if (!(width > 0 && height > 0)) {
+      width = Number(device?.screen_width || 0);
+      height = Number(device?.screen_height || 0);
+    }
+    if (!(width > 0 && height > 0)) {
+      width = 16;
+      height = 9;
+    }
+
+    const longSide = Math.max(width, height);
+    const shortSide = Math.min(width, height);
+    if (orientation === 'portrait') {
+      width = shortSide;
+      height = longSide;
+    } else {
+      width = longSide;
+      height = shortSide;
+    }
+    return { orientation, width, height };
+  }
+
+  function fitTvViewerPreview(preview) {
+    const stage = preview?.closest?.('.tv-viewer-stage-shell');
+    if (!stage) return;
+    const frameWidth = Number(preview.dataset.frameWidth || 16);
+    const frameHeight = Number(preview.dataset.frameHeight || 9);
+    const bounds = stage.getBoundingClientRect();
+    if (!(bounds.width > 0 && bounds.height > 0 && frameWidth > 0 && frameHeight > 0)) return;
+
+    const scale = Math.min(bounds.width / frameWidth, bounds.height / frameHeight);
+    preview.style.width = `${Math.max(1, Math.floor(frameWidth * scale))}px`;
+    preview.style.height = `${Math.max(1, Math.floor(frameHeight * scale))}px`;
+  }
+
+  function configureTvViewerFrame(preview, device, shot = null) {
+    if (!preview) return;
+    const geometry = tvViewerFrameGeometry(device, shot);
+    preview.dataset.orientation = geometry.orientation;
+    preview.dataset.frameWidth = String(geometry.width);
+    preview.dataset.frameHeight = String(geometry.height);
+    preview.style.aspectRatio = `${geometry.width} / ${geometry.height}`;
+    preview.classList.toggle('is-portrait-capture', geometry.orientation === 'portrait');
+    preview.classList.toggle('is-landscape-capture', geometry.orientation === 'landscape');
+
+    requestAnimationFrame(() => fitTvViewerPreview(preview));
+    tvViewerResizeObserver?.disconnect?.();
+    const stage = preview.closest('.tv-viewer-stage-shell');
+    if (stage && typeof ResizeObserver === 'function') {
+      tvViewerResizeObserver = new ResizeObserver(() => fitTvViewerPreview(preview));
+      tvViewerResizeObserver.observe(stage);
+    }
+  }
+
   async function renderTvViewer(deviceId) {
     const device = state.devices.find(item => item.id === deviceId);
     if (!device) return;
@@ -1488,10 +1561,10 @@
     $('#view-tv-status').textContent = `${statusLabel(effectiveDeviceStatus(device))} • ${formatLastSeen(device.last_seen_at)}`;
     const preview = $('#view-tv-preview');
     const shot = latestScreenshotForDevice(deviceId);
+
     if (shot?.storage_path && !screenshotMatchesConfiguredOrientation(device, shot)) {
       const media = deviceProgramPreviewMedia(device);
-      preview.classList.remove('is-portrait-capture');
-      preview.style.aspectRatio = '16 / 9';
+      configureTvViewerFrame(preview, device);
       $('#view-tv-captured-at').textContent = 'Captura antiga descartada • exibindo prévia da programação';
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) {
         preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga desta TV foi feita com orientação incompatível.<br><small>Quando a TV ficar online, use “Atualizar agora” para gerar uma nova captura.</small></div>';
@@ -1502,23 +1575,23 @@
         const url = await signedMediaUrlCached(media);
         const element = await loadStablePreviewElement(media, url);
         if (state.viewingDeviceId !== deviceId) return;
+        element.classList.add('tv-viewer-media');
         preview.replaceChildren(element);
       } catch {
         preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga foi descartada e a prévia da programação não pôde ser aberta.</div>';
       }
       return;
     }
+
     if (!shot?.storage_path) {
-      preview.classList.remove('is-portrait-capture');
-      preview.style.aspectRatio = '16 / 9';
+      configureTvViewerFrame(preview, device);
       preview.innerHTML = '<div class="tv-viewer-empty">Ainda não há captura desta TV.<br><small>Use “Atualizar agora” para solicitar uma imagem do que está passando.</small></div>';
       $('#view-tv-captured-at').textContent = 'Sem captura disponível';
       return;
     }
+
+    configureTvViewerFrame(preview, device, shot);
     const cached = cachedDeviceScreenshotEntry(shot);
-    const portraitCapture = Number(shot.height || 0) > Number(shot.width || 0);
-    preview.classList.toggle('is-portrait-capture', portraitCapture);
-    preview.style.aspectRatio = shot.width && shot.height ? `${Number(shot.width)} / ${Number(shot.height)}` : '16 / 9';
     if (!cached?.url) preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
     $('#view-tv-captured-at').textContent = `Capturada em ${formatMonitorDateTime(shot.captured_at)}`;
     try {
@@ -1526,6 +1599,7 @@
       if (state.viewingDeviceId !== deviceId) return;
       const img = new Image();
       img.alt = `Captura da TV ${device.name}`;
+      img.className = 'tv-viewer-media';
       await new Promise((resolve, reject) => {
         img.onload = resolve;
         img.onerror = () => reject(new Error('Falha ao abrir captura.'));
@@ -4250,7 +4324,7 @@
     });
     document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
-    $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; });
+    $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; tvViewerResizeObserver?.disconnect?.(); tvViewerResizeObserver = null; });
     $('#playlist-items-dialog').addEventListener('close', () => {
       state.editingPlaylistId = null;
       state.selectedPlaylistItemIds = new Set();
