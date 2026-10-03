@@ -413,21 +413,24 @@
       }
     } catch {}
 
-    if (nativeHandled) {
-      document.body.classList.remove('force-player-portrait','force-player-landscape');
-      return;
+    // Some Android TV / TV Box firmwares expose the native bridge but ignore
+    // requested portrait orientation. Do not assume the native request changed
+    // the actual viewport: keep the CSS fallback synchronized with reality.
+    if (!nativeHandled) {
+      try {
+        if (screen.orientation?.lock && document.fullscreenElement && normalized !== 'auto') {
+          await screen.orientation.lock(normalized === 'portrait' ? 'portrait-primary' : 'landscape-primary');
+        } else if (screen.orientation?.unlock && normalized === 'auto') {
+          screen.orientation.unlock();
+        }
+      } catch {}
     }
 
-    try {
-      if (screen.orientation?.lock && document.fullscreenElement && normalized !== 'auto') {
-        await screen.orientation.lock(normalized === 'portrait' ? 'portrait-primary' : 'landscape-primary');
-      } else if (screen.orientation?.unlock && normalized === 'auto') {
-        screen.orientation.unlock();
-      }
-    } catch {}
-
-    applyCssOrientationFallback(normalized);
-    setTimeout(() => applyCssOrientationFallback(normalized), 450);
+    const syncFallback = () => applyCssOrientationFallback(normalized);
+    syncFallback();
+    setTimeout(syncFallback, 250);
+    setTimeout(syncFallback, 900);
+    setTimeout(syncFallback, 1800);
   }
 
   function notifyNativePlayerAlive() {
