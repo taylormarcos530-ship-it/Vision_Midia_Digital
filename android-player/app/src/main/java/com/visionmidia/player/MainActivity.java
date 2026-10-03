@@ -4,6 +4,7 @@ import android.app.Activity;
 import android.app.AlertDialog;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.ActivityInfo;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -167,6 +168,35 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void setOrientation(String mode) {
+            final String requested = mode == null ? "auto" : mode.toLowerCase(Locale.ROOT);
+            runOnUiThread(() -> {
+                if ("portrait".equals(requested)) {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
+                } else if ("landscape".equals(requested)) {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE);
+                } else {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                }
+                enterImmersiveMode();
+            });
+        }
+
+        @JavascriptInterface
+        public void restartApp() {
+            runOnUiThread(() -> {
+                Intent restart = getPackageManager().getLaunchIntentForPackage(getPackageName());
+                if (restart == null) {
+                    loadPlayer(prefs.getString(KEY_SETUP_CODE, ""));
+                    return;
+                }
+                restart.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
+                startActivity(restart);
+                finish();
+            });
         }
     }
 
