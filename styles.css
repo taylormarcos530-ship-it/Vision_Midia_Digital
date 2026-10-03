@@ -1605,3 +1605,40 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   .topbar h1{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   img,video,canvas,iframe{max-width:100%}
 }
+
+
+/* Sidebar reachability v3 — keep account actions visible at every desktop height */
+.sidebar{
+  height:100vh;
+  height:100dvh;
+  max-height:100dvh;
+  min-height:0;
+  overflow:hidden;
+}
+.sidebar-brand{flex:0 0 auto}
+.sidebar>.nav-list{
+  flex:1 1 auto;
+  min-height:0;
+  overflow-y:auto;
+  overflow-x:hidden;
+  overscroll-behavior:contain;
+  -webkit-overflow-scrolling:touch;
+  scrollbar-width:thin;
+}
+.sidebar-footer{
+  flex:0 0 auto;
+  margin-top:0;
+  background:linear-gradient(180deg,rgba(8,18,34,.98),rgba(8,17,31,.99));
+  padding-bottom:max(4px,env(safe-area-inset-bottom));
+}
+@media (max-height:760px) and (min-width:821px){
+  .sidebar{padding-top:10px;padding-bottom:10px}
+  .sidebar-brand{padding-bottom:10px}
+  .sidebar>.nav-list{gap:3px}
+  .sidebar .nav-item{min-height:36px;padding:7px 10px}
+  .saas-admin-nav{margin-top:8px;padding-top:8px;gap:4px}
+  .nav-section-label{padding-bottom:1px;font-size:9px}
+  .sidebar-footer{padding-top:8px}
+  .sidebar-footer .company-pill{padding:6px 8px}
+  .sidebar-footer .nav-item{min-height:34px;padding:6px 10px}
+}
