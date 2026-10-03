@@ -43,6 +43,25 @@ async function context(req:Request){
   if(!pa||pa.status!=='active')throw Object.assign(new Error('master_forbidden'),{status:403})
   return{admin,user:data.user,role:pa.role}
 }
+async function resendSecret(admin:any){
+  const {data,error}=await admin.rpc('get_vision_midia_service_secret',{p_name:'vision_midia_resend_api_key'})
+  if(error)throw error
+  return clean(data,500)
+}
+async function resendDomains(apiKey:string){
+  if(!apiKey)return[]
+  const response=await fetch('https://api.resend.com/domains',{
+    headers:{Authorization:`Bearer ${apiKey}`,'Content-Type':'application/json'},
+  })
+  const payload=await response.json().catch(()=>({}))
+  if(!response.ok)throw Object.assign(new Error(clean(payload?.message||payload?.name||'resend_validation_failed',240)),{status:400})
+  return Array.isArray(payload?.data)?payload.data:[]
+}
+function emailDomain(value:unknown){
+  const email=clean(value,254).toLowerCase()
+  const at=email.lastIndexOf('@')
+  return at>0?email.slice(at+1):''
+}
 
 Deno.serve(async(req)=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:C})
@@ -75,6 +94,70 @@ Deno.serve(async(req)=>{
       const {error:auditError}=await admin.from('master_audit_logs').insert({actor_user_id:user.id,action:'platform_public_settings_updated',details:{support_whatsapp:phone?`***${phone.slice(-4)}`:null,signup_enabled:payload.signup_enabled}})
       if(auditError)console.warn('platform-settings audit',auditError)
       return J({ok:true,config:await withLoginVisualUrl(admin,data)})
+    }
+
+    if(action==='email_provider_status'){
+      const apiKey=await resendSecret(admin).catch(()=> '')
+      const domains=apiKey?await resendDomains(apiKey).catch(()=>[]):[]
+      return J({
+        ok:true,
+        api_key_configured:Boolean(apiKey),
+        domains:domains.map((item:any)=>({name:clean(item?.name,180),status:clean(item?.status,40)})),
+      })
+    }
+
+    if(action==='save_email_provider'){
+      if(!['super_admin','admin'].includes(role))return J({error:'master_read_only'},403)
+      const apiKey=clean(body.resend_api_key,500)
+      const senderEmail=clean(body.sender_email,254).toLowerCase()
+      const senderName=clean(body.sender_name,80)||'Vision Mídia Digital'
+      const enabled=body.enabled===true
+      if(senderEmail&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(senderEmail))return J({error:'invalid_sender_email'},400)
+
+      if(apiKey){
+        if(!/^re_[A-Za-z0-9_-]{20,}$/.test(apiKey))return J({error:'invalid_resend_api_key'},400)
+        const {error}=await admin.rpc('set_vision_midia_service_secret',{p_name:'vision_midia_resend_api_key',p_value:apiKey})
+        if(error)throw error
+      }
+
+      const secret=apiKey||await resendSecret(admin).catch(()=> '')
+      if(enabled&&!secret)return J({error:'resend_api_key_required'},400)
+      if(enabled&&!senderEmail)return J({error:'sender_email_required'},400)
+
+      const domains=secret?await resendDomains(secret):[]
+      const domain=emailDomain(senderEmail)
+      const verified=Boolean(domain&&domains.some((item:any)=>clean(item?.name,180).toLowerCase()===domain&&clean(item?.status,40).toLowerCase()==='verified'))
+      if(enabled&&!verified)return J({
+        error:'resend_sender_domain_not_verified',
+        sender_domain:domain||null,
+        domains:domains.map((item:any)=>({name:clean(item?.name,180),status:clean(item?.status,40)})),
+      },400)
+
+      const {data,error}=await admin.from('platform_public_config').update({
+        resend_sender_email:senderEmail||null,
+        resend_sender_name:senderName,
+        resend_enabled:enabled&&verified,
+        updated_at:new Date().toISOString(),
+      }).eq('id',1).select('*').single()
+      if(error)throw error
+
+      const {error:auditError}=await admin.from('master_audit_logs').insert({
+        actor_user_id:user.id,
+        action:'platform_email_provider_updated',
+        details:{provider:'resend',enabled:enabled&&verified,sender_domain:domain||null,api_key_updated:Boolean(apiKey)},
+      })
+      if(auditError)console.warn('platform email provider audit',auditError)
+
+      return J({
+        ok:true,
+        config:await withLoginVisualUrl(admin,data),
+        provider:{
+          api_key_configured:Boolean(secret),
+          sender_domain:domain||null,
+          sender_domain_verified:verified,
+          domains:domains.map((item:any)=>({name:clean(item?.name,180),status:clean(item?.status,40)})),
+        },
+      })
     }
 
     if(action==='update_login_visual'){
