@@ -1295,6 +1295,15 @@
           <span class="device-setting-chip ${device.settings?.audio_enabled === false ? 'off' : 'on'}">🔊 Áudio ${device.settings?.audio_enabled === false ? 'desligado' : 'ligado'}</span>
           <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
         </div>
+        <label class="device-orientation-quick">
+          <span>Rotação da tela inteira</span>
+          <select data-device-orientation-quick="${device.id}" ${['owner','admin','operator'].includes(state.companyRole) ? '' : 'disabled'}>
+            <option value="auto" ${device.orientation === 'auto' ? 'selected' : ''}>Automática</option>
+            <option value="landscape" ${device.orientation === 'landscape' ? 'selected' : ''}>Horizontal</option>
+            <option value="portrait" ${device.orientation === 'portrait' ? 'selected' : ''}>Vertical</option>
+          </select>
+          <small>Gira o Vision Player inteiro, não apenas uma imagem.</small>
+        </label>
 
         <details class="device-maintenance-panel">
           <summary>Manutenção e diagnóstico</summary>
@@ -1419,11 +1428,16 @@
     const preview = $('#view-tv-preview');
     const shot = latestScreenshotForDevice(deviceId);
     if (!shot?.storage_path) {
+      preview.classList.remove('is-portrait-capture');
+      preview.style.aspectRatio = '16 / 9';
       preview.innerHTML = '<div class="tv-viewer-empty">Ainda não há captura desta TV.<br><small>Use “Atualizar agora” para solicitar uma imagem do que está passando.</small></div>';
       $('#view-tv-captured-at').textContent = 'Sem captura disponível';
       return;
     }
     const cached = cachedDeviceScreenshotEntry(shot);
+    const portraitCapture = Number(shot.height || 0) > Number(shot.width || 0);
+    preview.classList.toggle('is-portrait-capture', portraitCapture);
+    preview.style.aspectRatio = shot.width && shot.height ? `${Number(shot.width)} / ${Number(shot.height)}` : '16 / 9';
     if (!cached?.url) preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
     $('#view-tv-captured-at').textContent = `Capturada em ${formatMonitorDateTime(shot.captured_at)}`;
     try {
@@ -1807,8 +1821,9 @@
   async function loadStablePreviewElement(media, url) {
     if (media.media_type === 'image') {
       const image = new Image();
-      image.loading = 'lazy';
+      image.loading = 'eager';
       image.decoding = 'async';
+      image.fetchPriority = 'low';
       image.alt = media.name || 'Imagem';
       await new Promise((resolve, reject) => {
         const timeout = setTimeout(() => reject(new Error('Tempo excedido ao carregar a miniatura.')), 12000);
@@ -1834,24 +1849,32 @@
 
   async function hydrateMediaPreviews() {
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
-      const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
-      if (!preview || preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
-      preview.dataset.loadingPath = media.storage_path;
-      try {
-        const url = await signedMediaUrlCached(media);
-        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
-        const element = await loadStablePreviewElement(media, url);
-        if (!preview.isConnected) continue;
-        const old = preview.querySelector(':scope > img, :scope > video');
-        if (old) old.replaceWith(element);
-        else preview.insertBefore(element, preview.firstChild);
-        preview.querySelector('.media-preview-placeholder')?.remove();
-        preview.dataset.loadedPath = media.storage_path;
-        delete preview.dataset.previewError;
-      } catch {
-        if (preview.isConnected) preview.dataset.previewError = '1';
-      } finally {
-        if (preview.isConnected && preview.dataset.loadingPath === media.storage_path) delete preview.dataset.loadingPath;
+      const targets = $$(`[data-media-preview="${CSS.escape(media.id)}"]`);
+      if (!targets.length) continue;
+
+      for (const preview of targets) {
+        if (preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
+        preview.dataset.loadingPath = media.storage_path;
+        try {
+          const url = await signedMediaUrlCached(media);
+          if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
+          const element = await loadStablePreviewElement(media, url);
+          if (!preview.isConnected) continue;
+          const old = preview.querySelector(':scope > img, :scope > video');
+          if (old) old.replaceWith(element);
+          else preview.insertBefore(element, preview.firstChild);
+          preview.querySelector('.media-preview-placeholder')?.remove();
+          preview.dataset.loadedPath = media.storage_path;
+          delete preview.dataset.previewError;
+          preview.removeAttribute('title');
+        } catch (error) {
+          if (preview.isConnected) {
+            preview.dataset.previewError = '1';
+            preview.title = String(error?.message || 'Prévia indisponível');
+          }
+        } finally {
+          if (preview.isConnected && preview.dataset.loadingPath === media.storage_path) delete preview.dataset.loadingPath;
+        }
       }
     }
   }
@@ -3030,6 +3053,36 @@
     }
   }
 
+  async function updateDeviceOrientationQuick(deviceId, orientation, control = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    const allowed = ['auto','landscape','portrait'];
+    if (!device || !allowed.includes(orientation)) return false;
+    if (!['owner','admin','operator'].includes(state.companyRole)) {
+      toast('Sem permissão', 'Seu usuário não pode alterar a rotação desta TV.', 'error');
+      if (control) control.value = device.orientation || 'auto';
+      return false;
+    }
+
+    if (control) control.disabled = true;
+    try {
+      await restRequest('devices', {
+        method:'PATCH',
+        query:`id=eq.${encodeURIComponent(deviceId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body:{ orientation },
+        prefer:'return=minimal',
+      });
+      device.orientation = orientation;
+      toast('Rotação da TV atualizada', `${orientationLabel(orientation)}. O Vision Player aplicará a tela inteira na próxima sincronização.`);
+      await loadAllData();
+      return true;
+    } catch (error) {
+      if (control) control.value = device.orientation || 'auto';
+      toast('Erro ao girar a TV', error.message || 'Não foi possível salvar a orientação.', 'error');
+      return false;
+    } finally {
+      if (control?.isConnected) control.disabled = false;
+    }
+  }
   async function handleSaveDevice(event) {
     event.preventDefault();
     const button = $('#device-save');
@@ -3409,7 +3462,11 @@
         if (key.startsWith(`${media.id}:`)) state.mediaPreviewUrls.delete(key);
       }
       state.mediaRenderSignature = '';
+      state.playlistRenderSignature = '';
+      state.playlistEditorRenderSignature = '';
       await loadAllData();
+      hydrateMediaPreviews().catch(() => {});
+      hydratePlaylistPreviews().catch(() => {});
       toast('Imagem girada', `Agora ela está em formato ${canvas.width > canvas.height ? 'horizontal' : canvas.width < canvas.height ? 'vertical' : 'quadrado'}.`);
       storageRequest(`/object/${CONFIG.storageBucket}`, { method:'DELETE', body:{ prefixes:[oldPath] } }).catch(() => {});
       newPath = null;
@@ -3925,6 +3982,16 @@
       if (groupSelect) setDeviceGroup(groupSelect.dataset.deviceGroup, groupSelect.value);
     });
 
+    document.addEventListener('change', event => {
+      const orientationControl = event.target.closest?.('[data-device-orientation-quick]');
+      if (orientationControl) {
+        return updateDeviceOrientationQuick(
+          orientationControl.dataset.deviceOrientationQuick,
+          orientationControl.value,
+          orientationControl
+        );
+      }
+    });
     document.addEventListener('click', event => {
       const authorizeDevice = event.target.closest('[data-authorize-device]');
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
