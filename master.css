@@ -523,3 +523,7 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   -webkit-text-fill-color:#9aa8bf!important;
   opacity:1!important;
 }
+
+
+/* Timed trial access v39 */
+.trial-access-box{display:grid;gap:12px;border-color:rgba(79,124,255,.28);background:linear-gradient(180deg,rgba(46,83,160,.10),rgba(12,22,38,.72))}.trial-access-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.trial-access-head>div{min-width:0}.trial-access-head strong,.trial-access-head small{display:block}.trial-access-head small{margin-top:4px;color:#8798b1;font-size:9px;line-height:1.45}.trial-quick-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.trial-quick-actions .button{min-height:38px}.trial-custom-line{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:10px;align-items:end}.trial-custom-line label{margin:0}.trial-custom-line .button{min-height:42px;white-space:nowrap}@media(max-width:720px){.trial-access-head{display:grid}.trial-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.trial-custom-line{grid-template-columns:1fr}.trial-custom-line .button{width:100%}}
