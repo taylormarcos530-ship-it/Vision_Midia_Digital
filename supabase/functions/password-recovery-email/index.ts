@@ -98,20 +98,22 @@ Deno.serve(async(req)=>{
     const subject='Redefinição de senha • Vision Mídia Digital'
     const html=`<!doctype html>
 <html lang="pt-BR">
-  <body style="margin:0;padding:0;background:#f5f7fb;font-family:Arial,sans-serif;color:#142033">
-    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f5f7fb;padding:28px 12px">
+  <body style="margin:0;padding:0;background:#f4f7fb;font-family:Arial,sans-serif;color:#142033">
+    <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background:#f4f7fb;padding:30px 12px">
       <tr><td align="center">
-        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:18px;padding:32px;border:1px solid #e6eaf0">
+        <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="max-width:560px;background:#ffffff;border-radius:18px;padding:34px;border:1px solid #e6eaf0">
           <tr><td>
-            <div style="font-size:13px;font-weight:700;color:#2563eb;letter-spacing:.08em">VISION MÍDIA DIGITAL</div>
-            <h1 style="font-size:26px;line-height:1.2;margin:14px 0;color:#111827">Redefina sua senha</h1>
-            <p style="font-size:16px;line-height:1.6;color:#4b5563">Recebemos uma solicitação para criar uma nova senha para sua conta.</p>
+            <div style="display:inline-block;background:#eff6ff;color:#2563eb;border-radius:999px;padding:7px 11px;font-size:12px;font-weight:800;letter-spacing:.08em">VISION MÍDIA DIGITAL</div>
+            <h1 style="font-size:27px;line-height:1.2;margin:18px 0 10px;color:#111827">Crie uma nova senha</h1>
+            <p style="font-size:16px;line-height:1.65;color:#4b5563;margin:0">Recebemos uma solicitação de redefinição de senha para sua conta Vision Mídia Digital.</p>
+            <p style="font-size:15px;line-height:1.65;color:#4b5563">Toque no botão abaixo para acessar o sistema e escolher uma nova senha.</p>
             <p style="margin:28px 0">
-              <a href="${escapeHtml(actionLink)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:700">Criar nova senha</a>
+              <a href="${escapeHtml(actionLink)}" style="display:inline-block;background:#2563eb;color:#fff;text-decoration:none;padding:14px 22px;border-radius:10px;font-weight:800">Redefinir minha senha</a>
             </p>
-            <p style="font-size:14px;line-height:1.6;color:#6b7280">Se você não solicitou a redefinição, ignore esta mensagem. O link é temporário e deve ser usado somente por você.</p>
+            <p style="font-size:14px;line-height:1.6;color:#6b7280">O link é temporário e deve ser usado somente por você. Se não solicitou essa alteração, basta ignorar esta mensagem.</p>
+            <div style="margin-top:26px;padding:13px 15px;border-radius:10px;background:#f8fafc;color:#64748b;font-size:12px;line-height:1.55">Destino seguro: vision-midia-digital.vercel.app</div>
             <hr style="border:0;border-top:1px solid #e5e7eb;margin:28px 0">
-            <p style="font-size:12px;color:#9ca3af;margin:0">Vision Mídia Digital • Segurança da conta</p>
+            <p style="font-size:12px;color:#9ca3af;margin:0">Vision Mídia Digital • Segurança e acesso</p>
           </td></tr>
         </table>
       </td></tr>
@@ -130,17 +132,29 @@ Deno.serve(async(req)=>{
         to:[email],
         subject,
         html,
-        text:`Vision Mídia Digital — Redefinição de senha\n\nAbra o link para criar uma nova senha: ${actionLink}\n\nSe você não solicitou, ignore esta mensagem.`,
+        text:`Vision Mídia Digital — Redefinição de senha\n\nRecebemos uma solicitação para redefinir sua senha. Abra o link abaixo para acessar o sistema e criar uma nova senha:\n\n${actionLink}\n\nSe você não solicitou essa alteração, ignore esta mensagem.\n\nVision Mídia Digital • Segurança e acesso`,
       }),
     })
 
     const resendPayload=await response.json().catch(()=>({}))
     if(!response.ok){
+      const providerMessage=clean(resendPayload?.message||resendPayload?.name||'Falha ao enviar e-mail.',240)
       console.error('password-recovery-email resend',response.status,resendPayload)
+      if(senderEmail==='onboarding@resend.dev'){
+        return J({
+          ok:true,
+          provider:'resend',
+          delivery:'manual',
+          reason:'resend_test_sender_restriction',
+          provider_status:response.status,
+          provider_message:providerMessage,
+          action_link:actionLink,
+        })
+      }
       return J({
         error:'resend_send_failed',
         provider_status:response.status,
-        provider_message:clean(resendPayload?.message||resendPayload?.name||'Falha ao enviar e-mail.',240),
+        provider_message:providerMessage,
       },502)
     }
 
