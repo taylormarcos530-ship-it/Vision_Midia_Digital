@@ -426,6 +426,10 @@
     setTimeout(() => applyCssOrientationFallback(normalized), 450);
   }
 
+  function notifyNativePlayerAlive() {
+    try { window.VisionAndroid?.playerAlive?.(); } catch {}
+  }
+
   function restartPlayerRuntime() {
     try {
       if (window.VisionAndroid?.restartApp) {
@@ -877,6 +881,8 @@
     const mode = document.documentElement.dataset.playerOrientation || 'auto';
     if (!window.VisionAndroid?.setOrientation) applyCssOrientationFallback(mode);
   });
+
+  setInterval(notifyNativePlayerAlive, 20_000);
 
   async function bootstrap() {
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
