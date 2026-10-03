@@ -396,6 +396,149 @@
   function limitValue(c,key){ const o=c.subscription?.limit_overrides||{}; if(o[key]!==undefined&&o[key]!==null&&o[key]!=='') return Number(o[key]); return c.plan?.[key]??null; }
   function statusText(v){ return ({active:'Ativa',suspended:'Suspensa',trialing:'Teste',pending_approval:'Aguardando aprovação',past_due:'Pagamento pendente',cancelled:'Cancelada',pending:'Pendente',paid:'Pago',overdue:'Vencido',waived:'Liberado'})[v]||v||'Sem assinatura'; }
 
+  const DAY_MS=86400000;
+  function companyDueInfo(company){
+    const sub=company?.subscription||null;
+    if(!sub||!['active','trialing','past_due'].includes(sub.status||''))return null;
+    const isTrial=sub.status==='trialing';
+    const source=isTrial?sub.trial_ends_at:sub.current_period_end;
+    if(!source)return null;
+    const dueDate=new Date(source);
+    if(Number.isNaN(dueDate.getTime()))return null;
+    const dueMs=dueDate.getTime()-Date.now();
+    const absDays=Math.max(1,Math.ceil(Math.abs(dueMs)/DAY_MS));
+    const label=isTrial?'Teste':'Plano';
+    const when=dueMs<0
+      ? `Vencido há ${absDays} dia(s)`
+      : dueMs<=DAY_MS
+        ? 'Vence hoje'
+        : `Vence em ${Math.ceil(dueMs/DAY_MS)} dia(s)`;
+    return {company,isTrial,dueDate,dueMs,label,when,state:dueMs<0?'expired':'warning'};
+  }
+  function dueCompanies(){
+    return (state.data?.companies||[])
+      .map(companyDueInfo)
+      .filter(Boolean)
+      .filter(info=>info.dueMs<=3*DAY_MS)
+      .sort((a,b)=>a.dueDate-b.dueDate);
+  }
+  function masterNotificationDayKey(){
+    const now=new Date();
+    return `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
+  }
+  function notifyMasterDueCompanies(items){
+    if(!('Notification' in window)||Notification.permission!=='granted')return;
+    const day=masterNotificationDayKey();
+    items.forEach(info=>{
+      const key=`vision_midia_master_due_${day}_${info.company.id}_${String(info.dueDate.toISOString()).slice(0,10)}`;
+      if(localStorage.getItem(key)==='1')return;
+      try{
+        new Notification('Vision Mídia Digital • vencimento',{
+          body:`${info.company.name}: ${info.when.toLowerCase()}.`,
+          tag:`vision-master-expiry-${info.company.id}`,
+        });
+        localStorage.setItem(key,'1');
+      }catch{}
+    });
+  }
+  function renderExpiryAlerts(){
+    const list=$('#master-expiry-list');
+    const enable=$('#master-expiry-enable');
+    if(!list)return;
+    const items=dueCompanies();
+    list.innerHTML=items.length?items.map(info=>`
+      <div class="master-expiry-item ${info.state}">
+        <div><strong>${esc(info.company.name)}</strong><small>${esc(info.label)} • ${esc(new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(info.dueDate))}</small></div>
+        <span class="expiry-chip">${esc(info.when)}</span>
+      </div>`).join(''):'<div class="master-expiry-empty">Nenhum vencimento nos próximos 3 dias.</div>';
+    if(enable){
+      if(!('Notification' in window)){enable.disabled=true;enable.textContent='Avisos indisponíveis'}
+      else if(Notification.permission==='granted'){enable.disabled=false;enable.textContent='Avisos ativos'}
+      else if(Notification.permission==='denied'){enable.disabled=true;enable.textContent='Avisos bloqueados'}
+      else{enable.disabled=false;enable.textContent='Ativar avisos'}
+    }
+    notifyMasterDueCompanies(items);
+  }
+  async function enableMasterExpiryNotifications(){
+    const button=$('#master-expiry-enable');
+    if(!('Notification' in window))return toast('Notificações indisponíveis','Este navegador não oferece notificações do sistema.','error');
+    try{
+      const permission=await Notification.requestPermission();
+      if(permission!=='granted'){
+        renderExpiryAlerts();
+        return toast('Avisos não ativados','Permita notificações para receber alertas de vencimento.','error');
+      }
+      renderExpiryAlerts();
+      toast('Avisos de vencimento ativados','O Master avisará sobre contas vencidas ou com até 3 dias para vencer.');
+    }catch(e){toast('Falha ao ativar avisos',e.message||'Não foi possível solicitar a permissão.','error')}
+    finally{if(button)button.blur()}
+  }
+  function renderNotificationComposer(){
+    const select=$('#mn-company');
+    if(!select)return;
+    const current=select.value;
+    const companies=state.data?.companies||[];
+    select.innerHTML=companies.length
+      ? companies.map(c=>`<option value="${c.id}">${esc(c.name)} • ${esc(c.owner?.email||'sem e-mail')}</option>`).join('')
+      : '<option value="">Nenhum cliente</option>';
+    if(current&&companies.some(c=>c.id===current))select.value=current;
+    if(!$('#mn-title').value.trim())$('#mn-title').value='Vision Mídia Digital';
+  }
+  function fillExpiryNotification(){
+    const company=companyById($('#mn-company')?.value);
+    if(!company)return toast('Selecione um cliente','','error');
+    const info=companyDueInfo(company);
+    const due=info?.dueDate
+      ? new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(info.dueDate)
+      : null;
+    $('#mn-title').value='Vision Mídia Digital • Vencimento';
+    $('#mn-message').value=info
+      ? (info.dueMs<0
+          ? `Olá! O ${info.isTrial?'período de teste':'plano'} da sua conta venceu em ${due}. Entre em contato para regularizar o acesso.`
+          : `Olá! O ${info.isTrial?'período de teste':'plano'} da sua conta vence em ${due}. Entre em contato se precisar renovar.`)
+      : 'Olá! Há uma atualização importante sobre sua conta Vision Mídia Digital.';
+    $('#mn-message').focus();
+  }
+  async function sendMasterNotification(ev){
+    ev.preventDefault();
+    const companyId=$('#mn-company')?.value||'';
+    const title=$('#mn-title')?.value.trim()||'';
+    const message=$('#mn-message')?.value.trim()||'';
+    if(!companyId)return formStatus('#mn-status','❌ Selecione um cliente.','error');
+    if(!title||!message)return formStatus('#mn-status','❌ Preencha o título e a mensagem.','error');
+    const button=$('#mn-send');
+    busy(button,true,'Enviando...');
+    formStatus('#mn-status','Enviando notificação…','pending');
+    try{
+      const result=await edgeRequest('web-push',{
+        action:'send_company',
+        company_id:companyId,
+        title,
+        message,
+        url:'./',
+        tag:`vision-master-${companyId}`,
+      });
+      if(result?.skipped==='no_subscriptions'){
+        formStatus('#mn-status','⚠️ O cliente ainda não ativou notificações em nenhum aparelho.','error');
+        return toast('Nenhum aparelho inscrito','Peça ao cliente para ativar as notificações no painel Vision.','error');
+      }
+      if(result?.skipped==='vapid_not_configured'){
+        formStatus('#mn-status','❌ O Web Push ainda não está configurado no servidor.','error');
+        return toast('Web Push indisponível','A configuração VAPID do servidor não está pronta.','error');
+      }
+      const sent=Number(result?.sent||0),failed=Number(result?.failed||0);
+      if(sent<1){
+        formStatus('#mn-status',`❌ Nenhuma notificação foi entregue${failed? `; ${failed} falhou(aram)`:'.'}`,'error');
+        return toast('Notificação não entregue','Nenhum aparelho confirmou o envio.','error');
+      }
+      formStatus('#mn-status',`✅ Enviada para ${sent} aparelho(s)${failed? `; ${failed} falhou(aram)`:'.'}`,'success');
+      toast('Notificação enviada',`${sent} aparelho(s) receberam o aviso.`);
+    }catch(e){
+      formStatus('#mn-status',`❌ ${e.message}`,'error');
+      toast('Erro ao enviar notificação',e.message,'error');
+    }finally{busy(button,false)}
+  }
+
   function renderMetrics(){
     const m=state.data.metrics||{};
     const maxCompanies=Number(m.max_companies||6);
@@ -418,7 +561,14 @@
       btn.title=full?`Limite de ${maxCompanies} clientes atingido`:'';
     });
   }
-  function renderDashboard(){ const companies=(state.data.companies||[]).slice(0,6); $('#master-dashboard-clients').innerHTML=companies.length?companies.map(c=>`<div class="mini-row"><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'')}</small></div><div><span>${esc(c.plan?.name||'Sem plano')}</span><small>${esc(statusText(c.subscription?.status||c.status))}</small></div></div>`).join(''):'<div class="empty">Nenhum cliente.</div>'; const audits=(state.data.audits||[]).slice(0,6); $('#master-dashboard-audit').innerHTML=audits.length?audits.map(a=>`<div class="mini-row"><div><strong>${esc(a.action)}</strong><small>${esc(companyById(a.company_id)?.name||'Plataforma')}</small></div><span>${esc(dt(a.created_at))}</span></div>`).join(''):'<div class="empty">Sem ações registradas.</div>'; }
+  function renderDashboard(){
+    const companies=(state.data.companies||[]).slice(0,6);
+    $('#master-dashboard-clients').innerHTML=companies.length?companies.map(c=>`<div class="mini-row"><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'')}</small></div><div><span>${esc(c.plan?.name||'Sem plano')}</span><small>${esc(statusText(c.subscription?.status||c.status))}</small></div></div>`).join(''):'<div class="empty">Nenhum cliente.</div>';
+    const audits=(state.data.audits||[]).slice(0,6);
+    $('#master-dashboard-audit').innerHTML=audits.length?audits.map(a=>`<div class="mini-row"><div><strong>${esc(a.action)}</strong><small>${esc(companyById(a.company_id)?.name||'Plataforma')}</small></div><span>${esc(dt(a.created_at))}</span></div>`).join(''):'<div class="empty">Sem ações registradas.</div>';
+    renderExpiryAlerts();
+    renderNotificationComposer();
+  }
   function renderClients(){
     const q=($('#master-client-search')?.value||'').toLowerCase();
     const f=$('#master-client-filter')?.value||'';
@@ -755,7 +905,7 @@
     const b=$('#me-clear-cache'); busy(b,true,'Solicitando...');
     try{await saveCompanyRequest({company_id:id,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,clear_cache:true});formStatus('#me-status','✅ Limpeza de cache enviada. As TVs baixarão novamente as mídias na próxima sincronização.','success');toast('Comando enviado','Cache da conta será renovado.');await load()}catch(e){formStatus('#me-status',`❌ ${e.message}`,'error');toast('Erro ao enviar comando',e.message,'error')}finally{busy(b,false)}
   }
-  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); $('#me-branding-file')?.addEventListener('change',handleMasterPlayerBrandingFile); $('#me-branding-remove')?.addEventListener('click',removeMasterPlayerBrandingImage); $('#me-branding-save')?.addEventListener('click',saveMasterPlayerBranding); ['#me-branding-title','#me-branding-message'].forEach(selector=>$(selector)?.addEventListener('input',syncMasterPlayerBrandingDraft)); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#me-reset-owner-password')?.addEventListener('click',resetCompanyOwnerPassword); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.restartMasterDevice)restartMasterDevice(b);if(b.dataset.masterDeviceCommand)runMasterDeviceCommand(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
+  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#master-notification-form')?.addEventListener('submit',sendMasterNotification); $('#mn-fill-expiry')?.addEventListener('click',fillExpiryNotification); $('#master-expiry-enable')?.addEventListener('click',enableMasterExpiryNotifications); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); $('#me-branding-file')?.addEventListener('change',handleMasterPlayerBrandingFile); $('#me-branding-remove')?.addEventListener('click',removeMasterPlayerBrandingImage); $('#me-branding-save')?.addEventListener('click',saveMasterPlayerBranding); ['#me-branding-title','#me-branding-message'].forEach(selector=>$(selector)?.addEventListener('input',syncMasterPlayerBrandingDraft)); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#me-reset-owner-password')?.addEventListener('click',resetCompanyOwnerPassword); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.restartMasterDevice)restartMasterDevice(b);if(b.dataset.masterDeviceCommand)runMasterDeviceCommand(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
   async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){saveSession(null);show('master-auth');toast('Sessão expirada','Entre novamente.','error')} }
   boot();
