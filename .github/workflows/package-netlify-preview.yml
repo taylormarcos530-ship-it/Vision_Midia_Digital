@@ -1,0 +1,37 @@
+name: Package Netlify Preview
+on:
+  workflow_dispatch:
+  push:
+    branches: [fix/preserve-current-view-refresh]
+    paths:
+      - 'index.html'
+      - 'app.js'
+      - 'styles.css'
+      - 'config.js'
+      - 'widget.html'
+      - 'player.html'
+      - 'player.css'
+      - 'player.js'
+      - 'player.webmanifest'
+      - 'sw.js'
+      - 'icon.svg'
+      - '404.html'
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate JavaScript
+        run: |
+          node --check app.js
+          node --check player.js
+      - name: Package static site
+        run: |
+          mkdir -p netlify-site/downloads
+          cp index.html app.js styles.css config.js widget.html player.html player.css player.js player.webmanifest sw.js icon.svg 404.html netlify-site/
+          if [ -d downloads ]; then cp -R downloads/. netlify-site/downloads/; fi
+      - uses: actions/upload-artifact@v4
+        with:
+          name: vision-midia-netlify-site
+          path: netlify-site
+          retention-days: 1
