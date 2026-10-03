@@ -20,8 +20,13 @@
   const querySetupCode = new URLSearchParams(location.search).get('setup');
   if (querySetupCode) localStorage.setItem(SETUP_CODE_KEY, String(querySetupCode).slice(0,128));
 
+  function nativeStoredDeviceToken() {
+    try { return String(window.VisionAndroid?.getDeviceToken?.() || '') || null; }
+    catch { return null; }
+  }
+
   const state = {
-    deviceToken: localStorage.getItem(DEVICE_TOKEN_KEY) || null,
+    deviceToken: localStorage.getItem(DEVICE_TOKEN_KEY) || nativeStoredDeviceToken() || null,
     pairing: readJson(PAIRING_KEY),
     manifest: readJson(MANIFEST_KEY),
     running: false,
@@ -45,13 +50,18 @@
     runtimeFallbackVersion: null,
   };
 
+  if (state.deviceToken) {
+    try { localStorage.setItem(DEVICE_TOKEN_KEY, state.deviceToken); } catch {}
+    try { window.VisionAndroid?.storeDeviceToken?.(state.deviceToken); } catch {}
+  }
+
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   function clientId() {
     try {
       if (window.crypto && typeof window.crypto.randomUUID === 'function') {
-        return window.clientId();
+        return window.crypto.randomUUID();
       }
     } catch {}
     try {
@@ -387,6 +397,7 @@
         if (result.status === 'issued' && result.device_token) {
           state.deviceToken = result.device_token;
           localStorage.setItem(DEVICE_TOKEN_KEY, result.device_token);
+          try { window.VisionAndroid?.storeDeviceToken?.(result.device_token); } catch {}
           state.pairing = null;
           writeJson(PAIRING_KEY, null);
           await startPlayer();
@@ -1131,6 +1142,7 @@
     state.accessTimer = null;
     state.processingCommands.clear();
     localStorage.removeItem(DEVICE_TOKEN_KEY);
+    try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
     writeJson(PAIRING_KEY, null);
