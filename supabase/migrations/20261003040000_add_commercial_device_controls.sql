@@ -190,3 +190,43 @@ grant execute on function public.set_device_group(uuid,uuid,uuid) to authenticat
 
 comment on column public.playlist_items.is_essential is
   'When true, failure to resolve this enabled item can activate an available fallback playlist.';
+
+
+drop trigger if exists device_groups_company_writable on public.device_groups;
+create trigger device_groups_company_writable
+before insert or update or delete on public.device_groups
+for each row execute function private.enforce_company_writable_row();
+
+drop trigger if exists device_group_members_company_writable on public.device_group_members;
+create trigger device_group_members_company_writable
+before insert or update or delete on public.device_group_members
+for each row execute function private.enforce_company_writable_row();
+
+create or replace function public.set_company_fallback_playlist(
+  p_company_id uuid,
+  p_playlist_id uuid default null
+)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if (select auth.uid()) is null
+     or not (select private.has_company_role(p_company_id, array['owner','admin']::text[])) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  if p_playlist_id is not null and not exists (
+    select 1 from public.playlists p where p.id=p_playlist_id and p.company_id=p_company_id
+  ) then
+    raise exception 'playlist_not_found' using errcode = 'P0002';
+  end if;
+  update public.companies
+  set fallback_playlist_id=p_playlist_id
+  where id=p_company_id;
+  if not found then raise exception 'company_not_found' using errcode = 'P0002'; end if;
+end;
+$$;
+
+revoke all on function public.set_company_fallback_playlist(uuid,uuid) from public, anon;
+grant execute on function public.set_company_fallback_playlist(uuid,uuid) to authenticated;

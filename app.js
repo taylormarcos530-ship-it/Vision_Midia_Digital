@@ -1005,7 +1005,7 @@
   async function saveCompanyFallback(playlistId) {
     if (!['owner','admin'].includes(state.companyRole)) return toast('Sem permissão', 'Somente proprietário ou administrador pode alterar o fallback da empresa.', 'error');
     try {
-      await restRequest('companies', { method:'PATCH', query:`id=eq.${encodeURIComponent(state.company.id)}`, body:{ fallback_playlist_id: playlistId || null }, prefer:'return=minimal' });
+      await restRequest('rpc/set_company_fallback_playlist', { method:'POST', body:{ p_company_id:state.company.id, p_playlist_id:playlistId || null } });
       state.company.fallback_playlist_id = playlistId || null;
       state.companies = state.companies.map(company => company.id === state.company.id ? { ...company, fallback_playlist_id:playlistId || null } : company);
       toast('Fallback atualizado', playlistId ? 'Playlist de emergência da empresa definida.' : 'Fallback da empresa removido.');

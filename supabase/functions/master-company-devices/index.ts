@@ -191,7 +191,7 @@ Deno.serve(async req => {
 
     const [{ data: devices, error: de }, { data: sub, error: se }] = await Promise.all([
       admin.from('devices')
-        .select('id,name,platform,orientation,status,last_seen_at,paired_at,retired_at,access_status,access_expires_at,access_updated_at')
+        .select('id,name,platform,orientation,reported_orientation,status,last_seen_at,last_sync_at,player_version,apk_version,app_version,screen_width,screen_height,storage_free_mb,cache_items,cache_bytes,paired_at,retired_at,access_status,access_expires_at,access_updated_at')
         .eq('company_id', companyId)
         .is('retired_at', null)
         .order('created_at', { ascending: false }),
