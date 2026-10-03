@@ -390,8 +390,55 @@
   }
 
 
-  async function applyDeviceSettings(settings = {}) {
+  function applyCssOrientationFallback(mode) {
+    const normalized = ['portrait','landscape'].includes(mode) ? mode : 'auto';
+    const landscapeViewport = innerWidth >= innerHeight;
+    document.body.classList.toggle('force-player-portrait', normalized === 'portrait' && landscapeViewport);
+    document.body.classList.toggle('force-player-landscape', normalized === 'landscape' && !landscapeViewport);
+  }
+
+  async function applyPlayerOrientation(mode = 'auto') {
+    const normalized = ['portrait','landscape'].includes(mode) ? mode : 'auto';
+    document.documentElement.dataset.playerOrientation = normalized;
+
+    let nativeHandled = false;
+    try {
+      if (window.VisionAndroid?.setOrientation) {
+        window.VisionAndroid.setOrientation(normalized);
+        nativeHandled = true;
+      }
+    } catch {}
+
+    if (nativeHandled) {
+      document.body.classList.remove('force-player-portrait','force-player-landscape');
+      return;
+    }
+
+    try {
+      if (screen.orientation?.lock && document.fullscreenElement && normalized !== 'auto') {
+        await screen.orientation.lock(normalized === 'portrait' ? 'portrait-primary' : 'landscape-primary');
+      } else if (screen.orientation?.unlock && normalized === 'auto') {
+        screen.orientation.unlock();
+      }
+    } catch {}
+
+    applyCssOrientationFallback(normalized);
+    setTimeout(() => applyCssOrientationFallback(normalized), 450);
+  }
+
+  function restartPlayerRuntime() {
+    try {
+      if (window.VisionAndroid?.restartApp) {
+        window.VisionAndroid.restartApp();
+        return;
+      }
+    } catch {}
+    location.reload();
+  }
+
+  async function applyDeviceSettings(settings = {}, orientation = 'auto') {
     state.audioEnabled = settings.audio_enabled !== false;
+    await applyPlayerOrientation(orientation);
     const currentVideo = $('#media-stage video');
     if (currentVideo) currentVideo.muted = !state.audioEnabled;
     const revision = Number(settings.cache_revision || 0);
@@ -455,7 +502,7 @@
     try {
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
-      await applyDeviceSettings(manifest?.device?.settings || {});
+      await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
       await cacheManifestAssets(manifest);
       state.manifest = manifest;
       state.lastSyncAt = new Date().toISOString();
@@ -683,13 +730,27 @@
     if(!state.deviceToken||!navigator.onLine)return;
     const result=await gateway({action:'commands'});
     for(const command of result?.commands||[]){
-      if(command.command_type!=='screenshot'||state.processingCommands.has(command.id))continue;
+      if(state.processingCommands.has(command.id))continue;
+      if(!['screenshot','restart_player'].includes(command.command_type))continue;
       state.processingCommands.add(command.id);
       try{
-        const capture=await captureCurrentFrame();
-        await gateway({action:'screenshot_result',command_id:command.id,...capture});
+        if(command.command_type==='screenshot'){
+          const capture=await captureCurrentFrame();
+          await gateway({action:'screenshot_result',command_id:command.id,...capture});
+          continue;
+        }
+
+        if(command.command_type==='restart_player'){
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          queueDeviceEvent('player_restart_requested','info','Reinício remoto recebido do painel.',{command_id:command.id},30000);
+          setTimeout(restartPlayerRuntime,250);
+        }
       }catch(error){
-        await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        if(command.command_type==='screenshot'){
+          await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        }else{
+          await gateway({action:'command_result',command_id:command.id,status:'failed',error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        }
       }finally{state.processingCommands.delete(command.id)}
     }
   }
@@ -811,6 +872,11 @@
       state.manifest = null;
     }
   }
+
+  window.addEventListener('resize', () => {
+    const mode = document.documentElement.dataset.playerOrientation || 'auto';
+    if (!window.VisionAndroid?.setOrientation) applyCssOrientationFallback(mode);
+  });
 
   async function bootstrap() {
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
