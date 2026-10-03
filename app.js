@@ -1492,11 +1492,11 @@
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
       const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
-      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : media.media_type === 'video' ? 'Vídeo' : 'Conteúdo dinâmico';
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
-          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : media.media_type === 'url' ? '◉' : '▧'}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
@@ -1714,6 +1714,7 @@
     list.innerHTML = items.map((item, index) => {
       const media = mediaById[item.media_id];
       const isImage = media?.media_type === 'image';
+      const hasTimedDuration = ['image','url'].includes(media?.media_type);
       const seconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
       const checked = state.selectedPlaylistItemIds.has(item.id);
       return `
@@ -1722,7 +1723,7 @@
           <span class="drag-handle" title="Arrastar para ordenar">⋮⋮</span>
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
           <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span></div></div>
-          ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
+          ${hasTimedDuration ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
           <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
@@ -2864,7 +2865,7 @@
           playlist_id:playlistId,
           media_id:mediaId,
           position:nextPosition,
-          duration_override_seconds:media.media_type === 'image' ? 10 : null,
+          duration_override_seconds:['image','url'].includes(media.media_type) ? Number(media.duration_seconds || 10) : null,
           enabled:true,
         },
         prefer:'return=minimal',
@@ -2959,6 +2960,54 @@
     }
   }
 
+
+  function syncDynamicContentForm() {
+    const type = $('#dynamic-content-type')?.value || 'clock';
+    $('#dynamic-city-field')?.classList.toggle('hidden', type === 'news');
+    $('#dynamic-category-field')?.classList.toggle('hidden', type !== 'news');
+  }
+
+  async function handleCreateDynamicContent(event) {
+    event.preventDefault();
+    const button = $('#dynamic-content-save');
+    const type = $('#dynamic-content-type').value;
+    const city = ($('#dynamic-content-city').value || 'Anápolis').trim();
+    const category = $('#dynamic-content-category').value || 'geral';
+    const duration = Math.max(5, Math.min(300, Number($('#dynamic-content-duration').value || 15)));
+    const labels = { clock:'Relógio e data', weather:'Clima', news:'Notícias' };
+    const params = new URLSearchParams({ type });
+    if (type !== 'news') params.set('city', city || 'Anápolis');
+    if (type === 'news') params.set('category', category);
+    const sourceUrl = new URL('./widget.html', location.href);
+    sourceUrl.search = params.toString();
+    setBusy(button, true, 'Criando...');
+    try {
+      await restRequest('media_assets', {
+        method:'POST',
+        body:{
+          company_id:state.company.id,
+          name:type === 'weather' ? `Clima • ${city || 'Anápolis'}` : type === 'news' ? `Notícias • ${category}` : 'Relógio e data',
+          media_type:'url',
+          mime_type:'text/html',
+          storage_path:null,
+          source_url:sourceUrl.href,
+          duration_seconds:duration,
+          size_bytes:0,
+          width:null,
+          height:null,
+          processing_status:'ready',
+          created_by:state.user.id,
+        },
+        prefer:'return=minimal',
+      });
+      closeDialog('dynamic-content-dialog');
+      toast('Conteúdo dinâmico criado', `${labels[type]} já está disponível para adicionar à playlist.`);
+      await loadAllData();
+    } catch (error) {
+      toast('Não foi possível criar o conteúdo', error.message, 'error', 6500);
+    } finally { setBusy(button, false); }
+  }
+
   async function handleCreatePlaylist(event) {
     event.preventDefault();
     const button = $('#playlist-save');
@@ -3015,7 +3064,7 @@
           playlist_id: state.editingPlaylistId,
           media_id: mediaId,
           position: nextPosition,
-          duration_override_seconds: state.media.find(m => m.id === mediaId)?.media_type === 'image' ? 10 : null,
+          duration_override_seconds: ['image','url'].includes(state.media.find(m => m.id === mediaId)?.media_type) ? Number(state.media.find(m => m.id === mediaId)?.duration_seconds || 10) : null,
           enabled: true,
         },
         prefer: 'return=minimal',
@@ -3383,6 +3432,9 @@
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
+    $('#add-dynamic-content-button')?.addEventListener('click', () => { syncDynamicContentForm(); openDialog('dynamic-content-dialog'); });
+    $('#dynamic-content-type')?.addEventListener('change', syncDynamicContentForm);
+    $('#dynamic-content-form')?.addEventListener('submit', handleCreateDynamicContent);
     $('[data-open-playlist-create]')?.addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-search')?.addEventListener('input', renderPlaylists);
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
