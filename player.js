@@ -41,6 +41,7 @@
     syncHadError: false,
     playbackHadError: false,
     lastEventTimes: {},
+    cachePrefetchVersion: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -456,49 +457,96 @@
     try { window.VisionAndroid?.setAutostart?.(settings.autostart_enabled !== false); } catch {}
   }
 
-  async function cacheManifestAssets(manifest) {
-    const cache = await caches.open(MEDIA_CACHE);
-    const keep = new Set();
+  async function cacheMediaItem(cache, item, { foreground = false } = {}) {
+    if (!item?.media || !['image','video'].includes(item.media.type)) return false;
+    const key = cacheKey(item);
+    let cached = await cache.match(key);
+    if (cached) return true;
+    try {
+      if (foreground) setStatus(`Preparando ${item.media.name}…`);
+      const response = await fetch(item.media.url, { cache:'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      await cache.put(key, new Response(blob, {
+        headers: {
+          'Content-Type': item.media.mime_type || blob.type || 'application/octet-stream',
+          'Content-Length': String(blob.size),
+        },
+      }));
+      return true;
+    } catch (error) {
+      console.warn('Falha ao armazenar mídia', item.media.id, error);
+      queueDeviceEvent('cache_error', 'warning', `Falha ao armazenar ${item.media.name || 'mídia'} no cache.`, {
+        media_id: item.media.id,
+        media_name: item.media.name || null,
+        error: String(error?.message || error).slice(0, 300),
+      }, 10 * 60_000);
+      return false;
+    }
+  }
+
+  async function cacheWithConcurrency(cache, items, concurrency = 2, foreground = false, version = null) {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+      while (cursor < items.length) {
+        if (version && state.cachePrefetchVersion !== version) return;
+        const index = cursor++;
+        await cacheMediaItem(cache, items[index], { foreground });
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  async function refreshCacheStats(cache, items) {
     const countedMedia = new Set();
     let cacheItems = 0;
     let cacheBytes = 0;
-    for (const item of manifest.items || []) {
-      if (!['image', 'video'].includes(item.media.type)) continue;
-      const key = cacheKey(item);
-      keep.add(key.url);
-      let cached = await cache.match(key);
-      if (!cached) {
-        try {
-          setStatus(`Baixando ${item.media.name}…`);
-          const response = await fetch(item.media.url, { cache: 'no-store' });
-          if (!response.ok) throw new Error(`HTTP ${response.status}`);
-          const blob = await response.blob();
-          await cache.put(key, new Response(blob, {
-            headers: {
-              'Content-Type': item.media.mime_type || blob.type || 'application/octet-stream',
-              'Content-Length': String(blob.size),
-            },
-          }));
-          cached = await cache.match(key);
-        } catch (error) {
-          console.warn('Falha ao armazenar mídia', item.media.id, error);
-          queueDeviceEvent('cache_error', 'warning', `Falha ao armazenar ${item.media.name || 'mídia'} no cache.`, {
-            media_id: item.media.id,
-            media_name: item.media.name || null,
-            error: String(error?.message || error).slice(0, 300),
-          }, 10 * 60_000);
-        }
-      }
-      if (cached && !countedMedia.has(item.media.id)) {
+    for (const item of items) {
+      if (!item?.media || countedMedia.has(item.media.id)) continue;
+      if (await cache.match(cacheKey(item))) {
         countedMedia.add(item.media.id);
         cacheItems += 1;
         cacheBytes += Math.max(0, Number(item.media.size_bytes || 0));
       }
     }
-    const keys = await cache.keys();
-    await Promise.all(keys.filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url)).map(key => cache.delete(key)));
     state.cacheItems = cacheItems;
     state.cacheBytes = cacheBytes;
+  }
+
+  async function cacheManifestAssets(manifest) {
+    const cache = await caches.open(MEDIA_CACHE);
+    const seen = new Set();
+    const candidates = (manifest.items || []).filter(item => {
+      if (!item?.media || !['image','video'].includes(item.media.type) || seen.has(item.media.id)) return false;
+      seen.add(item.media.id);
+      return true;
+    });
+    const keep = new Set(candidates.map(item => cacheKey(item).url));
+
+    const keys = await cache.keys();
+    await Promise.all(keys
+      .filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url))
+      .map(key => cache.delete(key)));
+
+    const warmCount = Math.min(8, candidates.length);
+    const warm = candidates.slice(0, warmCount);
+    await cacheWithConcurrency(cache, warm, 2, true);
+    await refreshCacheStats(cache, candidates);
+
+    const rest = candidates.slice(warmCount);
+    if (!rest.length) {
+      state.cachePrefetchVersion = manifest.version || null;
+      return;
+    }
+
+    const version = manifest.version || crypto.randomUUID();
+    if (state.cachePrefetchVersion === version) return;
+    state.cachePrefetchVersion = version;
+
+    void (async () => {
+      await cacheWithConcurrency(cache, rest, 2, false, version);
+      if (state.cachePrefetchVersion === version) await refreshCacheStats(cache, candidates);
+    })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
 
   async function syncManifest() {
@@ -542,6 +590,7 @@
   }
 
   function showIdle(title, message) {
+    clearCurrentObjectUrl();
     $('#media-stage').replaceChildren();
     $('#idle-title').textContent = title;
     $('#idle-message').textContent = message;
@@ -554,7 +603,11 @@
 
   async function getCachedBlob(item) {
     const cache = await caches.open(MEDIA_CACHE);
-    const response = await cache.match(cacheKey(item));
+    let response = await cache.match(cacheKey(item));
+    if (!response && navigator.onLine) {
+      await cacheMediaItem(cache, item, { foreground:true });
+      response = await cache.match(cacheKey(item));
+    }
     if (!response) return null;
     return response.blob();
   }
@@ -564,40 +617,55 @@
     state.currentObjectUrl = null;
   }
 
+  function swapStageElement(stage, element, objectUrl = null) {
+    const previousUrl = state.currentObjectUrl;
+    stage.replaceChildren(element);
+    state.currentObjectUrl = objectUrl;
+    if (previousUrl && previousUrl !== objectUrl) URL.revokeObjectURL(previousUrl);
+  }
+
   async function playItem(item, playlist, program, nonce) {
     const startedAt = new Date();
     let completed = false;
     state.currentMediaId = item.media?.id || null;
     hideIdle();
-    clearCurrentObjectUrl();
     const stage = $('#media-stage');
-    stage.replaceChildren();
 
     try {
       if (item.media.type === 'image') {
         const blob = await getCachedBlob(item);
-        if (!blob) throw new Error('Imagem ainda não está no cache local.');
+        if (!blob) throw new Error('Imagem ainda não está disponível localmente.');
         const url = URL.createObjectURL(blob);
-        state.currentObjectUrl = url;
         const img = new Image();
         img.alt = item.media.name || '';
-        img.src = url;
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = 'contain';
         img.style.objectPosition = 'center';
-        stage.appendChild(img);
-        await Promise.race([
-          new Promise(resolve => { img.onload = resolve; img.onerror = resolve; }),
-          sleep(5000),
-        ]);
+
+        try {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Tempo excedido ao preparar a imagem.')), 8000);
+            img.onload = () => { clearTimeout(timeout); resolve(); };
+            img.onerror = () => { clearTimeout(timeout); reject(new Error('Não foi possível abrir a imagem.')); };
+            img.src = url;
+          });
+        } catch (error) {
+          URL.revokeObjectURL(url);
+          throw error;
+        }
+
+        if (nonce !== state.playlistNonce) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        swapStageElement(stage, img, url);
         const imageWait = await waitForChangeOrTimeout(nonce, Math.max(1, Number(item.duration_seconds || 10)) * 1000);
         completed = imageWait !== 'changed';
       } else if (item.media.type === 'video') {
         const blob = await getCachedBlob(item);
-        if (!blob) throw new Error('Vídeo ainda não está no cache local.');
+        if (!blob) throw new Error('Vídeo ainda não está disponível localmente.');
         const url = URL.createObjectURL(blob);
-        state.currentObjectUrl = url;
         const video = document.createElement('video');
         video.muted = !state.audioEnabled;
         video.src = url;
@@ -608,7 +676,22 @@
         video.style.height = '100%';
         video.style.objectFit = 'contain';
         video.style.objectPosition = 'center';
-        stage.appendChild(video);
+
+        await Promise.race([
+          new Promise(resolve => {
+            video.addEventListener('loadeddata', resolve, { once:true });
+            video.addEventListener('error', resolve, { once:true });
+            try { video.load(); } catch {}
+          }),
+          sleep(5000),
+        ]);
+
+        if (nonce !== state.playlistNonce) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        swapStageElement(stage, video, url);
+
         let playbackStarted = false;
         try {
           await video.play();
@@ -638,7 +721,7 @@
         iframe.src = item.media.url;
         iframe.referrerPolicy = 'no-referrer';
         iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
-        stage.appendChild(iframe);
+        swapStageElement(stage, iframe, null);
         const urlWait = await waitForChangeOrTimeout(nonce, Math.max(5, Number(item.duration_seconds || 15)) * 1000);
         completed = urlWait !== 'changed';
       } else {
