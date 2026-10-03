@@ -1914,3 +1914,83 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     display:none;
   }
 }
+
+
+/* Preview reliability + full-screen TV orientation controls */
+/* Keep the whole captured TV frame visible; never crop portrait screenshots. */
+.device-card-pro .device-screen.has-screenshot img,
+.device-card-pro .device-screen.capture-portrait img,
+.device-card-pro .device-screen.capture-landscape img{
+  object-fit:contain !important;
+  object-position:center !important;
+  background:#000;
+}
+
+/* Library and playlist thumbnails should show the complete asset. */
+.media-preview-clean>img,
+.media-preview-clean>video{
+  object-fit:contain !important;
+  object-position:center !important;
+  background:#05080d;
+}
+.playlist-preview-cell img,
+.playlist-preview-cell video{
+  object-fit:contain;
+  object-position:center;
+  background:#05080d;
+}
+
+.device-orientation-quick{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:5px 8px;
+  margin-top:7px;
+  padding:8px 9px;
+  border:1px solid var(--line);
+  border-radius:10px;
+  background:rgba(255,255,255,.022);
+}
+.device-orientation-quick>span{
+  font-size:9px;
+  font-weight:850;
+  color:#dce7f5;
+}
+.device-orientation-quick select{
+  min-width:112px;
+  min-height:32px;
+  padding:5px 8px;
+  font-size:9px;
+}
+.device-orientation-quick>small{
+  grid-column:1/-1;
+  color:var(--muted);
+  font-size:7.5px;
+  line-height:1.35;
+}
+
+.tv-viewer-preview{
+  margin-inline:auto;
+  max-height:66vh;
+}
+.tv-viewer-preview.is-portrait-capture{
+  width:min(100%,360px);
+  max-height:66vh;
+}
+.tv-viewer-preview img{
+  object-fit:contain !important;
+  object-position:center !important;
+}
+
+@media(max-width:640px){
+  .device-orientation-quick{
+    grid-template-columns:1fr;
+  }
+  .device-orientation-quick select{
+    width:100%;
+  }
+  .tv-viewer-preview.is-portrait-capture{
+    width:min(100%,320px);
+    max-height:54vh;
+  }
+}
