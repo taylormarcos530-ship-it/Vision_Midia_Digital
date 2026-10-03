@@ -213,7 +213,12 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String getAppVersion() {
-            return BuildConfig.VERSION_NAME;
+            try {
+                String versionName = getPackageManager().getPackageInfo(getPackageName(), 0).versionName;
+                return versionName == null ? "" : versionName;
+            } catch (Exception ignored) {
+                return "";
+            }
         }
 
         @JavascriptInterface
