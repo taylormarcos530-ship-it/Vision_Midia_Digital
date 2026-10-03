@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  // preview-refresh-v39-timed-access
 
   const CONFIG = window.VISION_CONFIG;
   if (!CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) {
@@ -191,8 +192,10 @@
       title = 'TV bloqueada pelo Master';
       message = 'O acesso desta TV foi bloqueado. O vínculo permanece salvo para uma futura reativação.';
     } else if (code === 'account_suspended') {
-      title = 'Conta suspensa';
-      message = data.message || 'A conta desta TV está suspensa.';
+      if (data.reason === 'trial_expired') { title = 'Período de teste encerrado'; message = data.message || 'O período de demonstração terminou. Contrate ou renove um plano para continuar.'; expiry = data.trial_ends_at ? `Teste encerrado em: ${new Date(data.trial_ends_at).toLocaleString('pt-BR')}` : 'Período de teste encerrado.'; }
+      else if (data.reason === 'pending_approval') { title = 'Aguardando aprovação'; message = data.message || 'O Master ainda precisa liberar esta conta.'; }
+      else if (data.reason === 'payment_required' || data.reason === 'payment_overdue' || data.reason === 'subscription_expired') { title = 'Plano precisa ser regularizado'; message = data.message || 'Regularize o plano para continuar a exibição.'; }
+      else { title = 'Conta suspensa'; message = data.message || 'A conta desta TV está suspensa.'; }
     }
 
     state.playlistNonce++;
