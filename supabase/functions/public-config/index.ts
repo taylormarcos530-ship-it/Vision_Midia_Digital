@@ -23,7 +23,7 @@ Deno.serve(async req=>{
   try{
     const client=publicClient()
     const [{data:config,error:ce},{data:plans,error:pe}]=await Promise.all([
-      client.from('platform_public_config').select('support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle').eq('id',1).maybeSingle(),
+      client.from('platform_public_config').select('support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle,web_push_public_key').eq('id',1).maybeSingle(),
       client.from('plans').select('id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order').eq('is_active',true).order('sort_order')
     ])
     if(ce)throw ce
