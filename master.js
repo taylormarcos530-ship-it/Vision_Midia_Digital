@@ -285,8 +285,10 @@
     $('#master-clients-list').innerHTML=rows.map(c=>{
       const subStatus=c.subscription?.status||'—';
       const maxD=limitValue(c,'max_devices'), maxU=limitValue(c,'max_users'), maxS=limitValue(c,'storage_limit_mb'), maxC=limitValue(c,'max_campaigns');
-      const due=c.subscription?.current_period_end?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(new Date(c.subscription.current_period_end)):'Sem vencimento';
-      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')} • vence ${esc(due)}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${['super_admin','admin'].includes(state.role)?`<button class="small-button" data-device-access-company="${c.id}">Acesso das TVs</button><button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
+      const isTrial=c.subscription?.status==='trialing';
+      const dueSource=isTrial?c.subscription?.trial_ends_at:c.subscription?.current_period_end;
+      const due=dueSource?new Intl.DateTimeFormat('pt-BR',isTrial?{dateStyle:'short',timeStyle:'short'}:{dateStyle:'short'}).format(new Date(dueSource)):(isTrial?'Sem prazo definido':'Sem vencimento');
+      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')} • ${isTrial?'teste até':'vence'} ${esc(due)}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${['super_admin','admin'].includes(state.role)?`<button class="small-button" data-device-access-company="${c.id}">Acesso das TVs</button><button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
     }).join('');
   }
   function renderPlans(){ const plans=state.data.plans||[]; $('#master-plans-grid').innerHTML=plans.map(p=>`<article class="plan-card"><div class="client-top"><div><strong>${esc(p.name)}</strong><small>${esc(p.is_active?'Disponível':'Inativo')}</small></div><span class="status ${p.is_active?'active':'suspended'}">${p.is_active?'Ativo':'Inativo'}</span></div><div class="plan-price">${esc(money(p.monthly_price_cents))}<small>/mês</small></div><p>${esc(p.description||'')}</p><ul><li>${p.max_devices??'∞'} TV(s)</li><li>${p.storage_limit_mb==null?'Ilimitado':`${p.storage_limit_mb} MB`} de mídia</li><li>${p.max_users??'∞'} usuário(s)</li><li>${p.max_campaigns??'∞'} campanha(s)</li></ul><div class="client-actions"><button class="small-button" data-edit-plan="${p.id}">Editar plano</button></div></article>`).join(''); $('#open-plan-button').classList.toggle('hidden',state.role!=='super_admin'); }
@@ -327,6 +329,32 @@
     fillPlanSelects(); $('#master-client-form').reset(); $('#mc-trial-days').value='7'; openDialog('master-client-dialog');
   }
   async function createClient(ev){ev.preventDefault();const b=$('#mc-save');busy(b,true,'Criando...');try{const d=await master({action:'create_client',company_name:$('#mc-company-name').value.trim(),owner_name:$('#mc-owner-name').value.trim(),owner_email:$('#mc-owner-email').value.trim(),plan_id:$('#mc-plan').value,trial_days:Number($('#mc-trial-days').value||0),temporary_password:$('#mc-temp-password').value});closeDialog('master-client-dialog');toast('Cliente criado',d.delivery==='invite'?'Convite enviado por e-mail.':d.delivery==='temporary_password'?'Acesso criado com senha temporária.':'Usuário existente vinculado.');await load();}catch(e){const msg=/platform_client_limit_reached/i.test(String(e.message))?'O limite de 6 clientes desta infraestrutura foi atingido.':e.message;toast('Erro ao criar cliente',msg,'error')}finally{busy(b,false)}}
+  function renderTrialAccess(subscription){
+    const el=$('#me-trial-status'); if(!el)return;
+    const end=subscription?.trial_ends_at?new Date(subscription.trial_ends_at):null;
+    const active=subscription?.status==='trialing'&&end&&!Number.isNaN(end.getTime())&&end.getTime()>Date.now();
+    const expired=subscription?.status==='trialing'&&end&&!Number.isNaN(end.getTime())&&end.getTime()<=Date.now();
+    el.className=`status ${active?'active':expired?'overdue':'pending'}`;
+    el.textContent=active?`Teste até ${dt(subscription.trial_ends_at)}`:expired?'Teste encerrado':'Sem teste ativo';
+  }
+  function companyFormPayload(extra={}){
+    return {company_id:$('#me-company-id').value,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),payment_url:$('#me-payment-url').value.trim()||null,pix_key:$('#me-pix-key')?.value.trim()||null,pix_key_type:$('#me-pix-key-type')?.value||null,pix_receiver_name:$('#me-pix-name')?.value.trim()||null,pix_receiver_city:$('#me-pix-city')?.value.trim()||null,player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,...extra};
+  }
+  async function grantTemporaryTrial(minutes,button){
+    const duration=Math.round(Number(minutes||0));
+    if(!Number.isFinite(duration)||duration<1||duration>43200){formStatus('#me-status','❌ Informe um período entre 1 minuto e 30 dias.','error');return}
+    busy(button,true,'Liberando...');formStatus('#me-status','Verificando suporte do backend para acesso temporário...','pending');
+    try{
+      let capabilities;try{capabilities=await saveCompanyRequest({action:'capabilities'})}catch{throw new Error('O backend do teste temporário ainda não foi publicado. Nenhuma alteração foi feita na conta.')}
+      if(capabilities?.capabilities?.timed_trial!==true)throw new Error('O backend do teste temporário ainda não está disponível. Nenhuma alteração foi feita na conta.');
+      $('#me-company-status').value='active';$('#me-sub-status').value='trialing';$('#me-payment-status').value='waived';
+      const result=await saveCompanyRequest(companyFormPayload({company_status:'active',subscription_status:'trialing',payment_status:'waived',trial_minutes:duration}));
+      if(!result?.ok||result?.subscription?.status!=='trialing'||!result?.subscription?.trial_ends_at)throw new Error('O servidor não confirmou o prazo do teste.');
+      await load();const persisted=companyById($('#me-company-id').value);renderTrialAccess(persisted?.subscription);const until=persisted?.subscription?.trial_ends_at||result.subscription.trial_ends_at;
+      formStatus('#me-status',`✅ Teste liberado por ${duration} minuto(s), até ${dt(until)}.`,'success');toast('Teste temporário liberado',`O cliente será liberado automaticamente e o acesso termina em ${duration} minuto(s).`);
+    }catch(e){formStatus('#me-status',`❌ ${e.message}`,'error');toast('Não foi possível liberar o teste',e.message,'error',6500)}finally{busy(button,false)}
+  }
+
   function openCompany(id){
     const c=companyById(id); if(!c)return;
     fillPlanSelects(); formStatus('#me-status');
@@ -339,56 +367,20 @@
     $('#me-billing-notes').value=c.subscription?.billing_notes||'';
     const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns);
     const settings=c.settings||{}; $('#me-player-audio').checked=settings.player_audio_enabled!==false; $('#me-player-autostart').checked=settings.player_autostart_enabled!==false;
+    renderTrialAccess(c.subscription);
     openDialog('master-company-dialog');
   }
   function overrideObj(){ const o={}; [['max_devices','#me-max-devices'],['storage_limit_mb','#me-storage-mb'],['max_users','#me-max-users'],['max_campaigns','#me-max-campaigns']].forEach(([k,s])=>{const v=$(s).value.trim();if(v!=='')o[k]=Number(v)}); return o; }
   async function saveCompany(ev){
-    ev.preventDefault();
-    const b=$('#me-save');
-    const companyId=$('#me-company-id').value;
-    const expectedPlanId=$('#me-plan').value;
-    const paymentUrl=$('#me-payment-url').value.trim();
-    if(!expectedPlanId){formStatus('#me-status','❌ Selecione um plano.','error');return}
-    if(paymentUrl && !/^https:\/\/\S+$/i.test(paymentUrl)){formStatus('#me-status','❌ Informe um link de pagamento HTTPS válido.','error');$('#me-payment-url').focus();return}
-    busy(b,true,'Salvando...');
-    formStatus('#me-status','Salvando alterações...','pending');
-    try{
-      const d=await saveCompanyRequest({
-        company_id:companyId,
-        company_name:$('#me-company-name').value.trim(),
-        company_status:$('#me-company-status').value,
-        plan_id:expectedPlanId,
-        subscription_status:$('#me-sub-status').value,
-        payment_status:$('#me-payment-status').value,
-        due_date:$('#me-due-date').value||null,
-        manual_price_cents:reaisToCents($('#me-manual-price').value),
-        limit_overrides:overrideObj(),
-        billing_notes:$('#me-billing-notes').value.trim(),
-        payment_url:paymentUrl||null,
-        pix_key:$('#me-pix-key')?.value.trim()||null,
-        pix_key_type:$('#me-pix-key-type')?.value||null,
-        pix_receiver_name:$('#me-pix-name')?.value.trim()||null,
-        pix_receiver_city:$('#me-pix-city')?.value.trim()||null,
-        player_audio_enabled:$('#me-player-audio').checked,
-        player_autostart_enabled:$('#me-player-autostart').checked
-      });
-      if(!d?.ok || d?.subscription?.plan_id!==expectedPlanId) throw new Error('O servidor não confirmou o plano selecionado.');
-      await load();
-      const persisted=companyById(companyId);
-      if(persisted?.subscription?.plan_id!==expectedPlanId) throw new Error('O plano foi salvo, mas a confirmação do painel não corresponde.');
-      const planName=d?.plan?.name||planById(expectedPlanId)?.name||'selecionado';
-      formStatus('#me-status',`✅ Salvo com sucesso. Plano ${planName} aplicado.`,'success');
-      toast('Salvo com sucesso',`Plano ${planName} e dados da assinatura atualizados.`);
-    }catch(e){
-      const raw=String(e?.message||'Erro ao salvar');
-      const msg=/platform_storage_allocation_exceeded/i.test(raw)
-        ? 'A soma dos limites de armazenamento dos clientes não pode ultrapassar 1.024 MB. Reduza o limite deste ou de outro cliente.'
-        : raw;
-      formStatus('#me-status',`❌ ${msg}`,'error');
-      toast('Erro ao salvar',msg,'error');
-    }finally{busy(b,false)}
+    ev.preventDefault();const b=$('#me-save');const companyId=$('#me-company-id').value;const expectedPlanId=$('#me-plan').value;const paymentUrl=$('#me-payment-url').value.trim();const requestedStatus=$('#me-sub-status').value;const existing=companyById(companyId)?.subscription||null;const existingTrialEnd=existing?.trial_ends_at?new Date(existing.trial_ends_at).getTime():0;
+    if(!expectedPlanId){formStatus('#me-status','❌ Selecione um plano.','error');return}if(paymentUrl&&!/^https:\/\/\S+$/i.test(paymentUrl)){formStatus('#me-status','❌ Informe um link de pagamento HTTPS válido.','error');$('#me-payment-url').focus();return}if(requestedStatus==='trialing'&&!(existing?.status==='trialing'&&existingTrialEnd>Date.now())){formStatus('#me-status','❌ Para usar “Teste”, escolha antes um período no bloco Acesso temporário / demonstração.','error');return}
+    busy(b,true,'Salvando...');formStatus('#me-status','Salvando alterações...','pending');
+    try{const d=await saveCompanyRequest(companyFormPayload());if(!d?.ok||d?.subscription?.plan_id!==expectedPlanId)throw new Error('O servidor não confirmou o plano selecionado.');await load();const persisted=companyById(companyId);if(persisted?.subscription?.plan_id!==expectedPlanId)throw new Error('O plano foi salvo, mas a confirmação do painel não corresponde.');renderTrialAccess(persisted?.subscription);const planName=d?.plan?.name||planById(expectedPlanId)?.name||'selecionado';formStatus('#me-status',`✅ Salvo com sucesso. Plano ${planName} aplicado.`,'success');toast('Salvo com sucesso',`Plano ${planName} e dados da assinatura atualizados.`)}catch(e){const raw=String(e?.message||'Erro ao salvar');const msg=/platform_storage_allocation_exceeded/i.test(raw)?'A soma dos limites de armazenamento dos clientes não pode ultrapassar 1.024 MB. Reduza o limite deste ou de outro cliente.':raw;formStatus('#me-status',`❌ ${msg}`,'error');toast('Erro ao salvar',msg,'error')}finally{busy(b,false)}
   }
-  async function toggleCompany(id,next){const c=companyById(id);if(!c)return;if(!confirm(`${next==='suspended'?'Suspender':'Reativar'} a conta “${c.name}”?`))return;try{await master({action:'update_company',company_id:id,company_status:next,subscription_status:next==='suspended'?'suspended':'active'});toast(next==='suspended'?'Conta suspensa':'Conta reativada');await load()}catch(e){toast('Não foi possível alterar a conta',e.message,'error')}}
+  async function toggleCompany(id,next){
+    const c=companyById(id);if(!c)return;if(!confirm(`${next==='suspended'?'Suspender':'Reativar'} a conta “${c.name}”?`))return;
+    try{await master({action:'update_company',company_id:id,company_status:next,subscription_status:next==='suspended'?'suspended':'active'});toast(next==='suspended'?'Conta suspensa':'Conta reativada');await load()}catch(e){const raw=String(e?.message||'');if(/\.catch is not a function/i.test(raw)){try{await load();const persisted=companyById(id);const expectedSub=next==='suspended'?'suspended':'active';if(persisted?.status===next&&persisted?.subscription?.status===expectedSub){toast(next==='suspended'?'Conta suspensa':'Conta reativada','A alteração foi aplicada; apenas a auditoria do backend antigo falhou.');return}}catch{}}toast('Não foi possível alterar a conta',e.message,'error')}
+  }
   function deviceAccessLabel(device){
     const stateName=device?.access_state||'permanent';
     if(stateName==='pending')return 'Aguardando autorização do Master';
