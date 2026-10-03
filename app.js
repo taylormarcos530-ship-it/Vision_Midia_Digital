@@ -1637,30 +1637,22 @@
     for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
       const media = mediaById[mediaId];
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        if (!url) continue;
-        const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
-        targets.forEach(target => {
-          if (target.dataset.loaded === '1') return;
-          target.dataset.loaded = '1';
-          if (media.media_type === 'image') {
-            const img = new Image();
-            img.loading = 'lazy';
-            img.alt = media.name || 'Mídia da playlist';
-            img.src = url;
-            target.replaceChildren(img);
-          } else {
-            const video = document.createElement('video');
-            video.muted = true;
-            video.playsInline = true;
-            video.preload = 'metadata';
-            video.setAttribute('aria-label', media.name || 'Vídeo da playlist');
-            video.src = url;
-            target.replaceChildren(video);
-          }
-        });
-      } catch { /* mantém placeholder */ }
+      const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
+      for (const target of targets) {
+        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        target.dataset.loadingPath = media.storage_path;
+        try {
+          const url = await signedMediaUrlCached(media);
+          const element = await loadStablePreviewElement(media, url);
+          if (!target.isConnected) continue;
+          target.replaceChildren(element);
+          target.dataset.loadedPath = media.storage_path;
+        } catch {
+          // Mantém o placeholder atual e permite nova tentativa numa próxima atualização.
+        } finally {
+          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
+        }
+      }
     }
   }
 
@@ -1718,6 +1710,21 @@
       grid.innerHTML = '<div class="playlist-filter-empty"><strong>Nenhuma playlist encontrada</strong><span>Ajuste a busca ou o filtro para ver outras playlists.</span></div>';
       return;
     }
+
+    const stablePreviewIds = rows.flatMap(row => row.previewMedia.map(media => media.id));
+    const playlistSignature = [
+      query, statusFilter, sortMode,
+      rows.map(row => [
+        row.playlist.id, row.playlist.name, row.playlist.description, row.updatedAt,
+        row.items.map(item => [item.id,item.media_id,item.position,item.enabled,item.schedule_enabled,item.updated_at].join(':')).join(','),
+        row.previewMedia.map(media => [media.id,media.storage_path,media.updated_at].join(':')).join(',')
+      ].join('|')).join('||')
+    ].join('__');
+    if (playlistSignature === state.playlistRenderSignature && grid.children.length === rows.length) {
+      hydratePlaylistCardPreviews(stablePreviewIds);
+      return;
+    }
+    state.playlistRenderSignature = playlistSignature;
 
     const previewIds = [];
     grid.innerHTML = rows.map(({ playlist, items, stateInfo, schedule, duration, tvCount, previewMedia }) => {
