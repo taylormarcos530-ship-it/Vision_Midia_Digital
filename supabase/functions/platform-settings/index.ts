@@ -126,8 +126,9 @@ Deno.serve(async(req)=>{
 
       const domains=secret?await resendDomains(secret):[]
       const domain=emailDomain(senderEmail)
+      const testMode=senderEmail==='onboarding@resend.dev'
       const verified=Boolean(domain&&domains.some((item:any)=>clean(item?.name,180).toLowerCase()===domain&&clean(item?.status,40).toLowerCase()==='verified'))
-      if(enabled&&!verified)return J({
+      if(enabled&&!verified&&!testMode)return J({
         error:'resend_sender_domain_not_verified',
         sender_domain:domain||null,
         domains:domains.map((item:any)=>({name:clean(item?.name,180),status:clean(item?.status,40)})),
@@ -136,7 +137,7 @@ Deno.serve(async(req)=>{
       const {data,error}=await admin.from('platform_public_config').update({
         resend_sender_email:senderEmail||null,
         resend_sender_name:senderName,
-        resend_enabled:enabled&&verified,
+        resend_enabled:enabled&&(verified||testMode),
         updated_at:new Date().toISOString(),
       }).eq('id',1).select('*').single()
       if(error)throw error
@@ -144,7 +145,7 @@ Deno.serve(async(req)=>{
       const {error:auditError}=await admin.from('master_audit_logs').insert({
         actor_user_id:user.id,
         action:'platform_email_provider_updated',
-        details:{provider:'resend',enabled:enabled&&verified,sender_domain:domain||null,api_key_updated:Boolean(apiKey)},
+        details:{provider:'resend',enabled:enabled&&(verified||testMode),sender_domain:domain||null,test_mode:testMode,api_key_updated:Boolean(apiKey)},
       })
       if(auditError)console.warn('platform email provider audit',auditError)
 
@@ -155,6 +156,7 @@ Deno.serve(async(req)=>{
           api_key_configured:Boolean(secret),
           sender_domain:domain||null,
           sender_domain_verified:verified,
+          test_mode:testMode,
           domains:domains.map((item:any)=>({name:clean(item?.name,180),status:clean(item?.status,40)})),
         },
       })
