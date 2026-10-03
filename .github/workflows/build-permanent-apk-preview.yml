@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix/saas-media-playlist-device-controls
     paths:
       - 'android-player/**'
       - 'player.html'
