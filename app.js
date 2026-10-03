@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  // preview-refresh-v39-timed-access
   // preview-refresh-v37-media-library
   // preview-refresh-v38-complete-media
   // preview-refresh-v36-complete-playlists
@@ -110,6 +111,8 @@
   const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
   let lastActionButton = null;
   let lastActionAt = 0;
+  let accessGateRefreshing = false;
+  let accessGateTimer = null;
 
   function isFeedbackActionButton(button) {
     if (!button) return false;
@@ -413,6 +416,12 @@
     catch { return '—'; }
   }
 
+  function formatAccessDateTime(value) {
+    if (!value) return 'Não definido';
+    try { return new Intl.DateTimeFormat('pt-BR', { dateStyle: 'short', timeStyle: 'short' }).format(new Date(value)); }
+    catch { return '—'; }
+  }
+
   function renderAccessScreen(reason = accessReason()) {
     reason = reason || { key:'pending', title:'Aguardando aprovação', message:'Aguarde a liberação do administrador.' };
     $('#access-title').textContent = reason.title;
@@ -420,7 +429,10 @@
     $('#access-company').textContent = state.company?.name || 'Cadastro ainda não vinculado';
     const plan = (state.publicConfig?.plans || []).find(p => p.id === state.subscription?.plan_id);
     $('#access-plan').textContent = plan?.name || 'A definir';
-    $('#access-due').textContent = formatAccessDate(state.subscription?.current_period_end);
+    const trialActive = state.subscription?.status === 'trialing' && Boolean(state.subscription?.trial_ends_at);
+    const dueLabel = $('#access-due-label');
+    if (dueLabel) dueLabel.textContent = trialActive ? 'Teste até' : 'Vencimento';
+    $('#access-due').textContent = trialActive ? formatAccessDateTime(state.subscription?.trial_ends_at) : formatAccessDate(state.subscription?.current_period_end);
     const cfg = state.publicConfig?.config || {};
     const phone = String(cfg.support_whatsapp || '').replace(/\D/g, '');
     const message = reason.key === 'renewal' ? cfg.renewal_whatsapp_message : cfg.signup_whatsapp_message;
@@ -454,12 +466,81 @@
     } catch {}
   }
 
+  async function notifyAccessGranted() {
+    if (!('Notification' in window) || Notification.permission !== 'granted') return;
+    const key = `vision_access_granted_${state.subscription?.updated_at || state.subscription?.trial_ends_at || 'current'}`;
+    if (localStorage.getItem(key)) return;
+    const body = state.subscription?.status === 'trialing' && state.subscription?.trial_ends_at
+      ? `Seu teste foi liberado até ${formatAccessDateTime(state.subscription.trial_ends_at)}.`
+      : 'Seu acesso foi liberado. O painel já está disponível.';
+    try {
+      const reg = await navigator.serviceWorker?.ready;
+      if (reg?.showNotification) await reg.showNotification('Vision Mídia Digital • Acesso liberado', { body, icon:'./icon.svg', tag:'vision-access-granted' });
+      else new Notification('Vision Mídia Digital • Acesso liberado', { body });
+      localStorage.setItem(key, '1');
+    } catch {}
+  }
+
   async function enableAccessNotifications() {
     if (!('Notification' in window)) return toast('Notificações indisponíveis', 'Este navegador não oferece suporte.', 'error');
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
-    toast('Notificações ativadas', 'Você verá avisos do acesso quando o app estiver sincronizando.');
+    toast('Notificações ativadas', 'Você será avisado quando o acesso for liberado ou quando houver mudança importante na assinatura.');
     const reason = accessReason(); if (reason) notifyAccessState(reason);
+  }
+
+  async function refreshAccessGate({ manual = false } = {}) {
+    if (accessGateRefreshing || !state.user) return false;
+    accessGateRefreshing = true;
+    try {
+      const wasBlocked = !$('#access-screen').classList.contains('hidden');
+      const wasApp = !$('#app-shell').classList.contains('hidden');
+      if (!state.company?.id) {
+        await enterAuthenticatedApp();
+        const nowBlocked = !$('#access-screen').classList.contains('hidden');
+        if (wasBlocked && !nowBlocked) await notifyAccessGranted();
+        return !nowBlocked;
+      }
+      const companyId = encodeURIComponent(state.company.id);
+      const [companies, subscriptions] = await Promise.all([
+        restRequest('companies', { query: `select=id,name,status,timezone,owner_user_id,settings&id=eq.${companyId}&limit=1` }),
+        restRequest('company_subscriptions', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
+      ]);
+      if (companies?.[0]) state.company = { ...state.company, ...companies[0] };
+      state.subscription = subscriptions?.[0] || null;
+      const reason = accessReason();
+      if (!reason) {
+        if (wasBlocked) {
+          await notifyAccessGranted();
+          showScreen('app');
+          renderIdentity();
+          await loadAllData();
+          setView(state.activeView);
+          const detail = state.subscription?.status === 'trialing' && state.subscription?.trial_ends_at
+            ? `Teste liberado até ${formatAccessDateTime(state.subscription.trial_ends_at)}.`
+            : 'Seu painel já está disponível.';
+          toast('Acesso liberado', detail);
+        }
+        return true;
+      }
+      if (wasApp) {
+        showScreen('access');
+        renderAccessScreen(reason);
+        await notifyAccessState(reason);
+        toast(reason.title, reason.message, 'error', 6000);
+      } else if (wasBlocked) {
+        renderAccessScreen(reason);
+        if (manual) {
+          const status = $('#access-refresh-status');
+          if (status) {
+            status.textContent = reason.message;
+            status.className = 'access-refresh-status pending';
+            status.classList.remove('hidden');
+          }
+        }
+      }
+      return false;
+    } finally { accessGateRefreshing = false; }
   }
 
   function showScreen(name) {
@@ -475,6 +556,11 @@
     updateConnectionStatus();
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
+    const refreshGateSoon = () => { if (state.user) refreshAccessGate().catch(() => {}); };
+    window.addEventListener('online', refreshGateSoon);
+    window.addEventListener('focus', refreshGateSoon);
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') refreshGateSoon(); });
+    accessGateTimer = setInterval(refreshGateSoon, 10_000);
     setInterval(() => {
       if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
     }, 30_000);
@@ -3259,25 +3345,16 @@
         status.classList.toggle('hidden', !message);
       };
       setBusy(button, true, 'Verificando...');
-      setStatus('Consultando sua assinatura e as configurações de suporte…', 'pending');
+      setStatus('Consultando sua assinatura…', 'pending');
       try {
-        await loadPublicConfig();
-        await enterAuthenticatedApp();
-        const stillBlocked = !$('#access-screen').classList.contains('hidden');
-        if (stillBlocked) {
-          const reason = accessReason();
-          setStatus(reason?.message || 'Seu acesso ainda está aguardando liberação do administrador.', 'pending');
-          toast('Acesso ainda não liberado', 'Consulta concluída. Seus dados e o WhatsApp de suporte foram atualizados.', 'error');
-        } else {
-          setStatus('Acesso liberado. Abrindo seu painel…', 'success');
-          toast('Acesso liberado', 'Seu painel já está disponível.');
-        }
+        await loadPublicConfig().catch(() => null);
+        const liberated = await refreshAccessGate({ manual:true });
+        if (liberated) setStatus('Acesso liberado. Abrindo seu painel…', 'success');
+        else toast('Acesso ainda não liberado', 'A verificação automática continuará ativa.', 'error');
       } catch (error) {
         setStatus(`Não foi possível verificar agora: ${error.message}`, 'error');
         toast('Falha ao verificar acesso', error.message, 'error');
-      } finally {
-        setBusy(button, false);
-      }
+      } finally { setBusy(button, false); }
     });
     $('#access-logout').addEventListener('click', logout);
     $('#access-notifications').addEventListener('click', enableAccessNotifications);
