@@ -635,6 +635,8 @@
       navigator.serviceWorker.register('./sw.js').catch(() => {});
     }
 
+    if (openPasswordRecoveryFromUrl()) return;
+
     const saved = loadSavedSession();
     if (!saved) {
       showScreen('auth');
@@ -2882,6 +2884,7 @@
   }
 
   let passwordRecoveryCooldownTimer = null;
+  let recoveryAccessToken = null;
 
   function passwordRecoveryWaitSeconds(error) {
     const message = String(error?.message || error || '');
@@ -2911,6 +2914,74 @@
 
     render();
     passwordRecoveryCooldownTimer = setInterval(render, 1000);
+  }
+
+  function openPasswordRecoveryFromUrl() {
+    const raw = String(location.hash || '').replace(/^#/, '');
+    if (!raw) return false;
+    const params = new URLSearchParams(raw);
+    if (params.get('type') !== 'recovery' || !params.get('access_token')) return false;
+    recoveryAccessToken = params.get('access_token');
+    history.replaceState({}, document.title, `${location.pathname}${location.search}`);
+    showScreen('auth');
+    const dialog = $('#password-reset-dialog');
+    if (dialog && !dialog.open) dialog.showModal();
+    return true;
+  }
+
+  async function handleRecoveryPasswordSubmit(event) {
+    event.preventDefault();
+    const button = $('#password-reset-save');
+    const password = $('#password-reset-new').value;
+    const confirmPassword = $('#password-reset-confirm').value;
+    const status = $('#password-reset-status');
+    const setStatus = (message = '', type = '') => {
+      if (!status) return;
+      status.textContent = message;
+      status.className = `form-status ${type}`.trim();
+      status.classList.toggle('hidden', !message);
+    };
+    if (!recoveryAccessToken) {
+      setStatus('Link de recuperação inválido ou expirado.', 'error');
+      return;
+    }
+    if (password.length < 8) {
+      setStatus('Use pelo menos 8 caracteres.', 'error');
+      $('#password-reset-new').focus();
+      return;
+    }
+    if (password !== confirmPassword) {
+      setStatus('As duas senhas precisam ser iguais.', 'error');
+      $('#password-reset-confirm').focus();
+      return;
+    }
+    setBusy(button, true, 'Salvando...');
+    setStatus('Atualizando sua senha…', 'pending');
+    try {
+      const response = await fetch(`${CONFIG.supabaseUrl}/auth/v1/user`, {
+        method: 'PUT',
+        headers: {
+          apikey: CONFIG.supabasePublishableKey,
+          Authorization: `Bearer ${recoveryAccessToken}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ password }),
+        cache: 'no-store',
+      });
+      const user = await parseResponse(response);
+      recoveryAccessToken = null;
+      $('#password-reset-form').reset();
+      closeDialog('password-reset-dialog');
+      switchAuthTab('login');
+      if (user?.email) $('#login-email').value = user.email;
+      toast('Senha atualizada', 'Agora você já pode entrar com a nova senha.');
+      return true;
+    } catch (error) {
+      setStatus(error.status === 401 ? 'Este link expirou. Solicite uma nova redefinição.' : 'Não foi possível atualizar a senha.', 'error');
+      return false;
+    } finally {
+      setBusy(button, false);
+    }
   }
 
   async function handleForgotPassword() {
@@ -3953,6 +4024,7 @@
     $('#login-form').addEventListener('submit', handleLogin);
     $('#signup-form').addEventListener('submit', handleSignup);
     $('#forgot-password').addEventListener('click', handleForgotPassword);
+    $('#password-reset-form')?.addEventListener('submit', handleRecoveryPasswordSubmit);
     $('#company-form').addEventListener('submit', handleCreateCompany);
     $('#access-refresh').addEventListener('click', async () => {
       const button = $('#access-refresh');
