@@ -46,7 +46,8 @@ grant select, insert, update, delete on public.web_push_subscriptions to service
 
 drop policy if exists company_player_branding_admin_insert on public.company_player_branding;
 drop policy if exists company_player_branding_admin_update on public.company_player_branding;
-revoke insert, update, delete, truncate on public.company_player_branding from authenticated;
+drop policy if exists company_player_branding_member_select on public.company_player_branding;
+revoke select, insert, update, delete, truncate on public.company_player_branding from authenticated;
 
 comment on table public.web_push_subscriptions is
   'Backend-managed browser push subscriptions. Clients register through the web-push Edge Function.';
