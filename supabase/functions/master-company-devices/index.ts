@@ -132,6 +132,56 @@ Deno.serve(async req => {
       return J({ ok: true, device: { ...updated, access_state: accessLabel(updated) } })
     }
 
+    if (action === 'restart_player') {
+      if (!['super_admin', 'admin'].includes(pa.role)) return J({ error: 'master_read_only' }, 403)
+      const deviceId = String(body.device_id || '').trim()
+      if (!deviceId) return J({ error: 'device_required' }, 400)
+
+      const { data: device, error: deviceError } = await admin
+        .from('devices')
+        .select('id,company_id,name,retired_at')
+        .eq('id', deviceId)
+        .eq('company_id', companyId)
+        .maybeSingle()
+      if (deviceError) throw deviceError
+      if (!device || device.retired_at) return J({ error: 'device_not_found' }, 404)
+
+      const { data: pending, error: pendingError } = await admin
+        .from('device_commands')
+        .select('id,status,requested_at')
+        .eq('company_id', companyId)
+        .eq('device_id', deviceId)
+        .eq('command_type', 'restart_player')
+        .in('status', ['pending','sent'])
+        .order('requested_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (pendingError) throw pendingError
+      if (pending) return J({ ok:true, duplicate:true, command:pending })
+
+      const { data: command, error: commandError } = await admin
+        .from('device_commands')
+        .insert({
+          company_id: companyId,
+          device_id: deviceId,
+          command_type: 'restart_player',
+          requested_by: u.user.id,
+          status: 'pending',
+        })
+        .select('id,command_type,status,requested_at')
+        .single()
+      if (commandError) throw commandError
+
+      await admin.from('master_audit_logs').insert({
+        actor_user_id: u.user.id,
+        action: 'device_restart_requested',
+        company_id: companyId,
+        details: { device_id: deviceId, device_name: device.name, command_id: command.id, source:'master-company-devices' },
+      }).catch(() => null)
+
+      return J({ ok:true, command })
+    }
+
     if (action !== 'list') return J({ error: 'unknown_action' }, 400)
 
     const [{ data: devices, error: de }, { data: sub, error: se }] = await Promise.all([
