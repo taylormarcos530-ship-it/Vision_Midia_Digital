@@ -347,8 +347,8 @@
     try{
       let capabilities;try{capabilities=await saveCompanyRequest({action:'capabilities'})}catch{throw new Error('O backend do teste temporário ainda não foi publicado. Nenhuma alteração foi feita na conta.')}
       if(capabilities?.capabilities?.timed_trial!==true)throw new Error('O backend do teste temporário ainda não está disponível. Nenhuma alteração foi feita na conta.');
-      $('#me-company-status').value='active';$('#me-sub-status').value='trialing';$('#me-payment-status').value='waived';
-      const result=await saveCompanyRequest(companyFormPayload({company_status:'active',subscription_status:'trialing',payment_status:'waived',trial_minutes:duration}));
+      $('#me-company-status').value='active';$('#me-sub-status').value='trialing';$('#me-payment-status').value='pending';
+      const result=await saveCompanyRequest(companyFormPayload({company_status:'active',subscription_status:'trialing',payment_status:'pending',trial_minutes:duration}));
       if(!result?.ok||result?.subscription?.status!=='trialing'||!result?.subscription?.trial_ends_at)throw new Error('O servidor não confirmou o prazo do teste.');
       await load();const persisted=companyById($('#me-company-id').value);renderTrialAccess(persisted?.subscription);const until=persisted?.subscription?.trial_ends_at||result.subscription.trial_ends_at;
       formStatus('#me-status',`✅ Teste liberado por ${duration} minuto(s), até ${dt(until)}.`,'success');toast('Teste temporário liberado',`O cliente será liberado automaticamente e o acesso termina em ${duration} minuto(s).`);
