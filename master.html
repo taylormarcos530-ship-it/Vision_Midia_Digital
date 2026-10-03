@@ -125,7 +125,7 @@
               <div><small>E-MAIL / SEGURANÇA</small><h3>Recuperação de senha com Resend</h3></div>
               <span id="ps-resend-badge" class="master-only-badge">NÃO CONFIGURADO</span>
             </div>
-            <p class="helper">Use um remetente do seu próprio domínio para enviar redefinições de senha com a identidade da Vision Mídia Digital, sem depender do limite de e-mail padrão do Supabase.</p>
+            <p class="helper">Por enquanto, os links de redefinição voltam para vision-midia-digital.vercel.app. O remetente temporário do Resend pode ser usado em modo de teste; quando entrar o .com.br, basta trocar o remetente aqui.</p>
             <form id="email-provider-form" class="stack">
               <label>Chave API do Resend
                 <input id="ps-resend-key" type="password" autocomplete="new-password" placeholder="Cole a chave re_..." />
@@ -136,11 +136,11 @@
                   <input id="ps-resend-name" maxlength="80" value="Vision Mídia Digital" />
                 </label>
                 <label>E-mail remetente
-                  <input id="ps-resend-sender" type="email" maxlength="254" placeholder="no-reply@seudominio.com.br" />
+                  <input id="ps-resend-sender" type="email" maxlength="254" value="onboarding@resend.dev" />
                 </label>
               </div>
               <label class="switch-line"><input id="ps-resend-enabled" type="checkbox" /> Ativar Resend para redefinições enviadas pelo Master</label>
-              <div id="ps-resend-domain-status" class="form-status pending">Nenhum domínio validado ainda.</div>
+              <div id="ps-resend-domain-status" class="form-status pending">Modo temporário: o endereço do sistema já é vision-midia-digital.vercel.app.</div>
               <div id="ps-resend-status" class="form-status hidden" role="status" aria-live="polite"></div>
               <button id="ps-resend-save" class="button primary" type="submit">Validar e salvar Resend</button>
             </form>
@@ -408,7 +408,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=44" defer></script>
+  <script src="./master.js?v=45" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>
