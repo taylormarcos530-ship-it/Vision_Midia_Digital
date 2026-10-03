@@ -148,14 +148,23 @@ async function resolveProgram(admin, device) {
   if (campaignsError) throw campaignsError
   if (targetsError) throw targetsError
   if (assignmentError) throw assignmentError
-  if (membershipError) throw membershipError
+
+  // Older databases may have the device-group tables created without SELECT
+  // granted to service_role. Grouping is optional; a missing grant must not
+  // prevent a directly assigned playlist from reaching the Player.
+  const membershipUnavailable = membershipError && String(membershipError.code || '') === '42501'
+  if (membershipError && !membershipUnavailable) throw membershipError
+  if (membershipUnavailable) {
+    console.warn('device-gateway group membership unavailable; continuing without group assignment', membershipError.message || membershipError)
+  }
+  const effectiveMembership = membershipUnavailable ? null : membership
 
   let group = null
-  if (membership?.group_id) {
+  if (effectiveMembership?.group_id) {
     const { data, error } = await admin.from('device_groups')
       .select('id,name,playlist_id,updated_at')
       .eq('company_id', device.company_id)
-      .eq('id', membership.group_id)
+      .eq('id', effectiveMembership.group_id)
       .maybeSingle()
     if (error) throw error
     group = data || null
@@ -167,7 +176,7 @@ async function resolveProgram(admin, device) {
   const fallbackPlaylistId = device.fallback_playlist_id || company?.fallback_playlist_id || null
   const assignmentVersion = {
     device: assignment?.updated_at || null,
-    group_member: membership?.created_at || null,
+    group_member: effectiveMembership?.created_at || null,
     group: group?.updated_at || null,
   }
 
