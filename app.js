@@ -120,6 +120,7 @@
     isBusy: false,
     deviceCaptureStates: new Map(),
     autoCaptureRequested: new Set(),
+    deviceScreenshotUrls: new Map(),
     mediaPreviewUrls: new Map(),
     mediaRenderSignature: '',
     playlistRenderSignature: '',
@@ -910,6 +911,25 @@
     return state.deviceScreenshots.find(row => row.device_id === deviceId) || null;
   }
 
+  function deviceScreenshotCacheKey(shot) {
+    if (!shot?.storage_path) return '';
+    return `${shot.id || shot.device_id || 'shot'}:${shot.storage_path}`;
+  }
+
+  function cachedDeviceScreenshotEntry(shot) {
+    const key = deviceScreenshotCacheKey(shot);
+    return key ? state.deviceScreenshotUrls.get(key) || null : null;
+  }
+
+  async function signedDeviceScreenshotUrlCached(shot, { force = false } = {}) {
+    const key = deviceScreenshotCacheKey(shot);
+    if (!key) throw new Error('Captura sem arquivo.');
+    const cached = state.deviceScreenshotUrls.get(key);
+    if (!force && cached?.url && cached.expiresAt > Date.now() + 60_000) return cached.url;
+    const url = await getSignedMediaUrl(shot.storage_path);
+    state.deviceScreenshotUrls.set(key, { url, expiresAt: Date.now() + 12 * 60_000 });
+    return url;
+  }
 
   function deviceGroupMembership(deviceId) {
     return state.deviceGroupMembers.find(row => row.device_id === deviceId) || null;
@@ -1147,9 +1167,13 @@
       };
     }
     if (shot?.storage_path) {
+      const cached = cachedDeviceScreenshotEntry(shot);
+      const orientationClass = Number(shot.height || 0) > Number(shot.width || 0) ? 'capture-portrait' : 'capture-landscape';
       return {
-        className: 'has-screenshot',
-        body: '<div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Carregando captura…</strong></div>',
+        className: `has-screenshot ${orientationClass}`,
+        body: cached?.url
+          ? `<img src="${escapeHtml(cached.url)}" alt="Captura da TV" decoding="async" data-screenshot-cache-key="${escapeHtml(deviceScreenshotCacheKey(shot))}">`
+          : '<div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Carregando captura…</strong></div>',
         caption: `Última captura: ${escapeHtml(formatLastSeen(shot.captured_at))}`,
       };
     }
@@ -1288,20 +1312,28 @@
           </div>
         </details>
 
-        <label class="device-assignment">Grupo
-          <select data-device-group="${device.id}" ${state.deviceGroups.length && ['owner','admin','operator'].includes(state.companyRole) ? '' : 'disabled'}>
-            <option value="">${state.deviceGroups.length ? 'Sem grupo' : 'Crie um grupo primeiro'}</option>
-            ${groupOptions}
-          </select>
-          <small>${group?.playlist_id && assignment?.playlist_id ? 'A playlist padrão desta TV tem prioridade sobre a playlist do grupo.' : 'Use grupos para aplicar programação padrão a várias TVs.'}</small>
-        </label>
+        <details class="device-programming-panel">
+          <summary>
+            <span>Programação da TV</span>
+            <small>${escapeHtml(group?.name || 'Sem grupo')} • ${escapeHtml(playbackHealth.playlistName || 'Sem playlist')}</small>
+          </summary>
+          <div class="device-programming-fields">
+            <label class="device-assignment">Grupo
+              <select data-device-group="${device.id}" ${state.deviceGroups.length && ['owner','admin','operator'].includes(state.companyRole) ? '' : 'disabled'}>
+                <option value="">${state.deviceGroups.length ? 'Sem grupo' : 'Crie um grupo primeiro'}</option>
+                ${groupOptions}
+              </select>
+              <small>${group?.playlist_id && assignment?.playlist_id ? 'A playlist padrão desta TV tem prioridade sobre a playlist do grupo.' : 'Use grupos para aplicar programação padrão a várias TVs.'}</small>
+            </label>
 
-        <label class="device-assignment">Playlist padrão
-          <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
-            <option value="">${state.playlists.length ? 'Nenhuma playlist' : 'Crie uma playlist primeiro'}</option>
-            ${options}
-          </select>
-        </label>
+            <label class="device-assignment">Playlist padrão
+              <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
+                <option value="">${state.playlists.length ? 'Nenhuma playlist' : 'Crie uma playlist primeiro'}</option>
+                ${options}
+              </select>
+            </label>
+          </div>
+        </details>
       </article>`;
     }).join('');
 
@@ -1326,22 +1358,51 @@
 
   async function hydrateDeviceScreenshots() {
     for (const shot of state.deviceScreenshots) {
-      const target = $(`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`);
-      if (!target || target.dataset.loaded === '1' || !shot.storage_path) continue;
+      const target = $`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`;
+      if (!target || !shot.storage_path) continue;
+
+      const key = deviceScreenshotCacheKey(shot);
+      const cached = cachedDeviceScreenshotEntry(shot);
+      const currentImg = target.querySelector('img');
+
+      if (cached?.url && !currentImg) {
+        const cachedImg = new Image();
+        cachedImg.alt = 'Captura da TV';
+        cachedImg.decoding = 'async';
+        cachedImg.dataset.screenshotCacheKey = key;
+        cachedImg.src = cached.url;
+        target.replaceChildren(cachedImg);
+        target.classList.add('has-screenshot');
+        target.classList.remove('capture-empty', 'capture-error', 'capture-pending');
+      }
+
+      if (cached?.url && cached.expiresAt > Date.now() + 60_000) {
+        target.dataset.loaded = '1';
+        continue;
+      }
+
       try {
-        const url = await getSignedMediaUrl(shot.storage_path);
+        const url = await signedDeviceScreenshotUrlCached(shot, { force: Boolean(cached?.url) });
         const img = new Image();
         img.alt = 'Captura da TV';
+        img.decoding = 'async';
+        img.dataset.screenshotCacheKey = key;
         await new Promise((resolve, reject) => {
           img.onload = resolve;
           img.onerror = () => reject(new Error('Não foi possível carregar a miniatura.'));
           img.src = url;
         });
+
+        if (target.dataset.screenshotPath !== shot.storage_path) continue;
         target.replaceChildren(img);
         target.classList.add('has-screenshot');
         target.classList.remove('capture-empty', 'capture-error', 'capture-pending');
         target.dataset.loaded = '1';
       } catch {
+        if (target.querySelector('img')) {
+          target.dataset.loaded = '1';
+          continue;
+        }
         target.classList.remove('has-screenshot', 'capture-pending');
         target.classList.add('capture-error');
         target.innerHTML = '<div class="device-capture-state"><span class="device-preview-symbol">!</span><strong>Miniatura indisponível</strong><small>A captura existe, mas não pôde ser carregada agora.</small></div>';
@@ -1362,17 +1423,23 @@
       $('#view-tv-captured-at').textContent = 'Sem captura disponível';
       return;
     }
-    preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
+    const cached = cachedDeviceScreenshotEntry(shot);
+    if (!cached?.url) preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
     $('#view-tv-captured-at').textContent = `Capturada em ${formatMonitorDateTime(shot.captured_at)}`;
     try {
-      const url = await getSignedMediaUrl(shot.storage_path);
+      const url = await signedDeviceScreenshotUrlCached(shot);
       if (state.viewingDeviceId !== deviceId) return;
       const img = new Image();
       img.alt = `Captura da TV ${device.name}`;
-      img.src = url;
+      await new Promise((resolve, reject) => {
+        img.onload = resolve;
+        img.onerror = () => reject(new Error('Falha ao abrir captura.'));
+        img.src = url;
+      });
+      if (state.viewingDeviceId !== deviceId) return;
       preview.replaceChildren(img);
     } catch {
-      preview.innerHTML = '<div class="tv-viewer-empty">Não foi possível abrir a captura.</div>';
+      if (!preview.querySelector('img')) preview.innerHTML = '<div class="tv-viewer-empty">Não foi possível abrir a captura.</div>';
     }
   }
 
