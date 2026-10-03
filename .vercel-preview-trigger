@@ -1,0 +1,3 @@
+Vision Mídia Digital preview trigger
+Branch: fix/preserve-current-view-refresh
+Purpose: trigger isolated Vercel preview deployment.
