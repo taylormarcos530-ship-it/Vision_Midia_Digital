@@ -8,6 +8,9 @@ on:
       - 'player.html'
       - 'player.css'
       - 'player.js'
+      - 'app.js'
+      - 'index.html'
+      - 'widget.html'
       - 'config.js'
       - 'icon.svg'
       - 'player.webmanifest'
@@ -55,8 +58,10 @@ jobs:
           mkdir -p android-player/app/src/main/assets
           cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
 
-      - name: Validate web player JavaScript
-        run: node --check player.js
+      - name: Validate web JavaScript
+        run: |
+          node --check player.js
+          node --check app.js
 
       - name: Build debug APK
         run: gradle -p android-player --no-daemon assembleDebug
