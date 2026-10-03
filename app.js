@@ -1340,27 +1340,161 @@
     });
   }
 
+  function playlistCardDuration(items, mediaById) {
+    return items.reduce((sum, item) => {
+      if (item.enabled === false) return sum;
+      const media = mediaById[item.media_id];
+      const raw = item.duration_override_seconds || media?.duration_seconds || (media?.media_type === 'image' ? 10 : 0);
+      const seconds = Number(raw || 0);
+      return sum + (Number.isFinite(seconds) && seconds > 0 ? seconds : 0);
+    }, 0);
+  }
+
+  function playlistCardState(items) {
+    if (!items.length) return { key:'empty', label:'Vazia' };
+    const enabled = items.filter(item => item.enabled !== false);
+    if (!enabled.length) return { key:'paused', label:'Pausada' };
+    return { key:'active', label:'Ativa' };
+  }
+
+  function playlistCardSchedule(items) {
+    if (!items.length) return { scheduled:false, label:'Sem programação', detail:'Adicione mídias para começar.' };
+    const enabled = items.filter(item => item.enabled !== false);
+    const scheduled = enabled.filter(item => item.schedule_enabled);
+    if (!scheduled.length) return { scheduled:false, label:'Sempre disponível', detail:'Sem restrição de horário.' };
+    if (scheduled.length === 1) return { scheduled:true, label:'1 mídia programada', detail:playlistItemScheduleLabel(scheduled[0]) };
+    return { scheduled:true, label:`${scheduled.length} mídias programadas`, detail:'Cada mídia segue sua própria agenda.' };
+  }
+
+  async function hydratePlaylistCardPreviews(mediaIds) {
+    const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
+    for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
+      const media = mediaById[mediaId];
+      if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
+      try {
+        const url = await getSignedMediaUrl(media.storage_path);
+        if (!url) continue;
+        const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
+        targets.forEach(target => {
+          if (target.dataset.loaded === '1') return;
+          target.dataset.loaded = '1';
+          if (media.media_type === 'image') {
+            const img = new Image();
+            img.loading = 'lazy';
+            img.alt = media.name || 'Mídia da playlist';
+            img.src = url;
+            target.replaceChildren(img);
+          } else {
+            const video = document.createElement('video');
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = 'metadata';
+            video.setAttribute('aria-label', media.name || 'Vídeo da playlist');
+            video.src = url;
+            target.replaceChildren(video);
+          }
+        });
+      } catch { /* mantém placeholder */ }
+    }
+  }
+
   function renderPlaylists() {
     const grid = $('#playlists-grid');
     const empty = $('#playlists-empty');
+    const tools = $('#playlist-tools');
+    const workflow = $('#playlist-workflow');
     const has = state.playlists.length > 0;
+
     empty.classList.toggle('hidden', has);
     grid.classList.toggle('hidden', !has);
+    tools?.classList.toggle('hidden', !has);
+    workflow?.classList.toggle('hidden', has);
+
     if (!has) { grid.innerHTML = ''; return; }
 
-    grid.innerHTML = state.playlists.map(playlist => {
-      const itemCount = state.playlistItems.filter(i => i.playlist_id === playlist.id).length;
+    const query = ($('#playlist-search')?.value || '').trim().toLowerCase();
+    const statusFilter = $('#playlist-status-filter')?.value || 'all';
+    const sortMode = $('#playlist-sort')?.value || 'updated_desc';
+    const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
+
+    let rows = state.playlists.map(playlist => {
+      const items = state.playlistItems
+        .filter(item => item.playlist_id === playlist.id)
+        .sort((a,b) => Number(a.position || 0) - Number(b.position || 0));
+      const stateInfo = playlistCardState(items);
+      const schedule = playlistCardSchedule(items);
+      const duration = playlistCardDuration(items, mediaById);
+      const deviceIds = new Set(state.deviceAssignments.filter(row => row.playlist_id === playlist.id).map(row => row.device_id).filter(Boolean));
+      const previewMedia = items.map(item => mediaById[item.media_id]).filter(Boolean).slice(0,3);
+      return {
+        playlist, items, stateInfo, schedule, duration,
+        tvCount: deviceIds.size,
+        previewMedia,
+        updatedAt: new Date(playlist.updated_at || playlist.created_at || 0).getTime() || 0,
+      };
+    });
+
+    rows = rows.filter(row => {
+      const searchable = `${row.playlist.name || ''} ${row.playlist.description || ''}`.toLowerCase();
+      if (query && !searchable.includes(query)) return false;
+      if (statusFilter === 'active' && row.stateInfo.key !== 'active') return false;
+      if (statusFilter === 'scheduled' && !row.schedule.scheduled) return false;
+      if (statusFilter === 'unscheduled' && (row.items.length === 0 || row.schedule.scheduled)) return false;
+      if (statusFilter === 'empty' && row.items.length !== 0) return false;
+      return true;
+    });
+
+    rows.sort((a,b) => sortMode === 'name_asc'
+      ? String(a.playlist.name || '').localeCompare(String(b.playlist.name || ''), 'pt-BR')
+      : b.updatedAt - a.updatedAt);
+
+    if (!rows.length) {
+      grid.innerHTML = '<div class="playlist-filter-empty"><strong>Nenhuma playlist encontrada</strong><span>Ajuste a busca ou o filtro para ver outras playlists.</span></div>';
+      return;
+    }
+
+    const previewIds = [];
+    grid.innerHTML = rows.map(({ playlist, items, stateInfo, schedule, duration, tvCount, previewMedia }) => {
+      previewIds.push(...previewMedia.map(media => media.id));
+      const preview = previewMedia.length
+        ? `<div class="playlist-preview-grid preview-count-${previewMedia.length}">${previewMedia.map(media => `<div class="playlist-preview-cell" data-playlist-card-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span><small>${escapeHtml(media.name || '')}</small></div>`).join('')}</div>`
+        : '<div class="playlist-preview-empty"><span>▶</span><strong>Playlist sem mídia</strong><small>Abra a playlist para adicionar conteúdo.</small></div>';
       return `
-        <article class="playlist-card">
-          <div class="playlist-card-head">
-            <div class="playlist-card-title"><strong>${escapeHtml(playlist.name)}</strong><span>${escapeHtml(playlist.description || 'Sem descrição')}</span></div>
-            <div class="card-menu"><button class="small-icon-button" data-delete-playlist="${playlist.id}" title="Excluir">×</button></div>
+        <article class="playlist-card playlist-card-pro">
+          <div class="playlist-pro-head">
+            <div class="playlist-card-title">
+              <div class="playlist-title-line"><strong title="${escapeHtml(playlist.name)}">${escapeHtml(playlist.name)}</strong><span class="playlist-state-chip ${stateInfo.key}">${stateInfo.label}</span></div>
+              <span>${escapeHtml(playlist.description || 'Sem descrição')}</span>
+            </div>
+            <details class="playlist-more-menu">
+              <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋯</summary>
+              <div class="playlist-more-popover">
+                <button type="button" class="playlist-menu-action danger-inline" data-delete-playlist="${playlist.id}">Excluir playlist</button>
+              </div>
+            </details>
           </div>
-          <div class="playlist-visual">▶</div>
-          <div class="playlist-footer"><small>${itemCount} mídia(s)</small><button class="small-icon-button" data-edit-playlist-items="${playlist.id}">Editar conteúdo</button></div>
+
+          ${preview}
+
+          <div class="playlist-insight-grid">
+            <div><span>Mídias</span><strong>${items.length}</strong></div>
+            <div><span>Duração</span><strong>${duration ? escapeHtml(formatDuration(duration)) : '—'}</strong></div>
+            <div><span>TVs</span><strong>${tvCount}</strong></div>
+          </div>
+
+          <div class="playlist-schedule-summary ${schedule.scheduled ? 'scheduled' : ''}">
+            <span class="playlist-schedule-icon">◷</span>
+            <div><strong>${escapeHtml(schedule.label)}</strong><small>${escapeHtml(schedule.detail)}</small></div>
+          </div>
+
+          <div class="playlist-card-actions">
+            <button class="button primary" type="button" data-edit-playlist-items="${playlist.id}">Editar playlist</button>
+          </div>
         </article>
       `;
     }).join('');
+
+    hydratePlaylistCardPreviews(previewIds);
   }
 
   function playlistItemScheduleLabel(item) {
@@ -2956,6 +3090,10 @@
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
+    $('[data-open-playlist-create]')?.addEventListener('click', () => openDialog('playlist-dialog'));
+    $('#playlist-search')?.addEventListener('input', renderPlaylists);
+    $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
+    $('#playlist-sort')?.addEventListener('change', renderPlaylists);
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form').addEventListener('submit', savePlayerBranding);
     $('#branding-copy-url').addEventListener('click', async () => { const value=$('#branding-player-url').value; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url').select();document.execCommand('copy');toast('Link copiado')} });
