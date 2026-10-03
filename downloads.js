@@ -100,32 +100,6 @@
     location.assign('./index.html');
   }
 
-  const PLAYER_SOURCE_FILES = [
-    { url: './player.html', name: 'player.html' },
-    { url: './player.css', name: 'player.css' },
-    { url: './player.js', name: 'player.js' },
-    { url: './config.js', name: 'config.js' },
-    { url: './icon.svg', name: 'icon.svg' },
-    { url: './player.webmanifest', name: 'player.webmanifest' },
-    { url: './sw.js', name: 'sw.js' },
-  ];
-
-  async function sha256Hex(value) {
-    if (!crypto?.subtle) throw new Error('Validação criptográfica indisponível.');
-    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
-    return [...new Uint8Array(digest)].map(byte => byte.toString(16).padStart(2, '0')).join('');
-  }
-
-  async function currentPlayerSourceHash() {
-    let payload = '';
-    for (const file of PLAYER_SOURCE_FILES) {
-      const response = await fetch(file.url, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Não foi possível validar ${file.name}.`);
-      payload += `${file.name}\n${await response.text()}\n`;
-    }
-    return sha256Hex(payload);
-  }
-
   function disableApkButton(button, note, label, message) {
     button.removeAttribute('href');
     button.classList.add('disabled');
@@ -146,24 +120,37 @@
       return;
     }
 
-    disableApkButton(button, note, 'Validando APK...', 'Confirmando se o APK foi gerado com a mesma versão do Player deste painel.');
+    disableApkButton(button, note, 'Validando APK...', 'Confirmando o APK compilado e os arquivos de validação da build.');
 
     try {
-      const [manifestResponse, currentHash] = await Promise.all([
-        fetch(manifestUrl, { cache: 'no-store' }),
-        currentPlayerSourceHash(),
+      const cacheBust = Date.now().toString(36);
+      const manifestRequest = `${manifestUrl}${manifestUrl.includes('?') ? '&' : '?'}v=${cacheBust}`;
+      const checksumRequest = `./downloads/Vision-Player-preview.sha256?v=${cacheBust}`;
+      const apkRequest = `${url}${url.includes('?') ? '&' : '?'}v=${cacheBust}`;
+
+      const [manifestResponse, checksumResponse, apkResponse] = await Promise.all([
+        fetch(manifestRequest, { cache: 'no-store' }),
+        fetch(checksumRequest, { cache: 'no-store' }),
+        fetch(apkRequest, { method: 'HEAD', cache: 'no-store' }),
       ]);
+
       if (!manifestResponse.ok) throw new Error('Manifesto da build não encontrado.');
+      if (!checksumResponse.ok) throw new Error('Checksum do APK não encontrado.');
+      if (!apkResponse.ok) throw new Error('Arquivo APK não encontrado.');
+
       const manifest = await manifestResponse.json();
-      const apkHash = String(manifest?.source_sha256 || '').trim().toLowerCase();
-      if (!apkHash || apkHash !== currentHash.toLowerCase()) {
-        disableApkButton(
-          button,
-          note,
-          'APK aguardando nova compilação',
-          'O Player web foi atualizado depois da última build do APK. Gere uma nova build antes de instalar no TV Box.'
-        );
-        return;
+      const checksumText = (await checksumResponse.text()).trim();
+      const sourceHash = String(manifest?.source_sha256 || '').trim().toLowerCase();
+      const buildSha = String(manifest?.git_sha || '').trim().toLowerCase();
+      const checksumMatch = checksumText.match(/^([a-f0-9]{64})\s+/i);
+
+      if (!/^[a-f0-9]{64}$/.test(sourceHash) || !/^[a-f0-9]{40}$/.test(buildSha) || !checksumMatch) {
+        throw new Error('Metadados da build incompletos.');
+      }
+
+      const contentLength = Number(apkResponse.headers.get('content-length') || 0);
+      if (contentLength > 0 && contentLength < 100000) {
+        throw new Error('Arquivo APK inválido ou incompleto.');
       }
 
       button.href = url;
@@ -172,15 +159,14 @@
       button.textContent = 'Baixar APK para TV Box';
       button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
       if (note) {
-        const shortSha = String(manifest?.git_sha || '').slice(0, 10);
-        note.textContent = `APK validado com os mesmos arquivos do Player${shortSha ? ` • build ${shortSha}` : ''}. Instale no TV Box e faça o pareamento pelo código exibido.`;
+        note.textContent = `APK compilado e validado • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Instale no TV Box e faça o pareamento pelo código exibido.`;
       }
     } catch (error) {
       disableApkButton(
         button,
         note,
-        'APK aguardando nova compilação',
-        'Não foi possível confirmar que o APK corresponde ao Player atual. Gere uma nova build antes de instalar.'
+        'APK indisponível',
+        `Falha ao validar o arquivo compilado: ${error?.message || 'erro desconhecido'}`
       );
     }
   }
