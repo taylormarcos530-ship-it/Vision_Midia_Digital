@@ -44,7 +44,9 @@ public class MainActivity extends Activity {
     private static final String KEY_SETUP_CODE = "company_setup_code";
     public static final String KEY_AUTOSTART = "autostart_enabled";
     private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
+    private static final String KEY_REMOTE_COMPAT = "remote_network_compat";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
+    private static final String REMOTE_PLAYER_FALLBACK = "https://vision-midia-digital-rkoqfnct1-vision-5529.vercel.app/player.html";
 
     private WebView webView;
     private SharedPreferences prefs;
@@ -128,8 +130,20 @@ public class MainActivity extends Activity {
             showSetupDialog(false);
             return;
         }
-        String url = LOCAL_PLAYER + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
+        String base = prefs.getBoolean(KEY_REMOTE_COMPAT, false) ? REMOTE_PLAYER_FALLBACK : LOCAL_PLAYER;
+        String url = base + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
         webView.loadUrl(url);
+    }
+
+    private void loadRemoteCompatibilityPlayer() {
+        String setupCode = prefs.getString(KEY_SETUP_CODE, "");
+        if (!isValidSetupCode(setupCode)) {
+            showSetupDialog(false);
+            return;
+        }
+        prefs.edit().putBoolean(KEY_REMOTE_COMPAT, true).apply();
+        final String url = REMOTE_PLAYER_FALLBACK + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
+        runOnUiThread(() -> webView.loadUrl(url));
     }
 
     private boolean applySetupFromIntent(Intent intent) {
@@ -258,6 +272,11 @@ public class MainActivity extends Activity {
             } finally {
                 if (connection != null) connection.disconnect();
             }
+        }
+
+        @JavascriptInterface
+        public void useRemotePlayer() {
+            loadRemoteCompatibilityPlayer();
         }
 
         @JavascriptInterface
