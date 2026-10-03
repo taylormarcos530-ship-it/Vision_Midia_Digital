@@ -1,0 +1,13 @@
+{
+  "source_sha256": "f8a8b960c8204178a66b73688e437d4f795834d1d21017f2eca81736cef6ff7f",
+  "git_sha": "8de393abdb1612e6c5c949138d583fd9236ad61a",
+  "files": [
+    "player.html",
+    "player.css",
+    "player.js",
+    "config.js",
+    "icon.svg",
+    "player.webmanifest",
+    "sw.js"
+  ]
+}
