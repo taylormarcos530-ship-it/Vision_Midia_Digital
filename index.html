@@ -302,6 +302,20 @@
             <span>🔒 Identidade do Player gerenciada pelo Master</span>
             <span>O título, a mensagem e a capa são aplicados automaticamente ao Vision Player desta empresa.</span>
           </div>
+
+          <article class="panel device-groups-panel">
+            <div class="panel-header">
+              <div><span class="eyebrow">PROGRAMAÇÃO EM ESCALA</span><h3>Grupos de TVs e emergência</h3><small>A playlist específica da TV tem prioridade sobre o grupo. O fallback só entra quando a programação principal não pode ser reproduzida.</small></div>
+              <button id="add-device-group" class="button ghost" type="button">+ Novo grupo</button>
+            </div>
+            <label class="company-fallback-control">Playlist de emergência da empresa
+              <select id="company-fallback-playlist"><option value="">Sem fallback da empresa</option></select>
+              <small>Pode ser substituída por um fallback específico na configuração de cada TV.</small>
+            </label>
+            <div id="device-groups-grid" class="device-groups-grid"></div>
+            <div id="device-groups-empty" class="mini-empty">Nenhum grupo criado. Exemplos: Recepção, Caixas, Totens, Filial 02.</div>
+          </article>
+
           <div id="devices-grid" class="cards-grid"></div>
           <div id="devices-empty" class="empty-panel hidden">
             <div class="empty-icon">▣</div>
@@ -651,6 +665,10 @@
           </select>
         </label>
       </div>
+      <label>Playlist de emergência desta TV
+        <select id="device-fallback-playlist"><option value="">Usar fallback da empresa</option></select>
+        <small>Opcional. Se definida, tem prioridade sobre o fallback geral da empresa e nunca aponta de volta para a playlist principal.</small>
+      </label>
       <div class="device-settings-box">
         <strong>Comportamento do Vision Player</strong>
         <label class="switch-line"><input id="device-audio-enabled" type="checkbox" checked /> Áudio da TV ativado</label>
@@ -660,6 +678,23 @@
       <div class="dialog-actions">
         <button class="button ghost" data-close-dialog="device-dialog" type="button">Cancelar</button>
         <button id="device-save" class="button primary" type="submit">Salvar TV</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="device-group-dialog" class="app-dialog">
+    <form id="device-group-form" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">GRUPO DE TVs</span><h3 id="device-group-dialog-title">Novo grupo de TVs</h3></div>
+        <button class="icon-button" data-close-dialog="device-group-dialog" type="button">×</button>
+      </div>
+      <input id="device-group-id" type="hidden" />
+      <label>Nome do grupo<input id="device-group-name" type="text" maxlength="120" required placeholder="Ex.: Recepção, Caixas, Filial 02" /></label>
+      <label>Playlist padrão do grupo<select id="device-group-playlist"><option value="">Sem playlist</option></select></label>
+      <p class="form-hint">Depois de criar o grupo, escolha o grupo diretamente no card de cada TV. Uma playlist específica configurada na TV continua tendo prioridade.</p>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="device-group-dialog" type="button">Cancelar</button>
+        <button id="device-group-save" class="button primary" type="submit">Salvar grupo</button>
       </div>
     </form>
   </dialog>

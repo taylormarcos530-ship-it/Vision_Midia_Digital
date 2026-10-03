@@ -18,6 +18,8 @@
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.0';
+  const EXPECTED_APK_VERSION = '1.4.0-preview';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -97,6 +99,8 @@
     playlists: [],
     playlistItems: [],
     deviceAssignments: [],
+    deviceGroups: [],
+    deviceGroupMembers: [],
     campaigns: [],
     campaignDevices: [],
     deviceEvents: [],
@@ -564,7 +568,7 @@
       }
       const companyId = encodeURIComponent(state.company.id);
       const [companies, subscriptions] = await Promise.all([
-        restRequest('companies', { query: `select=id,name,status,timezone,owner_user_id,settings&id=eq.${companyId}&limit=1` }),
+        restRequest('companies', { query: `select=id,name,status,timezone,owner_user_id,settings,fallback_playlist_id&id=eq.${companyId}&limit=1` }),
         restRequest('company_subscriptions', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
       ]);
       if (companies?.[0]) state.company = { ...state.company, ...companies[0] };
@@ -650,7 +654,7 @@
 
   async function enterAuthenticatedApp() {
     state.companies = await restRequest('companies', {
-      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings&order=created_at.asc',
+      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings,fallback_playlist_id&order=created_at.asc',
     }) || [];
 
     if (!state.companies.length) {
@@ -693,16 +697,18 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlist_items', { query: `select=*&company_id=eq.${companyId}&order=position.asc` }),
         restRequest('device_playlist_assignments', { query: `select=*&company_id=eq.${companyId}` }),
+        restRequest('device_groups', { query: `select=*&company_id=eq.${companyId}&order=name.asc` }),
+        restRequest('device_group_members', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('campaigns', { query: `select=*&company_id=eq.${companyId}&order=priority.desc,created_at.desc` }),
         restRequest('campaign_devices', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('device_events', { query: `select=id,client_event_id,device_id,severity,event_code,message,details,occurred_at&company_id=eq.${companyId}&order=occurred_at.desc&limit=100` }),
-        restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
+        restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,delivered_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
       ]);
@@ -711,6 +717,8 @@
       state.playlists = playlists || [];
       state.playlistItems = playlistItems || [];
       state.deviceAssignments = deviceAssignments || [];
+      state.deviceGroups = deviceGroups || [];
+      state.deviceGroupMembers = deviceGroupMembers || [];
       state.campaigns = campaigns || [];
       state.campaignDevices = campaignDevices || [];
       state.deviceEvents = deviceEvents || [];
@@ -900,6 +908,162 @@
   }
 
 
+  function deviceGroupMembership(deviceId) {
+    return state.deviceGroupMembers.find(row => row.device_id === deviceId) || null;
+  }
+
+  function deviceGroupFor(deviceId) {
+    const membership = deviceGroupMembership(deviceId);
+    return membership ? state.deviceGroups.find(row => row.id === membership.group_id) || null : null;
+  }
+
+  function latestDeviceCommand(deviceId) {
+    return state.deviceCommands.find(row => row.device_id === deviceId) || null;
+  }
+
+  function remoteCommandLabel(type) {
+    return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
+  }
+
+  function remoteCommandStatusLabel(status) {
+    return ({ pending:'Pendente', sent:'Recebido', completed:'Concluído', failed:'Falhou' })[status] || status || '—';
+  }
+
+  function reportedOrientationLabel(value) {
+    const raw = String(value || '').toLowerCase();
+    if (!raw) return '—';
+    if (raw.includes('portrait')) return 'Vertical';
+    if (raw.includes('landscape')) return 'Horizontal';
+    return raw;
+  }
+
+  function semverTuple(value) {
+    const match = String(value || '').match(/(\d+)\.(\d+)\.(\d+)/);
+    return match ? match.slice(1).map(Number) : null;
+  }
+
+  function versionIsOlder(actual, expected) {
+    const a = semverTuple(actual), e = semverTuple(expected);
+    if (!a || !e) return false;
+    for (let i = 0; i < 3; i++) {
+      if (a[i] < e[i]) return true;
+      if (a[i] > e[i]) return false;
+    }
+    return false;
+  }
+
+  function recentDeviceEventCount(deviceId, matcher, withinMs = 30 * 60 * 1000) {
+    const cutoff = Date.now() - withinMs;
+    return state.deviceEvents.filter(event => {
+      if (event.device_id !== deviceId || new Date(event.occurred_at).getTime() < cutoff) return false;
+      return typeof matcher === 'function' ? matcher(event) : event.event_code === matcher;
+    }).length;
+  }
+
+  function deviceDiagnostics(device) {
+    const alerts = [];
+    const status = effectiveDeviceStatus(device);
+    if (status === 'offline') alerts.push({ level:'error', label:'TV offline' });
+    if (deviceSyncIsStale(device)) alerts.push({ level:'warning', label:'Sincronização atrasada' });
+    if (device.storage_free_mb != null && Number(device.storage_free_mb) < 256) alerts.push({ level:Number(device.storage_free_mb) < 100 ? 'error' : 'warning', label:'Pouco armazenamento' });
+    const playerVersion = device.player_version || device.app_version || '';
+    if (playerVersion && versionIsOlder(playerVersion, EXPECTED_PLAYER_VERSION)) alerts.push({ level:'warning', label:'Player desatualizado' });
+    if (device.apk_version && versionIsOlder(device.apk_version, EXPECTED_APK_VERSION)) alerts.push({ level:'warning', label:'APK desatualizado' });
+    if (recentDeviceEventCount(device.id, 'playback_error') >= 3) alerts.push({ level:'error', label:'Erro repetido de mídia' });
+    if (recentDeviceEventCount(device.id, 'watchdog_restart') >= 2) alerts.push({ level:'error', label:'Watchdog reiniciando' });
+    if (recentDeviceEventCount(device.id, event => /cache/i.test(event.event_code || '') && ['error','critical'].includes(event.severity)) >= 2) alerts.push({ level:'warning', label:'Falha repetida de cache' });
+    return alerts;
+  }
+
+  function renderDeviceGroups() {
+    const grid = $('#device-groups-grid');
+    const empty = $('#device-groups-empty');
+    const fallback = $('#company-fallback-playlist');
+    if (!grid || !empty || !fallback) return;
+    const canManage = ['owner','admin','operator'].includes(state.companyRole);
+    fallback.innerHTML = '<option value="">Sem fallback da empresa</option>' + state.playlists.map(playlist =>
+      `<option value="${playlist.id}" ${state.company?.fallback_playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
+    ).join('');
+    fallback.disabled = !['owner','admin'].includes(state.companyRole);
+    empty.classList.toggle('hidden', state.deviceGroups.length > 0);
+    grid.classList.toggle('hidden', state.deviceGroups.length === 0);
+    grid.innerHTML = state.deviceGroups.map(group => {
+      const members = state.deviceGroupMembers.filter(row => row.group_id === group.id);
+      const playlist = state.playlists.find(row => row.id === group.playlist_id);
+      const names = members.map(member => state.devices.find(device => device.id === member.device_id)?.name).filter(Boolean);
+      return `<article class="device-group-card">
+        <div><strong>${escapeHtml(group.name)}</strong><small>${escapeHtml(playlist?.name || 'Sem playlist de grupo')} • ${members.length} TV(s)</small></div>
+        <p>${names.length ? escapeHtml(names.join(' • ')) : 'Nenhuma TV neste grupo.'}</p>
+        ${canManage ? `<div class="device-group-actions"><button class="small-icon-button" type="button" data-edit-device-group="${group.id}">Editar</button><button class="small-icon-button danger-inline" type="button" data-delete-device-group="${group.id}">Excluir</button></div>` : ''}
+      </article>`;
+    }).join('');
+  }
+
+  async function saveCompanyFallback(playlistId) {
+    if (!['owner','admin'].includes(state.companyRole)) return toast('Sem permissão', 'Somente proprietário ou administrador pode alterar o fallback da empresa.', 'error');
+    try {
+      await restRequest('companies', { method:'PATCH', query:`id=eq.${encodeURIComponent(state.company.id)}`, body:{ fallback_playlist_id: playlistId || null }, prefer:'return=minimal' });
+      state.company.fallback_playlist_id = playlistId || null;
+      state.companies = state.companies.map(company => company.id === state.company.id ? { ...company, fallback_playlist_id:playlistId || null } : company);
+      toast('Fallback atualizado', playlistId ? 'Playlist de emergência da empresa definida.' : 'Fallback da empresa removido.');
+      renderDeviceGroups();
+    } catch (error) { toast('Erro ao salvar fallback', error.message, 'error'); renderDeviceGroups(); }
+  }
+
+  function openDeviceGroupDialog(groupId = null) {
+    const group = groupId ? state.deviceGroups.find(row => row.id === groupId) : null;
+    $('#device-group-id').value = group?.id || '';
+    $('#device-group-name').value = group?.name || '';
+    $('#device-group-playlist').innerHTML = '<option value="">Sem playlist</option>' + state.playlists.map(playlist =>
+      `<option value="${playlist.id}" ${group?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
+    ).join('');
+    $('#device-group-dialog-title').textContent = group ? 'Editar grupo de TVs' : 'Novo grupo de TVs';
+    openDialog('device-group-dialog');
+  }
+
+  async function saveDeviceGroup(event) {
+    event.preventDefault();
+    const button = $('#device-group-save'), id = $('#device-group-id').value, name = $('#device-group-name').value.trim();
+    if (!name) return;
+    setBusy(button, true, 'Salvando...');
+    try {
+      const body = { company_id:state.company.id, name, playlist_id:$('#device-group-playlist').value || null, updated_at:new Date().toISOString() };
+      if (id) await restRequest('device_groups', { method:'PATCH', query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body, prefer:'return=minimal' });
+      else await restRequest('device_groups', { method:'POST', body:{ ...body, created_by:state.user.id }, prefer:'return=minimal' });
+      closeDialog('device-group-dialog'); toast('Grupo salvo', id ? 'Grupo atualizado.' : 'Grupo criado.'); await loadAllData();
+    } catch (error) { toast('Erro ao salvar grupo', error.message, 'error'); }
+    finally { setBusy(button, false); }
+  }
+
+  async function deleteDeviceGroup(groupId) {
+    const group = state.deviceGroups.find(row => row.id === groupId);
+    if (!group || !confirm(`Excluir o grupo “${group.name}”? As TVs permanecerão cadastradas.`)) return;
+    try { await restRequest('device_groups', { method:'DELETE', query:`id=eq.${encodeURIComponent(groupId)}&company_id=eq.${encodeURIComponent(state.company.id)}` }); toast('Grupo excluído'); await loadAllData(); }
+    catch (error) { toast('Erro ao excluir grupo', error.message, 'error'); }
+  }
+
+  async function setDeviceGroup(deviceId, groupId) {
+    try {
+      await restRequest('rpc/set_device_group', { method:'POST', body:{ p_company_id:state.company.id, p_device_id:deviceId, p_group_id:groupId || null } });
+      toast('Grupo atualizado'); await loadAllData();
+    } catch (error) { toast('Erro ao alterar grupo', error.message, 'error'); await loadAllData().catch(() => {}); }
+  }
+
+  async function requestDeviceMaintenanceCommand(deviceId, commandType, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device || !['sync_now','clear_cache','reload_programming'].includes(commandType) || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (commandType === 'clear_cache' && !confirm(`Limpar o cache local da TV “${device.name}” e sincronizar novamente?`)) return false;
+    setBusy(button, true, 'Enviando...');
+    try {
+      const result = await functionRequest('device-control', { body:{ action:commandType, company_id:state.company.id, device_id:deviceId }, authenticated:true });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast(result?.duplicate ? 'Comando já pendente' : 'Comando enviado', `${device.name}: ${remoteCommandLabel(commandType)}.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) { toast('Falha no comando remoto', error.message, 'error'); return false; }
+    finally { setBusy(button, false); }
+  }
+
   function currentDevicePlanUsage() {
     const plan = (state.publicConfig?.plans || []).find(item => item.id === state.subscription?.plan_id) || null;
     const rawOverride = state.subscription?.limit_overrides?.max_devices;
@@ -1023,6 +1187,7 @@
 
   function renderDevices() {
     renderDevicePlanUsage();
+    renderDeviceGroups();
     const grid = $('#devices-grid');
     const empty = $('#devices-empty');
     const has = state.devices.length > 0;
@@ -1036,6 +1201,12 @@
       const shot = latestScreenshotForDevice(device.id);
       const captureUi = captureUiForDevice(device, shot);
       const playbackHealth = devicePlaybackHealth(device);
+      const group = deviceGroupFor(device.id);
+      const latestCommand = latestDeviceCommand(device.id);
+      const groupOptions = state.deviceGroups.map(item => `<option value="${item.id}" ${group?.id === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('');
+      const fallbackName = state.playlists.find(item => item.id === (device.fallback_playlist_id || state.company?.fallback_playlist_id))?.name || 'Não definido';
+      const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
+      const storageLabel = device.storage_free_mb == null ? '—' : formatBytes(Number(device.storage_free_mb) * 1024 * 1024);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
       const capturePending = state.deviceCaptureStates.get(device.id)?.status === 'pending';
       return `
@@ -1063,7 +1234,10 @@
             <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋮</summary>
             <div class="device-more-popover">
               ${['owner','admin'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-replace-device="${device.id}">⇄ Substituir TV</button>` : ''}
-              ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>` : ''}
+              ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="sync_now" data-maintenance-device="${device.id}">⟳ Sincronizar agora</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="reload_programming" data-maintenance-device="${device.id}">▶ Recarregar programação</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="clear_cache" data-maintenance-device="${device.id}">⌫ Limpar cache</button>` : ''}
               <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
               <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
             </div>
@@ -1092,6 +1266,30 @@
           <span class="device-setting-chip ${device.settings?.audio_enabled === false ? 'off' : 'on'}">🔊 Áudio ${device.settings?.audio_enabled === false ? 'desligado' : 'ligado'}</span>
           <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
         </div>
+
+        <details class="device-maintenance-panel">
+          <summary>Manutenção e diagnóstico</summary>
+          <div class="device-maintenance-grid">
+            <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
+            <div><span>APK</span><strong>${escapeHtml(device.apk_version || '—')}</strong></div>
+            <div><span>Último heartbeat</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
+            <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
+            <div><span>Espaço livre</span><strong>${escapeHtml(storageLabel)}</strong></div>
+            <div><span>Resolução</span><strong>${escapeHtml(resolution)}</strong></div>
+            <div><span>Orientação configurada</span><strong>${escapeHtml(orientationLabel(device.orientation))}</strong></div>
+            <div><span>Orientação reportada</span><strong>${escapeHtml(reportedOrientationLabel(device.reported_orientation))}</strong></div>
+            <div><span>Fallback</span><strong>${escapeHtml(fallbackName)}</strong></div>
+            <div class="device-maintenance-command"><span>Último comando</span><strong>${latestCommand ? `${escapeHtml(remoteCommandLabel(latestCommand.command_type))} • ${escapeHtml(remoteCommandStatusLabel(latestCommand.status))}` : 'Nenhum'}</strong>${latestCommand?.error_message ? `<small>${escapeHtml(latestCommand.error_message)}</small>` : ''}</div>
+          </div>
+        </details>
+
+        <label class="device-assignment">Grupo
+          <select data-device-group="${device.id}" ${state.deviceGroups.length ? '' : 'disabled'}>
+            <option value="">${state.deviceGroups.length ? 'Sem grupo' : 'Crie um grupo primeiro'}</option>
+            ${groupOptions}
+          </select>
+          <small>${group?.playlist_id && assignment?.playlist_id ? 'A playlist padrão desta TV tem prioridade sobre a playlist do grupo.' : 'Use grupos para aplicar programação padrão a várias TVs.'}</small>
+        </label>
 
         <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
@@ -1382,7 +1580,7 @@
   }
 
   function commandEventLabel(command) {
-    const label = ({ screenshot:'Captura de tela', restart_player:'Reinício do Player' })[command.command_type] || command.command_type || 'Comando';
+    const label = remoteCommandLabel(command.command_type);
     if (command.status === 'completed') return { severity:'info', message:`${label} concluída.`, code:`command_${command.command_type}_completed` };
     if (command.status === 'failed') return { severity:'error', message:command.error_message || `${label} falhou.`, code:`command_${command.command_type}_failed` };
     return { severity:'info', message:`${label} solicitada.`, code:`command_${command.command_type}_requested` };
@@ -1440,6 +1638,7 @@
         const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
         const storageBytes = device.storage_free_mb == null ? null : Number(device.storage_free_mb) * 1024 * 1024;
         const queueTotal = Number(device.playback_queue_size || 0) + Number(device.event_queue_size || 0);
+        const diagnostics = deviceDiagnostics(device);
         return `
           <article class="monitor-device-card ${activeIssue ? 'has-issue' : ''}">
             <div class="monitor-device-head">
@@ -1453,12 +1652,15 @@
               <span class="health-chip ${syncStale ? 'warning' : 'ok'}">${syncStale ? 'Sincronização atrasada' : 'Sincronização normal'}</span>
               ${activeIssue ? '<span class="health-chip error">Falha ativa</span>' : '<span class="health-chip ok">Sem falha ativa</span>'}
               ${queueTotal ? `<span class="health-chip warning">${queueTotal} pendência(s) offline</span>` : ''}
+              ${diagnostics.map(alert => `<span class="health-chip ${alert.level}">${escapeHtml(alert.label)}</span>`).join('')}
             </div>
             <div class="monitor-data-grid">
               <div><span>Última conexão</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
               <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
-              <div><span>Versão</span><strong>${escapeHtml(device.app_version || '—')}</strong></div>
+              <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
+              <div><span>APK</span><strong>${escapeHtml(device.apk_version || '—')}</strong></div>
               <div><span>Resolução</span><strong>${escapeHtml(resolution)}</strong></div>
+              <div><span>Orientação</span><strong>${escapeHtml(orientationLabel(device.orientation))} / reportada: ${escapeHtml(reportedOrientationLabel(device.reported_orientation))}</strong></div>
               <div><span>Cache local</span><strong>${Number(device.cache_items || 0)} item(ns) • ${escapeHtml(formatBytes(Number(device.cache_bytes || 0)))}</strong></div>
               <div><span>Espaço livre estimado</span><strong>${escapeHtml(storageBytes == null ? '—' : formatBytes(storageBytes))}</strong></div>
               <div><span>Campanha atual</span><strong>${escapeHtml(campaignName)}</strong></div>
@@ -2766,6 +2968,7 @@
       name: $('#device-name').value.trim(),
       platform: $('#device-platform').value,
       orientation: $('#device-orientation').value,
+      fallback_playlist_id: $('#device-fallback-playlist').value || null,
       settings: {
         ...currentSettings,
         audio_enabled: $('#device-audio-enabled').checked,
@@ -2809,6 +3012,8 @@
     $('#device-name').value = device.name;
     $('#device-platform').value = device.platform;
     $('#device-orientation').value = device.orientation;
+    $('#device-fallback-playlist').innerHTML = '<option value="">Usar fallback da empresa</option>' + state.playlists.map(playlist => `<option value="${playlist.id}">${escapeHtml(playlist.name)}</option>`).join('');
+    $('#device-fallback-playlist').value = device.fallback_playlist_id || '';
     const settings = device.settings && typeof device.settings === 'object' ? device.settings : {};
     $('#device-audio-enabled').checked = settings.audio_enabled !== false;
     $('#device-autostart-enabled').checked = settings.autostart_enabled !== false;
@@ -3562,6 +3767,9 @@
     $$('[data-action="quick-device"]').forEach(btn => btn.addEventListener('click', () => { setView('devices'); openPairDeviceDialog(); }));
 
     $('#add-device-button').addEventListener('click', openPairDeviceDialog);
+    $('#add-device-group')?.addEventListener('click', () => openDeviceGroupDialog());
+    $('#device-group-form')?.addEventListener('submit', saveDeviceGroup);
+    $('#company-fallback-playlist')?.addEventListener('change', event => saveCompanyFallback(event.target.value));
     $('#monitor-refresh').addEventListener('click', async () => {
       const button = $('#monitor-refresh');
       setBusy(button, true, 'Atualizando...');
@@ -3625,6 +3833,11 @@
 
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
+    document.addEventListener('change', event => {
+      const groupSelect = event.target.closest?.('[data-device-group]');
+      if (groupSelect) setDeviceGroup(groupSelect.dataset.deviceGroup, groupSelect.value);
+    });
+
     document.addEventListener('click', event => {
       const authorizeDevice = event.target.closest('[data-authorize-device]');
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
@@ -3634,6 +3847,12 @@
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
       const restartDevice = event.target.closest('[data-restart-device]');
       if (restartDevice) return requestDeviceRestart(restartDevice.dataset.restartDevice, restartDevice);
+      const maintenanceButton = event.target.closest('[data-maintenance-command][data-maintenance-device]');
+      if (maintenanceButton) return requestDeviceMaintenanceCommand(maintenanceButton.dataset.maintenanceDevice, maintenanceButton.dataset.maintenanceCommand, maintenanceButton);
+      const editGroup = event.target.closest('[data-edit-device-group]');
+      if (editGroup) return openDeviceGroupDialog(editGroup.dataset.editDeviceGroup);
+      const deleteGroup = event.target.closest('[data-delete-device-group]');
+      if (deleteGroup) return deleteDeviceGroup(deleteGroup.dataset.deleteDeviceGroup);
       const replaceDevice = event.target.closest('[data-replace-device]');
       if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
