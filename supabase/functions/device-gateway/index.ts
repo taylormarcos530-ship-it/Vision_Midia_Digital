@@ -168,6 +168,47 @@ async function resolveProgram(admin, device) {
   }
 }
 
+function accountSubscriptionBlock(company, subscription) {
+  if (!company || company.status !== 'active') {
+    return { reason:'company_suspended', message:'A conta desta TV está suspensa.' }
+  }
+  if (!subscription) {
+    return { reason:'subscription_missing', message:'A assinatura desta conta ainda não foi liberada.' }
+  }
+
+  const status = String(subscription.status || '')
+  if (status === 'trialing') {
+    if (subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= Date.now()) {
+      return {
+        reason:'trial_expired',
+        message:'O período de teste desta conta terminou.',
+        trial_ends_at:subscription.trial_ends_at,
+      }
+    }
+    return null
+  }
+
+  if (status === 'active') {
+    if (!['paid','waived'].includes(String(subscription.payment_status || 'pending'))) {
+      return { reason:'payment_required', message:'O pagamento desta conta ainda não foi liberado.' }
+    }
+    if (subscription.current_period_end && new Date(subscription.current_period_end).getTime() <= Date.now()) {
+      return {
+        reason:'subscription_expired',
+        message:'A assinatura desta conta venceu.',
+        current_period_end:subscription.current_period_end,
+      }
+    }
+    return null
+  }
+
+  if (status === 'pending_approval') return { reason:'pending_approval', message:'Esta conta está aguardando aprovação do Master.' }
+  if (status === 'past_due') return { reason:'payment_overdue', message:'Esta conta está com pagamento pendente.' }
+  if (status === 'suspended') return { reason:'subscription_suspended', message:'A assinatura desta conta está suspensa.' }
+  if (status === 'cancelled') return { reason:'subscription_cancelled', message:'A assinatura desta conta foi cancelada.' }
+  return { reason:'subscription_inactive', message:'Esta conta não está liberada para reprodução.' }
+}
+
 async function authenticateDevice(admin, req) {
   const rawToken = String(req.headers.get('x-device-token') || '')
   if (rawToken.length < 30) return null
@@ -196,12 +237,12 @@ async function authenticateDevice(admin, req) {
 
   const [{ data: company, error: companyError }, { data: subscription, error: subscriptionError }] = await Promise.all([
     admin.from('companies').select('status').eq('id', device.company_id).maybeSingle(),
-    admin.from('company_subscriptions').select('status').eq('company_id', device.company_id).maybeSingle(),
+    admin.from('company_subscriptions').select('status,trial_ends_at,current_period_end,payment_status').eq('company_id', device.company_id).maybeSingle(),
   ])
   if (companyError) throw companyError
   if (subscriptionError) throw subscriptionError
-  if (!company || company.status !== 'active') return { ...device, account_blocked: true }
-  if (subscription && ['suspended', 'cancelled'].includes(subscription.status)) return { ...device, account_blocked: true }
+  const accountBlock = accountSubscriptionBlock(company, subscription)
+  if (accountBlock) return { ...device, account_block: accountBlock }
 
   await admin.from('device_credentials')
     .update({ last_used_at: new Date().toISOString() })
@@ -222,7 +263,7 @@ Deno.serve(async (req) => {
     const admin = adminClient()
     const device = await authenticateDevice(admin, req)
     if (!device) return json({ error: 'invalid_device_token' }, 401)
-    if (device.account_blocked) return json({ error: 'account_suspended', message: 'Conta suspensa. Entre em contato com o administrador da plataforma.' }, 403)
+    if (device.account_block) return json({ error:'account_suspended', ...device.account_block }, 403)
     if (device.access_block === 'pending') return json({ error: 'device_access_pending', message: 'Esta TV está aguardando autorização do Master.' }, 403)
     if (device.access_block === 'blocked') return json({ error: 'device_access_blocked', message: 'O acesso desta TV foi bloqueado pelo Master.' }, 403)
     if (device.access_block === 'expired') return json({ error: 'device_access_expired', message: 'A autorização desta TV expirou.', access_expires_at: device.access_expires_at }, 403)
