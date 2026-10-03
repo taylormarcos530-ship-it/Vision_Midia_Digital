@@ -12,7 +12,7 @@ create table if not exists public.web_push_config (
 );
 
 alter table public.web_push_config enable row level security;
-revoke all on public.web_push_config from anon, authenticated;
+revoke all privileges on public.web_push_config from anon, authenticated;
 grant select, insert, update, delete on public.web_push_config to service_role;
 
 create table if not exists public.web_push_subscriptions (
@@ -41,13 +41,13 @@ create index if not exists idx_web_push_subscriptions_user_active
   where disabled_at is null;
 
 alter table public.web_push_subscriptions enable row level security;
-revoke all on public.web_push_subscriptions from anon, authenticated;
+revoke all privileges on public.web_push_subscriptions from anon, authenticated;
 grant select, insert, update, delete on public.web_push_subscriptions to service_role;
 
 drop policy if exists company_player_branding_admin_insert on public.company_player_branding;
 drop policy if exists company_player_branding_admin_update on public.company_player_branding;
 drop policy if exists company_player_branding_member_select on public.company_player_branding;
-revoke select, insert, update, delete, truncate on public.company_player_branding from authenticated;
+revoke all privileges on public.company_player_branding from anon, authenticated;
 
 comment on table public.web_push_subscriptions is
   'Backend-managed browser push subscriptions. Clients register through the web-push Edge Function.';
