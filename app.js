@@ -1,6 +1,7 @@
 (() => {
   'use strict';
   // preview-refresh-v37-media-library
+  // preview-refresh-v38-complete-media
   // preview-refresh-v36-complete-playlists
 
   const CONFIG = window.VISION_CONFIG;
