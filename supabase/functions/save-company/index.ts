@@ -28,6 +28,7 @@ Deno.serve(async(req)=>{
     if(!platformAdmin||platformAdmin.status!=='active'||!['super_admin','admin'].includes(platformAdmin.role))return J({error:'master_forbidden'},403)
 
     const body=await req.json().catch(()=>({}))
+    if(body?.action==='capabilities')return J({ok:true,version:'save-company-v7',capabilities:{timed_trial:true}})
     const companyId=String(body.company_id||'').trim()
     if(!companyId)return J({error:'company_required'},400)
     const [{data:current,error:currentError},{data:currentCompany,error:companyError}]=await Promise.all([
@@ -45,6 +46,10 @@ Deno.serve(async(req)=>{
     const dueDate=body.due_date===undefined
       ? (current?.current_period_end?String(current.current_period_end).slice(0,10):null)
       : (String(body.due_date||'').trim()||null)
+    const trialMinutesRaw=body.trial_minutes
+    const trialMinutes=trialMinutesRaw===undefined||trialMinutesRaw===null||trialMinutesRaw===''?null:Math.round(Number(trialMinutesRaw))
+    if(trialMinutes!==null&&(!Number.isFinite(trialMinutes)||trialMinutes<1||trialMinutes>43200))return J({error:'invalid_trial_minutes'},400)
+    const trialEndsAt=subscriptionStatus==='trialing'?(trialMinutes!==null?new Date(Date.now()+trialMinutes*60000).toISOString():(current?.trial_ends_at||null)):null
     const manualPrice=body.manual_price_cents===null||body.manual_price_cents===''||body.manual_price_cents===undefined
       ? null
       : Math.max(0,Math.round(Number(body.manual_price_cents)))
@@ -93,6 +98,7 @@ Deno.serve(async(req)=>{
     const {data:persistedSubscription,error:paymentConfigError}=await admin
       .from('company_subscriptions')
       .update({
+        trial_ends_at:trialEndsAt,
         payment_url:paymentUrl,
         pix_key:pixKey,
         pix_key_type:pixKeyType,
@@ -114,10 +120,8 @@ Deno.serve(async(req)=>{
     if(settingsError)throw settingsError
 
     const dueOk=!dueDate||new Date(`${dueDate}T23:59:59`).getTime()>Date.now()
-    const licenseAllowed=companyStatus==='active'&&(
-      (subscriptionStatus==='trialing')||
-      (subscriptionStatus==='active'&&['paid','waived'].includes(paymentStatus)&&dueOk)
-    )
+    const trialAllowed=subscriptionStatus==='trialing'&&(!trialEndsAt||new Date(trialEndsAt).getTime()>Date.now())
+    const licenseAllowed=companyStatus==='active'&&(trialAllowed||(subscriptionStatus==='active'&&['paid','waived'].includes(paymentStatus)&&dueOk))
     if(licenseAllowed){
       const {data:devices,error:devicesError}=await admin.from('devices').select('id,settings').eq('company_id',companyId)
       if(devicesError)throw devicesError
@@ -138,13 +142,15 @@ Deno.serve(async(req)=>{
         subscription_status:persistedSubscription?.status||data?.subscription?.status||subscriptionStatus,
         payment_status:persistedSubscription?.payment_status||data?.subscription?.payment_status||paymentStatus,
         due_date:dueDate,
+        trial_ends_at:trialEndsAt,
+        trial_minutes:trialMinutes,
         payment_url_configured:Boolean(paymentUrl),
         pix_configured:Boolean(pixKey),
         pix_key_type:pixKeyType,
         audio_enabled:audioEnabled,
         autostart_enabled:autostartEnabled,
         cache_revision:cacheRevision,
-        source:'save-company-v6'
+        source:'save-company-v7'
       },
     })
     if(auditError)console.warn('save-company audit',auditError.message)
