@@ -230,3 +230,10 @@ $$;
 
 revoke all on function public.set_company_fallback_playlist(uuid,uuid) from public, anon;
 grant execute on function public.set_company_fallback_playlist(uuid,uuid) to authenticated;
+
+-- A group belongs permanently to the company that created it.
+drop trigger if exists device_groups_company_immutable on public.device_groups;
+create trigger device_groups_company_immutable
+before update of company_id on public.device_groups
+for each row execute function private.prevent_company_id_change();
+

@@ -95,7 +95,23 @@ Deno.serve(async req => {
       })
       .select('id,command_type,status,requested_at')
       .single()
-    if (commandError) throw commandError
+    if (commandError) {
+      if (commandError.code === '23505') {
+        const { data: duplicate, error: duplicateError } = await admin
+          .from('device_commands')
+          .select('id,status,requested_at')
+          .eq('company_id', companyId)
+          .eq('device_id', deviceId)
+          .eq('command_type', action)
+          .in('status', ['pending','sent'])
+          .order('requested_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (duplicateError) throw duplicateError
+        if (duplicate) return J({ ok: true, duplicate: true, command: duplicate })
+      }
+      throw commandError
+    }
 
     try {
       const { error: auditError } = await admin.from('master_audit_logs').insert({
