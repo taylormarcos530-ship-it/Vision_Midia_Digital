@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=39" />
+  <link rel="stylesheet" href="./styles.css?v=40" />
   <title>Vision Mídia Digital</title>
 </head>
 <body>
@@ -703,14 +703,17 @@
 
       <div class="playlist-editor-grid compact-playlist-editor">
         <div>
-          <h4>Sequência de reprodução</h4>
+          <div class="playlist-editor-column-head"><h4>Sequência de reprodução</h4><span id="playlist-items-count" class="playlist-editor-count">0 mídias</span></div>
           <div id="playlist-items-list" class="sortable-list compact-sortable-list"></div>
           <div id="playlist-items-empty" class="mini-empty hidden">Ainda não há mídias nesta playlist.</div>
+          <button id="playlist-items-more" class="button ghost playlist-load-more hidden" type="button">Carregar mais mídias</button>
         </div>
         <div>
-          <h4>Biblioteca</h4>
+          <div class="playlist-editor-column-head"><h4>Biblioteca</h4><span id="playlist-media-count" class="playlist-editor-count">0 disponíveis</span></div>
+          <label class="playlist-library-search"><span>Buscar mídia</span><input id="playlist-media-search" type="search" placeholder="Nome da imagem ou vídeo" autocomplete="off" /></label>
           <div id="playlist-media-picker" class="media-picker compact-media-picker"></div>
           <div id="playlist-media-empty" class="mini-empty hidden">Envie uma mídia primeiro.</div>
+          <button id="playlist-media-more" class="button ghost playlist-load-more hidden" type="button">Carregar mais da biblioteca</button>
         </div>
       </div>
       <div class="dialog-actions">
@@ -893,7 +896,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=40" defer></script>
+  <script src="./app.js?v=41" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
