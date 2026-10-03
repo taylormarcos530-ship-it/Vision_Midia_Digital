@@ -9,6 +9,9 @@ import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.os.SystemClock;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.view.KeyEvent;
@@ -38,6 +41,22 @@ public class MainActivity extends Activity {
     private WebView webView;
     private SharedPreferences prefs;
     private WebViewAssetLoader assetLoader;
+    private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private long lastPlayerPulseAt = 0L;
+    private boolean watchdogActive = false;
+    private final Runnable playerWatchdog = new Runnable() {
+        @Override
+        public void run() {
+            if (!watchdogActive) return;
+            long silentFor = SystemClock.elapsedRealtime() - lastPlayerPulseAt;
+            if (lastPlayerPulseAt > 0L && silentFor > 120_000L && webView != null) {
+                lastPlayerPulseAt = SystemClock.elapsedRealtime();
+                String setupCode = prefs == null ? "" : prefs.getString(KEY_SETUP_CODE, "");
+                if (isValidSetupCode(setupCode)) loadPlayer(setupCode);
+            }
+            watchdogHandler.postDelayed(this, 30_000L);
+        }
+    };
 
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
@@ -186,7 +205,13 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void playerAlive() {
+            lastPlayerPulseAt = SystemClock.elapsedRealtime();
+        }
+
+        @JavascriptInterface
         public void restartApp() {
+            lastPlayerPulseAt = SystemClock.elapsedRealtime();
             runOnUiThread(() -> {
                 Intent restart = getPackageManager().getLaunchIntentForPackage(getPackageName());
                 if (restart == null) {
@@ -224,17 +249,25 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        lastPlayerPulseAt = SystemClock.elapsedRealtime();
+        watchdogActive = true;
+        watchdogHandler.removeCallbacks(playerWatchdog);
+        watchdogHandler.postDelayed(playerWatchdog, 30_000L);
         if (webView != null) webView.onResume();
     }
 
     @Override
     protected void onPause() {
+        watchdogActive = false;
+        watchdogHandler.removeCallbacks(playerWatchdog);
         if (webView != null) webView.onPause();
         super.onPause();
     }
 
     @Override
     protected void onDestroy() {
+        watchdogActive = false;
+        watchdogHandler.removeCallbacks(playerWatchdog);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();
