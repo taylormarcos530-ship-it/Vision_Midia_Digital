@@ -567,3 +567,20 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
 /* v41 — remote Player actions */
 .device-access-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
 @media(max-width:720px){.device-access-actions{justify-content:stretch}.device-access-actions .small-button{flex:1}}
+
+
+/* Client owner password recovery */
+.owner-access-box{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px 12px;
+}
+.owner-access-box>div{display:grid;gap:4px}
+.owner-access-box>div small,.owner-access-box>small{color:var(--muted)}
+.owner-access-box>small{grid-column:1/-1}
+@media(max-width:640px){
+  .owner-access-box{grid-template-columns:1fr}
+  .owner-access-box .button{width:100%}
+  .owner-access-box>small{grid-column:auto}
+}
