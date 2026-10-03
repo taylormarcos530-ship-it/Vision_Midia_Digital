@@ -42,7 +42,7 @@ public class MainActivity extends Activity {
     private SharedPreferences prefs;
     private WebViewAssetLoader assetLoader;
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
-    private long lastPlayerPulseAt = 0L;
+    private volatile long lastPlayerPulseAt = 0L;
     private boolean watchdogActive = false;
     private final Runnable playerWatchdog = new Runnable() {
         @Override
