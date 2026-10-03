@@ -2984,6 +2984,18 @@
     }
   }
 
+  function passwordRecoveryRedirectUrl() {
+    const isPublicOrigin = value => /^https:\/\//i.test(String(value || '')) && !/localhost|127\.0\.0\.1/i.test(String(value || ''));
+    if (isPublicOrigin(location.origin)) return new URL('./index.html', location.href).href;
+    try {
+      if (document.referrer) {
+        const ref = new URL(document.referrer);
+        if (isPublicOrigin(ref.origin)) return `${ref.origin}/index.html`;
+      }
+    } catch {}
+    return 'https://vision-midia-digital-e74lzn2i5-vision-5529.vercel.app/index.html';
+  }
+
   async function handleForgotPassword() {
     const button = $('#forgot-password');
     if (button?.disabled) return;
@@ -2998,7 +3010,7 @@
     setBusy(button, true, 'Enviando...');
     try {
       await authRequest('/recover', {
-        body: { email, redirect_to: `${location.origin}${location.pathname}` },
+        body: { email, redirect_to: passwordRecoveryRedirectUrl() },
       });
       toast('Recuperação enviada', 'Confira sua caixa de entrada. Você poderá solicitar outro link em 30 segundos.');
       setBusy(button, false);
