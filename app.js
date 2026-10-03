@@ -1490,7 +1490,7 @@
     grid.innerHTML = state.media.map(media => {
       const linkedItems = state.playlistItems.filter(item => item.media_id === media.id);
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
-      const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
+      const dimensions = media.width && media.height ? `${media.width}×${media.height}` : media.media_type === 'url' ? 'Tela dinâmica' : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
       const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : media.media_type === 'video' ? 'Vídeo' : 'Conteúdo dinâmico';
       return `
@@ -1714,7 +1714,8 @@
     list.innerHTML = items.map((item, index) => {
       const media = mediaById[item.media_id];
       const isImage = media?.media_type === 'image';
-      const hasTimedDuration = ['image','url'].includes(media?.media_type);
+      const isDynamic = media?.media_type === 'url';
+      const hasTimedDuration = isImage || isDynamic;
       const seconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
       const checked = state.selectedPlaylistItemIds.has(item.id);
       return `
@@ -3087,7 +3088,7 @@
       });
       const local = state.playlistItems.find(item => item.id === itemId);
       if (local) local.duration_override_seconds = Math.round(seconds);
-      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
+      toast('Tempo atualizado', `O conteúdo ficará ${Math.round(seconds)} segundo(s) na tela.`);
       renderPlaylistEditor();
     } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
   }
