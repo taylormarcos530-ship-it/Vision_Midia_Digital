@@ -1804,3 +1804,113 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 .device-maintenance-grid span{font-size:.72rem;color:var(--muted)}.device-maintenance-grid strong{font-size:.83rem;word-break:break-word}
 .device-maintenance-command{grid-column:1/-1}.device-maintenance-command small{color:var(--danger);font-size:.72rem}
 @media (max-width:640px){.device-maintenance-grid{grid-template-columns:1fr}.device-maintenance-command{grid-column:auto}.device-groups-panel .panel-header{align-items:flex-start;gap:12px}}
+
+
+/* TV cards — reduced vertical travel + stable screenshot previews */
+.device-card-pro .device-screen.has-screenshot img{
+  object-fit:cover;
+  object-position:center;
+}
+.device-card-pro .device-screen.capture-portrait{
+  background:#070b12;
+}
+.device-card-pro .device-screen.capture-portrait img{
+  object-fit:cover;
+  object-position:center;
+}
+
+.device-programming-panel{
+  margin:7px 0 0;
+  border:1px solid var(--border,var(--line));
+  border-radius:10px;
+  background:var(--surface-soft,rgba(255,255,255,.025));
+  overflow:hidden;
+}
+.device-programming-panel>summary{
+  min-height:34px;
+  display:grid;
+  grid-template-columns:minmax(0,1fr) auto;
+  align-items:center;
+  gap:8px;
+  padding:7px 9px;
+  cursor:pointer;
+  list-style:none;
+  font-size:9px;
+  font-weight:800;
+}
+.device-programming-panel>summary::-webkit-details-marker{display:none}
+.device-programming-panel>summary::before{
+  content:"▸";
+  grid-column:1;
+  grid-row:1;
+  width:14px;
+  color:var(--muted);
+  transition:transform .15s ease;
+}
+.device-programming-panel[open]>summary::before{transform:rotate(90deg)}
+.device-programming-panel>summary>span{
+  grid-column:1;
+  grid-row:1;
+  padding-left:18px;
+}
+.device-programming-panel>summary>small{
+  grid-column:2;
+  grid-row:1;
+  max-width:150px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted);
+  font-size:7.5px;
+  font-weight:700;
+}
+.device-programming-fields{
+  display:grid;
+  gap:7px;
+  padding:0 8px 8px;
+  border-top:1px solid rgba(255,255,255,.045);
+}
+.device-programming-fields .device-assignment{
+  margin-top:7px;
+}
+.device-programming-fields .device-assignment+ .device-assignment{
+  margin-top:0;
+}
+.device-programming-fields .device-assignment small{
+  font-size:7.5px;
+  line-height:1.35;
+}
+
+.device-card-pro .device-maintenance-panel{
+  margin:7px 0 0;
+  border-radius:10px;
+}
+.device-card-pro .device-maintenance-panel summary{
+  padding:8px 9px;
+  font-size:9px;
+}
+.device-card-pro .device-maintenance-grid{
+  gap:6px;
+  padding:0 8px 8px;
+}
+.device-card-pro .device-maintenance-grid>div{
+  padding:6px;
+}
+.device-card-pro .device-maintenance-grid span{font-size:8px}
+.device-card-pro .device-maintenance-grid strong{font-size:9px}
+
+@media (min-width:1051px){
+  #devices-grid{
+    grid-template-columns:repeat(auto-fill,minmax(260px,300px));
+    gap:10px;
+  }
+  .device-card-pro{max-width:300px}
+}
+@media (max-width:700px){
+  .device-programming-panel>summary{
+    grid-template-columns:minmax(0,1fr);
+  }
+  .device-programming-panel>summary>small{
+    display:none;
+  }
+}
