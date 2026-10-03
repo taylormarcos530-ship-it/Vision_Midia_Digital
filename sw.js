@@ -1,4 +1,5 @@
 const CACHE = 'vision-midia-shell-v33';
+// preview-refresh-v33-client-actions
 const SHELL = [
   './', './index.html', './styles.css', './config.js', './app.js', './payment-ui.js', './saas-shell.js', './manifest.webmanifest', './icon.svg',
   './master.html', './master.css', './master.js', './master-payment.js', './master-embed.js',
