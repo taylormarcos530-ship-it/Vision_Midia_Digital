@@ -48,6 +48,25 @@
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  function clientId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.clientId();
+      }
+    } catch {}
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+      }
+    } catch {}
+    return `vision-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  }
+
   async function waitForChangeOrTimeout(nonce, ms) {
     const deadline = Date.now() + ms;
     while (Date.now() < deadline) {
@@ -106,7 +125,7 @@
     state.lastEventTimes[fingerprint] = now;
     const queue = deviceEventQueue();
     queue.push({
-      client_event_id: crypto.randomUUID(),
+      client_event_id: clientId(),
       severity: ['info', 'warning', 'error', 'critical'].includes(severity) ? severity : 'info',
       event_code: code,
       message: text,
@@ -619,7 +638,7 @@
       return;
     }
 
-    const version = manifest.version || crypto.randomUUID();
+    const version = manifest.version || clientId();
     if (state.cachePrefetchVersion === version) return;
     state.cachePrefetchVersion = version;
 
@@ -823,7 +842,7 @@
       const endedAt = new Date();
       if (state.deviceToken) {
         queuePlayback({
-          client_event_id: crypto.randomUUID(),
+          client_event_id: clientId(),
           campaign_id: program?.campaign_id || null,
           playlist_id: playlist?.id || null,
           media_id: item.media?.id || null,
