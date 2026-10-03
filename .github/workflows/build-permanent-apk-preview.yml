@@ -10,6 +10,7 @@ on:
       - 'player.html'
       - 'player.css'
       - 'player.js'
+      - '.github/workflows/build-android-player.yml'
       - 'config.js'
       - 'icon.svg'
       - 'player.webmanifest'
