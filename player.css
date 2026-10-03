@@ -27,3 +27,16 @@ button { font: inherit; }
 .player-status { display:none !important; }
 .player-controls { display:none !important; }
 @media (max-width: 600px) { .pairing-card { border-radius: 22px; } .pairing-code { letter-spacing: .08em; padding-inline: 12px; } }
+
+
+/* Orientation fallback for browser-based Players when native rotation is unavailable. */
+body.force-player-portrait .playback-screen{
+  position:fixed;left:50%;top:50%;width:100vh;height:100vw;
+  transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;
+}
+body.force-player-landscape .playback-screen{
+  position:fixed;left:50%;top:50%;width:100vh;height:100vw;
+  transform:translate(-50%,-50%) rotate(90deg);transform-origin:center;
+}
+body.force-player-portrait .media-stage,
+body.force-player-landscape .media-stage{width:100%;height:100%}
