@@ -83,14 +83,24 @@ Deno.serve(async (req) => {
       const source = forwarded || req.headers.get('cf-connecting-ip') || req.headers.get('user-agent') || 'unknown'
       const sourceHash = await sha256Hex(source)
       const rateSince = new Date(now.getTime() - 10 * 60 * 1000).toISOString()
-      const { count } = await admin
+      const { data: recentPairingRequests, error: recentPairingError } = await admin
         .from('device_pairing_requests')
-        .select('id', { count: 'exact', head: true })
+        .select('created_at')
         .eq('request_source_hash', sourceHash)
         .gte('created_at', rateSince)
+        .order('created_at', { ascending: true })
+        .limit(10)
 
-      if ((count || 0) >= 10) {
-        return json({ error: 'rate_limited', message: 'Muitas solicitações de pareamento. Tente novamente em alguns minutos.' }, 429)
+      if (recentPairingError) throw recentPairingError
+
+      if ((recentPairingRequests || []).length >= 10) {
+        const oldestCreatedAt = new Date(recentPairingRequests[0]?.created_at || now.toISOString()).getTime()
+        const retryAfterSeconds = Math.max(1, Math.ceil((oldestCreatedAt + 10 * 60 * 1000 - now.getTime()) / 1000))
+        return json({
+          error: 'rate_limited',
+          message: 'Muitas solicitações de pareamento. Aguarde o tempo indicado antes de tentar novamente.',
+          retry_after_seconds: retryAfterSeconds,
+        }, 429)
       }
 
       const requestSecret = randomBase64Url(32)
