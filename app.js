@@ -1358,7 +1358,7 @@
 
   async function hydrateDeviceScreenshots() {
     for (const shot of state.deviceScreenshots) {
-      const target = $`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`;
+      const target = $(`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`);
       if (!target || !shot.storage_path) continue;
 
       const key = deviceScreenshotCacheKey(shot);
