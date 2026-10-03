@@ -503,8 +503,12 @@
     let nativeHandled = false;
     try {
       if (window.VisionAndroid?.setOrientation) {
-        window.VisionAndroid.setOrientation(normalized);
-        nativeHandled = true;
+        const result = window.VisionAndroid.setOrientation(normalized);
+        // New TV builds explicitly return false when Android must keep the
+        // HDMI/WebView viewport in its physical orientation and CSS must rotate
+        // the virtual Player stage. Older builds return undefined and keep the
+        // previous native-orientation behavior.
+        nativeHandled = result !== false;
       }
     } catch {}
 

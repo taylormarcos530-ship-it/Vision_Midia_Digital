@@ -2122,6 +2122,20 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   background:#000;
   transform:none !important;
 }
+#view-tv-dialog .tv-viewer-preview{
+  position:relative;
+}
+#view-tv-dialog .tv-viewer-preview.is-program-orientation-fallback>.tv-viewer-media{
+  position:absolute;
+  left:50%;
+  top:50%;
+  max-width:none !important;
+  max-height:none !important;
+  object-fit:contain !important;
+  object-position:center center !important;
+  transform:translate(-50%,-50%) rotate(90deg) !important;
+  transform-origin:center center !important;
+}
 #view-tv-dialog .tv-viewer-footer{
   margin-top:0;
 }

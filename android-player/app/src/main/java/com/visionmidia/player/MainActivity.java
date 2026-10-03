@@ -2,9 +2,13 @@ package com.visionmidia.player;
 
 import android.app.Activity;
 import android.app.AlertDialog;
+import android.app.UiModeManager;
+import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
+import android.content.pm.PackageManager;
+import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Build;
@@ -148,6 +152,16 @@ public class MainActivity extends Activity {
         return value != null && value.trim().toUpperCase(Locale.ROOT).matches("[A-F0-9]{8}");
     }
 
+    private boolean shouldUseCssOrientationFallback() {
+        PackageManager packageManager = getPackageManager();
+        boolean leanback = packageManager.hasSystemFeature(PackageManager.FEATURE_LEANBACK);
+        boolean noTouchscreen = !packageManager.hasSystemFeature(PackageManager.FEATURE_TOUCHSCREEN);
+        UiModeManager uiModeManager = (UiModeManager) getSystemService(Context.UI_MODE_SERVICE);
+        boolean television = uiModeManager != null
+                && uiModeManager.getCurrentModeType() == Configuration.UI_MODE_TYPE_TELEVISION;
+        return leanback || television || noTouchscreen;
+    }
+
     private void showSetupDialog(boolean allowCancel) {
         final EditText input = new EditText(this);
         input.setHint("Ex.: A1B2C3D4");
@@ -217,8 +231,21 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public void setOrientation(String mode) {
+        public boolean setOrientation(String mode) {
             final String requested = mode == null ? "auto" : mode.toLowerCase(Locale.ROOT);
+
+            if (shouldUseCssOrientationFallback()) {
+                // HDMI TV/TV Box firmware often keeps a landscape framebuffer.
+                // Requesting PORTRAIT can make Android letterbox the entire Activity.
+                // Keep the real WebView viewport untouched and let player.css rotate
+                // the virtual stage against the measured viewport instead.
+                runOnUiThread(() -> {
+                    setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+                    enterImmersiveMode();
+                });
+                return false;
+            }
+
             runOnUiThread(() -> {
                 if ("portrait".equals(requested)) {
                     setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT);
@@ -229,6 +256,7 @@ public class MainActivity extends Activity {
                 }
                 enterImmersiveMode();
             });
+            return true;
         }
 
         @JavascriptInterface

@@ -1499,6 +1499,46 @@
     return 'landscape';
   }
 
+  function reportedTvViewerOrientation(device) {
+    const reported = String(device?.reported_orientation || '').toLowerCase();
+    if (reported.includes('portrait')) return 'portrait';
+    if (reported.includes('landscape')) return 'landscape';
+
+    const width = Number(device?.screen_width || 0);
+    const height = Number(device?.screen_height || 0);
+    if (width > 0 && height > 0) return height > width ? 'portrait' : 'landscape';
+    return 'landscape';
+  }
+
+  function tvViewerProgramNeedsRotation(device) {
+    const configured = String(device?.orientation || 'auto').toLowerCase();
+    if (!['portrait','landscape'].includes(configured)) return false;
+    return configured !== reportedTvViewerOrientation(device);
+  }
+
+  function syncTvViewerProgramMediaLayout(preview) {
+    if (!preview) return;
+    const media = preview.querySelector('.tv-viewer-media');
+    if (!media) return;
+    const rotated = preview.dataset.rotateProgramMedia === '1';
+    media.classList.toggle('tv-viewer-media-rotated', rotated);
+    if (rotated) {
+      media.style.width = `${Math.max(1, preview.clientHeight)}px`;
+      media.style.height = `${Math.max(1, preview.clientWidth)}px`;
+    } else {
+      media.style.width = '100%';
+      media.style.height = '100%';
+    }
+  }
+
+  function setTvViewerProgramPreviewMode(preview, device, enabled) {
+    if (!preview) return;
+    const rotated = Boolean(enabled && tvViewerProgramNeedsRotation(device));
+    preview.dataset.rotateProgramMedia = rotated ? '1' : '0';
+    preview.classList.toggle('is-program-orientation-fallback', rotated);
+    syncTvViewerProgramMediaLayout(preview);
+  }
+
   function tvViewerFrameGeometry(device, shot = null) {
     const orientation = resolvedTvViewerOrientation(device, shot);
     let width = Number(shot?.width || 0);
@@ -1536,6 +1576,7 @@
     const scale = Math.min(bounds.width / frameWidth, bounds.height / frameHeight);
     preview.style.width = `${Math.max(1, Math.floor(frameWidth * scale))}px`;
     preview.style.height = `${Math.max(1, Math.floor(frameHeight * scale))}px`;
+    syncTvViewerProgramMediaLayout(preview);
   }
 
   function configureTvViewerFrame(preview, device, shot = null) {
@@ -1569,6 +1610,7 @@
     if (shot?.storage_path && !screenshotMatchesConfiguredOrientation(device, shot)) {
       const media = deviceProgramPreviewMedia(device);
       configureTvViewerFrame(preview, device);
+      setTvViewerProgramPreviewMode(preview, device, true);
       $('#view-tv-captured-at').textContent = 'Captura antiga descartada • exibindo prévia da programação';
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) {
         preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga desta TV foi feita com orientação incompatível.<br><small>Quando a TV ficar online, use “Atualizar agora” para gerar uma nova captura.</small></div>';
@@ -1581,6 +1623,7 @@
         if (state.viewingDeviceId !== deviceId) return;
         element.classList.add('tv-viewer-media');
         preview.replaceChildren(element);
+        syncTvViewerProgramMediaLayout(preview);
       } catch {
         preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga foi descartada e a prévia da programação não pôde ser aberta.</div>';
       }
@@ -1589,12 +1632,14 @@
 
     if (!shot?.storage_path) {
       configureTvViewerFrame(preview, device);
+      setTvViewerProgramPreviewMode(preview, device, false);
       preview.innerHTML = '<div class="tv-viewer-empty">Ainda não há captura desta TV.<br><small>Use “Atualizar agora” para solicitar uma imagem do que está passando.</small></div>';
       $('#view-tv-captured-at').textContent = 'Sem captura disponível';
       return;
     }
 
     configureTvViewerFrame(preview, device, shot);
+    setTvViewerProgramPreviewMode(preview, device, false);
     const cached = cachedDeviceScreenshotEntry(shot);
     if (!cached?.url) preview.innerHTML = '<div class="tv-viewer-empty">Carregando captura…</div>';
     $('#view-tv-captured-at').textContent = `Capturada em ${formatMonitorDateTime(shot.captured_at)}`;
