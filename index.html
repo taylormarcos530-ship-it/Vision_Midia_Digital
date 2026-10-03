@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=37" />
+  <link rel="stylesheet" href="./styles.css?v=39" />
   <title>Vision Mídia Digital</title>
 </head>
 <body>
@@ -96,7 +96,7 @@
       <div class="access-summary">
         <div><span>Empresa</span><strong id="access-company">—</strong></div>
         <div><span>Plano</span><strong id="access-plan">—</strong></div>
-        <div><span>Vencimento</span><strong id="access-due">—</strong></div>
+        <div><span id="access-due-label">Vencimento</span><strong id="access-due">—</strong></div>
       </div>
       <div class="access-actions">
         <a id="access-payment" class="button primary full hidden" target="_blank" rel="noopener">Pagar agora • Mercado Pago</a>
@@ -121,12 +121,12 @@
           <p class="form-hint">O envio do comprovante não libera o sistema automaticamente. O pagamento será confirmado pelo Master.</p>
         </div>
         <a id="access-whatsapp" class="button ghost full hidden" href="#" target="_blank" rel="noopener">Falar com suporte no WhatsApp</a>
-        <button id="access-refresh" class="button ghost full" type="button">Verificar liberação</button>
+        <button id="access-refresh" class="button ghost full" type="button">Verificar agora</button>
         <div id="access-refresh-status" class="access-refresh-status hidden" role="status" aria-live="polite"></div>
         <button id="access-notifications" class="button ghost full" type="button">Ativar notificações</button>
         <button id="access-logout" class="link-button" type="button">Sair desta conta</button>
       </div>
-      <p class="form-hint">Quando o administrador liberar seu plano, basta tocar em “Verificar liberação”.</p>
+      <p class="form-hint">A liberação é verificada automaticamente. Se o painel estiver aberto, a tela muda sozinha assim que o Master liberar o acesso.</p>
     </div>
   </section>
 
@@ -921,7 +921,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=37" defer></script>
+  <script src="./app.js?v=39" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
