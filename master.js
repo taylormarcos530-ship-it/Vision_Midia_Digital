@@ -367,6 +367,20 @@
   function savedSession(){ try{const s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); return s?.access_token&&s?.refresh_token?s:null}catch{return null} }
   async function parse(res){ const t=await res.text(); let d=null; try{d=t?JSON.parse(t):null}catch{d=t}; if(!res.ok){const e=new Error(d?.error_description||d?.message||d?.error||`HTTP ${res.status}`); e.status=res.status; throw e} return d; }
   async function auth(path, body){ return parse(await fetch(`${CONFIG.supabaseUrl}/auth/v1${path}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,'Content-Type':'application/json'},body:JSON.stringify(body)})); }
+  async function sendPasswordRecovery(email){
+    const target=String(email||'').trim().toLowerCase();
+    if(!target||!target.includes('@'))throw new Error('E-mail do responsável não encontrado.');
+    const redirectTo=new URL('./index.html',location.href).href;
+    return auth('/recover',{email:target,redirect_to:redirectTo});
+  }
+  function emailForUserId(userId){
+    for(const company of state.data?.companies||[]){
+      if(company.owner?.id===userId&&company.owner?.email)return company.owner.email;
+      const member=(company.members||[]).find(item=>item.user_id===userId);
+      if(member?.user?.email)return member.user.email;
+    }
+    return '';
+  }
   async function refresh(){ if(!state.session?.refresh_token) return null; const d=await auth('/token?grant_type=refresh_token',{refresh_token:state.session.refresh_token}); saveSession(d); return d; }
   async function master(body, retry=true){ const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/master-admin`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'}); if(res.status===401&&retry&&state.session?.refresh_token){await refresh(); return master(body,false)} return parse(res); }
   async function savePlanRequest(body,retry=true){const res=await fetch(`${CONFIG.supabaseUrl}/functions/v1/save-plan`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'});if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return savePlanRequest(body,false)}return parse(res)}
@@ -502,12 +516,12 @@
     $('#me-owner-email').textContent=c.owner?.email||'E-mail não encontrado';
     const resetOwnerButton=$('#me-reset-owner-password');
     if(resetOwnerButton){
-      resetOwnerButton.disabled=state.role!=='super_admin'||!($('#me-owner-user-id').value);
-      resetOwnerButton.title=state.role==='super_admin'?'Definir nova senha temporária do responsável':'Somente o Super Master pode redefinir senhas';
+      resetOwnerButton.disabled=!c.owner?.email;
+      resetOwnerButton.title=c.owner?.email?'Enviar link seguro de redefinição de senha':'E-mail do responsável não encontrado';
     }
-    $('#me-reset-owner-note').textContent=state.role==='super_admin'
-      ? 'Defina uma nova senha temporária para o responsável desta conta.'
-      : 'Somente o Super Master pode redefinir senhas.';
+    $('#me-reset-owner-note').textContent=c.owner?.email
+      ? 'Envia um link seguro para o responsável criar uma nova senha.'
+      : 'E-mail do responsável não encontrado nesta conta.';
     $('#me-payment-url').value=c.subscription?.payment_url||'';
     $('#me-manual-price').value=c.subscription?.manual_price_cents==null?'':(Number(c.subscription.manual_price_cents)/100).toFixed(2).replace('.',',');
     $('#me-billing-notes').value=c.subscription?.billing_notes||'';
@@ -658,12 +672,24 @@
   function renderUsers(c){$('#master-users-list').innerHTML=c.members.map(m=>`<div class="user-row"><div><strong>${esc(m.user?.display_name||m.user?.email||'Usuário')}</strong><small>${esc(m.user?.email||'')} • ${m.role==='owner'?'Proprietário':m.role} • ${m.status}</small></div>${m.role==='owner'?'<span class="status active">Protegido</span>':`<button class="small-button" data-toggle-member="${m.id}" data-next-member="${m.status==='active'?'disabled':'active'}">${m.status==='active'?'Desativar':'Ativar'}</button>`}${state.role==='super_admin'?`<button class="small-button" data-reset-user="${m.user_id}">Nova senha</button>`:''}</div>`).join('')}
   async function addUser(ev){ev.preventDefault();const b=$('#mu-add');busy(b,true,'Adicionando...');try{const d=await master({action:'add_user',company_id:$('#mu-company-id').value,email:$('#mu-email').value.trim(),display_name:$('#mu-name').value.trim(),role:$('#mu-role').value,temporary_password:$('#mu-password').value});toast('Usuário adicionado',d.delivery==='invite'?'Convite enviado.':d.delivery==='temporary_password'?'Senha temporária criada.':'Usuário existente vinculado.');await load();openUsers($('#mu-company-id').value)}catch(e){toast('Erro ao adicionar usuário',e.message,'error')}finally{busy(b,false)}}
   async function toggleMember(id,status){try{await master({action:'update_member',member_id:id,status});toast('Usuário atualizado');const cid=$('#mu-company-id').value;await load();openUsers(cid)}catch(e){toast('Erro ao atualizar usuário',e.message,'error')}}
-  async function resetUser(id){const pw=prompt('Digite uma nova senha temporária com pelo menos 8 caracteres:');if(!pw)return false;if(pw.length<8){toast('Senha muito curta','Use pelo menos 8 caracteres.','error');return false}try{await master({action:'set_user_password',user_id:id,temporary_password:pw});toast('Senha temporária atualizada');return true}catch(e){toast('Erro ao redefinir senha',e.message,'error');return false}}
+  async function resetUser(id){
+    const email=emailForUserId(id);
+    if(!email){toast('E-mail não encontrado','Atualize a lista de clientes e tente novamente.','error');return false}
+    if(!confirm(`Enviar um link de redefinição de senha para ${email}?`))return false;
+    try{
+      await sendPasswordRecovery(email);
+      toast('Redefinição enviada',`O link seguro foi enviado para ${email}.`);
+      return true;
+    }catch(e){
+      toast('Erro ao enviar redefinição',e.message||'Não foi possível enviar o link.','error');
+      return false;
+    }
+  }
   async function resetCompanyOwnerPassword(){
     const id=$('#me-owner-user-id')?.value||'';
     if(!id){toast('Responsável não encontrado','Atualize a lista de clientes e tente novamente.','error');return}
     const button=$('#me-reset-owner-password');
-    busy(button,true,'Redefinindo...');
+    busy(button,true,'Enviando...');
     try{await resetUser(id)}finally{busy(button,false)}
   }
   function planStatus(message='',type=''){formStatus('#mp-status',message,type)}
