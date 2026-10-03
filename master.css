@@ -562,3 +562,8 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .player-branding-master-layout{grid-template-columns:1fr}
   .player-branding-master-preview{min-height:190px}
 }
+
+
+/* v41 — remote Player actions */
+.device-access-actions{display:flex;align-items:center;justify-content:flex-end;gap:7px;flex-wrap:wrap}
+@media(max-width:720px){.device-access-actions{justify-content:stretch}.device-access-actions .small-button{flex:1}}
