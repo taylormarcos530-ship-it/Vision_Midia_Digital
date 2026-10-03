@@ -1485,12 +1485,16 @@
     const configured = String(device?.orientation || 'auto').toLowerCase();
     if (configured === 'portrait' || configured === 'landscape') return configured;
 
+    const shotWidth = Number(shot?.width || 0);
+    const shotHeight = Number(shot?.height || 0);
+    if (shotWidth > 0 && shotHeight > 0) return shotHeight > shotWidth ? 'portrait' : 'landscape';
+
     const reported = String(device?.reported_orientation || '').toLowerCase();
     if (reported.includes('portrait')) return 'portrait';
     if (reported.includes('landscape')) return 'landscape';
 
-    const width = Number(shot?.width || device?.screen_width || 0);
-    const height = Number(shot?.height || device?.screen_height || 0);
+    const width = Number(device?.screen_width || 0);
+    const height = Number(device?.screen_height || 0);
     if (width > 0 && height > 0) return height > width ? 'portrait' : 'landscape';
     return 'landscape';
   }
