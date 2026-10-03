@@ -59,11 +59,24 @@
     $('#auth-visual-subtitle').textContent = config.subtitle;
 
     if (config.imageUrl) {
-      image.src = config.imageUrl;
-      image.classList.remove('hidden');
-      panel.dataset.hasImage = 'true';
+      const nextSrc = String(config.imageUrl);
+      if (image.dataset.visionSrc === nextSrc && image.getAttribute('src')) {
+        image.classList.remove('hidden');
+        panel.dataset.hasImage = 'true';
+      } else {
+        const preload = new Image();
+        preload.onload = () => {
+          if (!image.isConnected) return;
+          image.src = nextSrc;
+          image.dataset.visionSrc = nextSrc;
+          image.classList.remove('hidden');
+          panel.dataset.hasImage = 'true';
+        };
+        preload.src = nextSrc;
+      }
     } else {
       image.removeAttribute('src');
+      delete image.dataset.visionSrc;
       image.classList.add('hidden');
       panel.dataset.hasImage = 'false';
     }
@@ -365,7 +378,7 @@
         const headers = { apikey: CONFIG.supabasePublishableKey, 'Content-Type': 'application/json' };
         const [plansResponse, configResponse] = await Promise.all([
           fetch(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }),
-          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
+          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle,web_push_public_key&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
         ]);
         if (!plansResponse.ok || !configResponse.ok) throw primaryError;
         const plans = await plansResponse.json();
@@ -481,11 +494,54 @@
     } catch {}
   }
 
+  function pushApplicationServerKey(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+    const raw = atob(normalized + padding);
+    return Uint8Array.from(raw, char => char.charCodeAt(0));
+  }
+
+  async function ensurePersistentPushSubscription() {
+    if (!state.user?.id || !state.company?.id) throw new Error('Entre em uma conta vinculada antes de ativar as notificações.');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('Este navegador não oferece Web Push persistente.');
+    if (!('Notification' in window) || Notification.permission !== 'granted') throw new Error('A permissão de notificações ainda não foi concedida.');
+
+    const publicKey = String(state.publicConfig?.config?.web_push_public_key || '').trim();
+    if (!publicKey) throw new Error('O Web Push ainda não foi configurado no servidor.');
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: pushApplicationServerKey(publicKey),
+      });
+    }
+
+    const json = subscription.toJSON();
+    if (!json?.endpoint || !json?.keys?.p256dh || !json?.keys?.auth) throw new Error('O navegador não retornou uma inscrição Web Push válida.');
+
+    await functionRequest('web-push', {
+      authenticated: true,
+      body: {
+        action: 'subscribe',
+        company_id: state.company.id,
+        subscription: json,
+      },
+    });
+    return subscription;
+  }
+
   async function enableAccessNotifications() {
     if (!('Notification' in window)) return toast('Notificações indisponíveis', 'Este navegador não oferece suporte.', 'error');
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
-    toast('Notificações ativadas', 'Você será avisado quando o acesso for liberado ou quando houver mudança importante na assinatura.');
+    try {
+      await ensurePersistentPushSubscription();
+      toast('Notificações ativadas', 'O Web Push ficou registrado neste aparelho e pode avisar mesmo com o app totalmente fechado.');
+    } catch (error) {
+      toast('Notificação local ativada', error.message || 'Não foi possível registrar o Web Push persistente.', 'error', 6500);
+    }
     const reason = accessReason(); if (reason) notifyAccessState(reason);
   }
 
@@ -613,11 +669,17 @@
     if (reason) {
       showScreen('access');
       renderAccessScreen(reason);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        ensurePersistentPushSubscription().catch(() => {});
+      }
       return;
     }
     showScreen('app');
     renderIdentity();
     await loadAllData();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      ensurePersistentPushSubscription().catch(() => {});
+    }
     const restoreSaasArea = readLocalValue(ACTIVE_AREA_KEY) === 'saas';
     setView(state.activeView, { persist: !restoreSaasArea });
   }
@@ -675,7 +737,6 @@
   function renderAll() {
     renderDashboard();
     renderDevices();
-    renderPlayerBranding();
     renderMonitoring();
     renderMedia();
     renderPlaylists();
@@ -3388,9 +3449,9 @@
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
     $('#playlist-sort')?.addEventListener('change', renderPlaylists);
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
-    $('#player-branding-form').addEventListener('submit', savePlayerBranding);
-    $('#branding-copy-url').addEventListener('click', async () => { const value=$('#branding-player-url').value; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url').select();document.execCommand('copy');toast('Link copiado')} });
-    $('#branding-open-player').addEventListener('click', () => window.open($('#branding-player-url').value || './player.html','_blank','noopener'));
+    $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
+    $('#branding-copy-url')?.addEventListener('click', async () => { const value=$('#branding-player-url')?.value || ''; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url')?.select();document.execCommand('copy');toast('Link copiado')} });
+    $('#branding-open-player')?.addEventListener('click', () => window.open($('#branding-player-url')?.value || './player.html','_blank','noopener'));
     $('#playlist-schedule-form').addEventListener('submit', applyPlaylistSchedule);
     $('#playlist-schedule-clear').addEventListener('click', clearPlaylistSchedule);
     $('#playlist-schedule-enabled').addEventListener('change', () => { playlistScheduleStatus(); syncPlaylistScheduleFormVisibility(); });
