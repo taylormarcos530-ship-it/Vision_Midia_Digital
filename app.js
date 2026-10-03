@@ -1062,6 +1062,7 @@
             <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋮</summary>
             <div class="device-more-popover">
               ${['owner','admin'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-replace-device="${device.id}">⇄ Substituir TV</button>` : ''}
+              ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>` : ''}
               <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
               <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
             </div>
@@ -1232,6 +1233,36 @@
     }
   }
 
+  async function requestDeviceRestart(deviceId, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return false;
+    if (!['owner','admin','operator'].includes(state.companyRole)) {
+      toast('Sem permissão', 'Seu usuário não pode reiniciar Players.', 'error');
+      return false;
+    }
+    if (!confirm(`Reiniciar o Vision Player da TV “${device.name}”? A reprodução volta automaticamente depois do reinício.`)) return false;
+    setBusy(button, true, 'Solicitando...');
+    try {
+      const result = await functionRequest('device-control', {
+        body: {
+          action: 'restart_player',
+          company_id: state.company.id,
+          device_id: deviceId,
+        },
+        authenticated: true,
+      });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast('Reinício solicitado', `${device.name}: o Player receberá o comando na próxima consulta.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) {
+      toast('Não foi possível reiniciar', error.message, 'error', 6500);
+      return false;
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
   function renderPlayerBranding() {
     const b = state.playerBranding;
     const title = b?.title || state.company?.name || 'Vision Player';
@@ -1350,7 +1381,7 @@
   }
 
   function commandEventLabel(command) {
-    const label = ({ screenshot:'Captura de tela' })[command.command_type] || command.command_type || 'Comando';
+    const label = ({ screenshot:'Captura de tela', restart_player:'Reinício do Player' })[command.command_type] || command.command_type || 'Comando';
     if (command.status === 'completed') return { severity:'info', message:`${label} concluída.`, code:`command_${command.command_type}_completed` };
     if (command.status === 'failed') return { severity:'error', message:command.error_message || `${label} falhou.`, code:`command_${command.command_type}_failed` };
     return { severity:'info', message:`${label} solicitada.`, code:`command_${command.command_type}_requested` };
@@ -3570,6 +3601,8 @@
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
       const captureDevice = event.target.closest('[data-capture-device]');
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
+      const restartDevice = event.target.closest('[data-restart-device]');
+      if (restartDevice) return requestDeviceRestart(restartDevice.dataset.restartDevice, restartDevice);
       const replaceDevice = event.target.closest('[data-replace-device]');
       if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
