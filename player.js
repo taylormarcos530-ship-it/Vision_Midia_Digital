@@ -825,6 +825,7 @@
     if (!media) throw new Error('Nenhuma imagem ou vídeo está sendo exibido agora.');
     let viewW=Math.max(1,innerWidth||screen.width||1920),viewH=Math.max(1,innerHeight||screen.height||1080);
     const configuredOrientation=String(document.documentElement.dataset.playerOrientation||'auto');
+    const cssRotationActive=document.body.classList.contains('force-player-portrait')||document.body.classList.contains('force-player-landscape');
     if(configuredOrientation==='landscape'&&viewH>viewW)[viewW,viewH]=[viewH,viewW];
     if(configuredOrientation==='portrait'&&viewW>viewH)[viewW,viewH]=[viewH,viewW];
     const scale=Math.min(1,1920/Math.max(viewW,viewH));
@@ -833,8 +834,21 @@
     const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponível.');ctx.fillStyle='#000';ctx.fillRect(0,0,width,height);
     const sourceW=media.tagName==='VIDEO'?(media.videoWidth||0):(media.naturalWidth||0),sourceH=media.tagName==='VIDEO'?(media.videoHeight||0):(media.naturalHeight||0);
     if(!sourceW||!sourceH)throw new Error('A mídia ainda não está pronta para captura.');
-    const contain=Math.min(width/sourceW,height/sourceH),drawW=sourceW*contain,drawH=sourceH*contain,x=(width-drawW)/2,y=(height-drawH)/2;
-    ctx.drawImage(media,x,y,drawW,drawH);
+
+    if(cssRotationActive){
+      const rotatedW=sourceH,rotatedH=sourceW;
+      const contain=Math.min(width/rotatedW,height/rotatedH);
+      const drawW=sourceW*contain,drawH=sourceH*contain;
+      ctx.save();
+      ctx.translate(width/2,height/2);
+      ctx.rotate(Math.PI/2);
+      ctx.drawImage(media,-drawW/2,-drawH/2,drawW,drawH);
+      ctx.restore();
+    }else{
+      const contain=Math.min(width/sourceW,height/sourceH),drawW=sourceW*contain,drawH=sourceH*contain,x=(width-drawW)/2,y=(height-drawH)/2;
+      ctx.drawImage(media,x,y,drawW,drawH);
+    }
+
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));
     if(!blob)throw new Error('Não foi possível gerar a captura.');
     return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
