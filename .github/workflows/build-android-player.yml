@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
-          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js widget.html android-player/app/src/main/assets/
 
       - name: Validate web JavaScript
         run: |
