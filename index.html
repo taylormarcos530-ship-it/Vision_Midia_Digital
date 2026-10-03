@@ -931,6 +931,26 @@
     </form>
   </dialog>
 
+  <dialog id="password-reset-dialog" class="app-dialog">
+    <form id="password-reset-form" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">SEGURANÇA</span><h3>Criar nova senha</h3><p class="dialog-subtitle">Defina a nova senha desta conta para concluir a recuperação.</p></div>
+        <button class="icon-button" data-close-dialog="password-reset-dialog" type="button">×</button>
+      </div>
+      <label>Nova senha
+        <input id="password-reset-new" type="password" minlength="8" autocomplete="new-password" required />
+      </label>
+      <label>Confirmar nova senha
+        <input id="password-reset-confirm" type="password" minlength="8" autocomplete="new-password" required />
+      </label>
+      <div id="password-reset-status" class="form-status hidden" role="status" aria-live="polite"></div>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="password-reset-dialog" type="button">Cancelar</button>
+        <button id="password-reset-save" class="button primary" type="submit">Salvar nova senha</button>
+      </div>
+    </form>
+  </dialog>
+
   <script src="./config.js"></script>
   <script src="./app.js?v=41" defer></script>
   <script src="./payment-ui.js" defer></script>
