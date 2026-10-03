@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { sendCompanyPush } from '../_shared/web-push.ts'
 
 const C={
   'Access-Control-Allow-Origin':'*',
@@ -33,7 +34,7 @@ Deno.serve(async(req)=>{
     if(!companyId)return J({error:'company_required'},400)
     const [{data:current,error:currentError},{data:currentCompany,error:companyError}]=await Promise.all([
       admin.from('company_subscriptions').select('*').eq('company_id',companyId).maybeSingle(),
-      admin.from('companies').select('settings').eq('id',companyId).maybeSingle(),
+      admin.from('companies').select('settings,status,name').eq('id',companyId).maybeSingle(),
     ])
     if(currentError)throw currentError
     if(companyError)throw companyError
@@ -154,6 +155,39 @@ Deno.serve(async(req)=>{
       },
     })
     if(auditError)console.warn('save-company audit',auditError.message)
+
+    const accessChanged=
+      String(currentCompany?.status||'')!==String(companyStatus||'')||
+      String(current?.status||'')!==String(persistedSubscription?.status||'')||
+      String(current?.payment_status||'')!==String(persistedSubscription?.payment_status||'')||
+      String(current?.current_period_end||'')!==String(persistedSubscription?.current_period_end||'')||
+      String(current?.trial_ends_at||'')!==String(persistedSubscription?.trial_ends_at||'')
+
+    if(accessChanged){
+      try{
+        const sub=persistedSubscription||{}
+        let title='Plano atualizado'
+        let message='Sua assinatura da Vision Mídia Digital foi atualizada.'
+        if(companyStatus==='suspended'||sub.status==='suspended'){
+          title='Acesso suspenso'
+          message='Seu acesso foi suspenso. Fale com o suporte para regularizar.'
+        }else if(sub.status==='cancelled'){
+          title='Assinatura cancelada'
+          message='Sua assinatura foi cancelada. Fale com o suporte para reativar.'
+        }else if(sub.status==='past_due'||sub.payment_status==='overdue'){
+          title='Pagamento pendente'
+          message='Sua assinatura está vencida ou com pagamento pendente.'
+        }else if(sub.status==='trialing'){
+          title='Teste liberado'
+          message=sub.trial_ends_at?`Seu teste foi liberado até ${new Date(sub.trial_ends_at).toLocaleString('pt-BR',{timeZone:'America/Sao_Paulo'})}.`:'Seu teste foi liberado.'
+        }else if(sub.status==='active'&&['paid','waived'].includes(sub.payment_status||'')){
+          title='Acesso liberado'
+          message=sub.current_period_end?`Seu plano está ativo até ${new Date(sub.current_period_end).toLocaleDateString('pt-BR',{timeZone:'America/Sao_Paulo'})}.`:'Seu acesso está liberado.'
+        }
+        await sendCompanyPush(admin,companyId,{title:`Vision Mídia Digital • ${title}`,body:message,url:'./',tag:'vision-access'})
+      }catch(pushError){console.warn('save-company push',pushError?.message||pushError)}
+    }
+
     return J({...data,subscription:persistedSubscription,player_settings:{audio_enabled:audioEnabled,autostart_enabled:autostartEnabled,cache_revision:cacheRevision}})
   }catch(error){
     console.error('save-company',error)
