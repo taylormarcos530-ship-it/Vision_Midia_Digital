@@ -1560,3 +1560,48 @@ html,body{max-width:100%;overflow-x:hidden}
   .topbar h1{font-size:clamp(17px,5vw,22px)}
   input,select,textarea{font-size:16px}
 }
+
+
+/* Mobile viewport hardening v2 — prevent apparent zoom/crop and keep account actions visible */
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
+@media (max-width:820px){
+  body{width:100%;max-width:100%;overflow-x:hidden}
+  .app-shell,.main-area,.content-area{min-width:0;width:100%;max-width:100%}
+  .sidebar{
+    width:min(86vw,300px);
+    height:100svh;
+    height:100dvh;
+    max-height:100dvh;
+    min-height:0;
+    overflow:hidden;
+    overscroll-behavior:contain;
+  }
+  .sidebar-brand{flex:0 0 auto;padding-bottom:12px}
+  .sidebar .nav-list{
+    display:flex;
+    flex:1 1 auto;
+    min-height:0;
+    flex-direction:column;
+    overflow-y:auto;
+    overflow-x:hidden;
+    -webkit-overflow-scrolling:touch;
+    padding:0 0 8px;
+  }
+  .sidebar .nav-item{flex:0 0 auto;min-height:40px;padding:9px 10px}
+  .sidebar-footer{
+    display:block!important;
+    flex:0 0 auto;
+    min-height:0;
+    margin-top:0;
+    padding-top:10px;
+    padding-bottom:max(6px,env(safe-area-inset-bottom));
+    background:#081222;
+  }
+  .sidebar-footer .company-pill{padding:7px 8px}
+  .sidebar-footer .nav-item{min-height:38px;padding:8px 10px}
+  .topbar{min-width:0;overflow:hidden}
+  .topbar-left{min-width:0;flex:1}
+  .topbar-left>div{min-width:0}
+  .topbar h1{max-width:100%;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  img,video,canvas,iframe{max-width:100%}
+}
