@@ -494,3 +494,32 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .master-topbar{width:100%;max-width:100%}
   .login-visual-settings-grid,.master-settings-workspace{min-width:0;width:100%}
 }
+
+
+/* Master contrast lock v2 — explicit field colors across mobile browsers */
+#lv-fit,#lv-position{
+  background-color:#ffffff!important;
+  background-image:none!important;
+  color:#111827!important;
+  -webkit-text-fill-color:#111827!important;
+  opacity:1!important;
+  color-scheme:light!important;
+}
+#lv-fit option,#lv-position option{
+  background:#ffffff!important;
+  color:#111827!important;
+  -webkit-text-fill-color:#111827!important;
+}
+#ps-whatsapp,#ps-signup-message,#ps-renewal-message,#lv-title,#lv-subtitle{
+  background:#0c1323!important;
+  color:#ffffff!important;
+  -webkit-text-fill-color:#ffffff!important;
+  caret-color:#ffffff!important;
+  opacity:1!important;
+  color-scheme:dark!important;
+}
+#ps-whatsapp::placeholder,#ps-signup-message::placeholder,#ps-renewal-message::placeholder,#lv-title::placeholder,#lv-subtitle::placeholder{
+  color:#9aa8bf!important;
+  -webkit-text-fill-color:#9aa8bf!important;
+  opacity:1!important;
+}
