@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b1020" />
   <title>Vision Mídia Digital • Master</title>
-  <link rel="stylesheet" href="./master.css?v=41" />
+  <link rel="stylesheet" href="./master.css?v=42" />
 </head>
 <body>
   <div id="master-toast-root" class="toast-root" aria-live="polite"></div>
@@ -73,6 +73,38 @@
           <div class="dashboard-grid">
             <article class="panel"><div class="panel-head"><div><small>CLIENTES</small><h3>Resumo de contas</h3></div><button class="text-button" data-go-master="clients">Ver todos</button></div><div id="master-dashboard-clients" class="mini-list"></div></article>
             <article class="panel"><div class="panel-head"><div><small>AUDITORIA</small><h3>Últimas ações</h3></div><button class="text-button" data-go-master="audit">Ver histórico</button></div><div id="master-dashboard-audit" class="mini-list"></div></article>
+          </div>
+
+          <div class="dashboard-grid master-alert-grid">
+            <article class="panel master-expiry-panel">
+              <div class="panel-head">
+                <div><small>COBRANÇA</small><h3>Vencimentos próximos</h3></div>
+                <button id="master-expiry-enable" class="text-button" type="button">Ativar avisos</button>
+              </div>
+              <p class="helper">Contas vencidas ou que vencem nos próximos 3 dias aparecem aqui. Com os avisos ativados, o navegador mostra uma notificação por cliente uma vez ao dia.</p>
+              <div id="master-expiry-list" class="master-expiry-list"></div>
+            </article>
+
+            <article class="panel master-notification-panel">
+              <div class="panel-head"><div><small>NOTIFICAÇÕES</small><h3>Enviar aviso ao cliente</h3></div><span class="master-only-badge">WEB PUSH</span></div>
+              <form id="master-notification-form" class="stack">
+                <label>Cliente
+                  <select id="mn-company" required></select>
+                </label>
+                <label>Título
+                  <input id="mn-title" maxlength="120" value="Vision Mídia Digital" required />
+                </label>
+                <label>Mensagem
+                  <textarea id="mn-message" rows="3" maxlength="500" placeholder="Digite a mensagem que o cliente receberá..." required></textarea>
+                </label>
+                <div class="dialog-actions compact-actions master-notification-actions">
+                  <button id="mn-fill-expiry" class="button ghost" type="button">Usar aviso de vencimento</button>
+                  <button id="mn-send" class="button primary" type="submit">Enviar notificação</button>
+                </div>
+                <div id="mn-status" class="form-status hidden" role="status" aria-live="polite"></div>
+                <small class="helper">O envio chega aos aparelhos em que o cliente já ativou as notificações do Vision Mídia Digital.</small>
+              </form>
+            </article>
           </div>
 
           <div class="master-settings-workspace">
@@ -281,6 +313,13 @@
         </div>
       </div>
       <div class="danger-note">Aguardando aprovação, pagamento vencido, suspensão ou cancelamento bloqueiam o painel e o Player.</div>
+      <div class="limit-box company-danger-zone">
+        <div>
+          <strong>Zona de risco</strong>
+          <small>Exclusão definitiva remove a empresa e seus dados vinculados. Por segurança, esta ação só será habilitada quando o backend seguro de exclusão estiver publicado.</small>
+        </div>
+        <button id="me-delete-company" class="button danger" type="button" disabled title="Backend seguro de exclusão ainda não publicado">Excluir cliente</button>
+      </div>
       <div id="me-status" class="form-status hidden" role="status" aria-live="polite"></div>
       <div class="dialog-actions"><button type="button" class="button ghost" data-close="master-company-dialog">Cancelar</button><button id="me-save" class="button primary" type="submit">Salvar alterações</button></div>
     </form>
@@ -343,7 +382,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=41" defer></script>
+  <script src="./master.js?v=42" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>
