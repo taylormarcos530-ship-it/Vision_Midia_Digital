@@ -297,39 +297,10 @@
             <div><strong>Plano atual</strong><span>Carregando limite de TVs…</span></div>
           </div>
 
-          <article class="panel player-branding-panel">
-            <div class="panel-header">
-              <div><span class="eyebrow">PLAYER / TV BOX</span><h3>Tela de instalação e vinculação</h3></div>
-              <small>Configuração exclusiva desta empresa</small>
-            </div>
-            <div class="branding-layout">
-              <div id="player-branding-preview" class="branding-preview">
-                <div class="branding-preview-placeholder">V</div>
-                <strong id="branding-preview-title">Vision Player</strong>
-                <span id="branding-preview-message">Instale o Player e vincule a TV pelo código.</span>
-              </div>
-              <form id="player-branding-form" class="branding-form">
-                <label>Título da tela de vinculação
-                  <input id="branding-title" type="text" maxlength="120" placeholder="Ex.: Mercado Central" />
-                </label>
-                <label>Mensagem
-                  <input id="branding-message" type="text" maxlength="240" placeholder="Ex.: Digite o código no painel para vincular esta TV." />
-                </label>
-                <label>Imagem de fundo / capa
-                  <input id="branding-file" type="file" accept="image/jpeg,image/png,image/webp" />
-                </label>
-                <div class="branding-code-box">
-                  <span>Código interno da instalação</span>
-                  <strong id="branding-setup-code">Será gerado ao salvar</strong>
-                </div>
-                <label>Link personalizado do Player
-                  <div class="copy-line"><input id="branding-player-url" type="text" readonly /><button id="branding-copy-url" class="small-icon-button" type="button">Copiar</button></div>
-                </label>
-                <div class="branding-actions"><button id="branding-open-player" class="button ghost" type="button">Abrir Player</button><button id="branding-save" class="button primary" type="submit">Salvar tela</button></div>
-                <p class="form-hint">A imagem e os textos pertencem somente a esta conta. O Player continuará exibindo o código de 6 dígitos para vincular a TV.</p>
-              </form>
-            </div>
-          </article>
+          <div class="module-context-row player-managed-note">
+            <span>🔒 Identidade do Player gerenciada pelo Master</span>
+            <span>O título, a mensagem e a capa são aplicados automaticamente ao Vision Player desta empresa.</span>
+          </div>
           <div id="devices-grid" class="cards-grid"></div>
           <div id="devices-empty" class="empty-panel hidden">
             <div class="empty-icon">▣</div>
