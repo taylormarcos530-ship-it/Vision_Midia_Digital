@@ -3,7 +3,7 @@
   const CONFIG = window.VISION_CONFIG;
   const SESSION_KEY = 'vision_midia_session_v1';
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
-  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [], loginVisualDraft: null, loginVisualRemoveRequested: false };
+  const state = { session: null, role: null, data: null, platformConfig: null, view: 'dashboard', selectedCompanyId: null, replaceDevices: [], accessDevices: [], loginVisualDraft: null, loginVisualRemoveRequested: false, playerBranding: null, playerBrandingDraft: null, playerBrandingRemoveRequested: false };
   const $ = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => [...r.querySelectorAll(s)];
   let lastActionButton = null;
@@ -112,11 +112,24 @@
     $('#login-visual-master-title').textContent=cfg.title||'Sua operação visual, organizada em um só lugar.';
     $('#login-visual-master-subtitle').textContent=cfg.subtitle||'Gerencie telas, conteúdos, playlists e campanhas com controle profissional.';
     if(cfg.imageDataUrl){
-      img.src=cfg.imageDataUrl;
-      img.classList.remove('hidden');
-      box.dataset.hasImage='true';
+      const nextSrc=String(cfg.imageDataUrl);
+      if(img.dataset.visionSrc===nextSrc&&img.getAttribute('src')){
+        img.classList.remove('hidden');
+        box.dataset.hasImage='true';
+      }else{
+        const preload=new Image();
+        preload.onload=()=>{
+          if(!img.isConnected)return;
+          img.src=nextSrc;
+          img.dataset.visionSrc=nextSrc;
+          img.classList.remove('hidden');
+          box.dataset.hasImage='true';
+        };
+        preload.src=nextSrc;
+      }
     }else{
       img.removeAttribute('src');
+      delete img.dataset.visionSrc;
       img.classList.add('hidden');
       box.dataset.hasImage='false';
     }
@@ -230,6 +243,125 @@
     formStatus('#lv-status','Imagem removida da prévia. Salve para confirmar.','pending');
   }
 
+  function masterPlayerBrandingConfig(){
+    const base=state.playerBranding||{};
+    const draft=state.playerBrandingDraft||{};
+    return{
+      title:draft.title!==undefined?draft.title:(base.title||''),
+      message:draft.message!==undefined?draft.message:(base.message||''),
+      imageDataUrl:draft.imageDataUrl||'',
+      splashUrl:state.playerBrandingRemoveRequested?'':(draft.imageDataUrl||base.splash_url||''),
+      setupCode:base.setup_code||'',
+    };
+  }
+  function renderMasterPlayerBrandingPreview(){
+    const cfg=masterPlayerBrandingConfig();
+    const box=$('#me-branding-preview');
+    const img=$('#me-branding-image');
+    if(!box||!img)return;
+    $('#me-branding-preview-title').textContent=cfg.title||$('#me-company-name')?.value||'Vision Player';
+    $('#me-branding-preview-message').textContent=cfg.message||'Instale o Player e vincule a TV pelo código.';
+    $('#me-branding-setup-code').textContent=cfg.setupCode||'Gerado automaticamente';
+    const nextSrc=cfg.splashUrl||'';
+    if(nextSrc){
+      if(img.dataset.visionSrc===nextSrc&&img.getAttribute('src')){
+        img.classList.remove('hidden');
+        box.dataset.hasImage='true';
+      }else{
+        const preload=new Image();
+        preload.onload=()=>{
+          if(!img.isConnected)return;
+          img.src=nextSrc;
+          img.dataset.visionSrc=nextSrc;
+          img.classList.remove('hidden');
+          box.dataset.hasImage='true';
+        };
+        preload.src=nextSrc;
+      }
+    }else{
+      img.removeAttribute('src');
+      delete img.dataset.visionSrc;
+      img.classList.add('hidden');
+      box.dataset.hasImage='false';
+    }
+  }
+  async function loadMasterPlayerBranding(companyId){
+    state.playerBranding=null;
+    state.playerBrandingDraft=null;
+    state.playerBrandingRemoveRequested=false;
+    if($('#me-branding-title'))$('#me-branding-title').value='';
+    if($('#me-branding-message'))$('#me-branding-message').value='';
+    if($('#me-branding-file'))$('#me-branding-file').value='';
+    renderMasterPlayerBrandingPreview();
+    const result=await master({action:'get_player_branding',company_id:companyId});
+    if($('#me-company-id')?.value!==companyId)return;
+    state.playerBranding=result?.branding||null;
+    state.playerBrandingDraft=null;
+    if($('#me-branding-title'))$('#me-branding-title').value=state.playerBranding?.title||'';
+    if($('#me-branding-message'))$('#me-branding-message').value=state.playerBranding?.message||'';
+    renderMasterPlayerBrandingPreview();
+  }
+  function syncMasterPlayerBrandingDraft(){
+    state.playerBrandingDraft={
+      ...(state.playerBrandingDraft||{}),
+      title:($('#me-branding-title')?.value||'').trim(),
+      message:($('#me-branding-message')?.value||'').trim(),
+    };
+    renderMasterPlayerBrandingPreview();
+  }
+  async function handleMasterPlayerBrandingFile(event){
+    const file=event.target.files?.[0];
+    if(!file)return;
+    formStatus('#me-branding-status','Preparando capa...','pending');
+    try{
+      const imageDataUrl=await compressLoginVisualFile(file);
+      if(String(imageDataUrl||'').length>2.8*1024*1024)throw new Error('A capa otimizada ficou maior que 2 MB. Use uma imagem menor.');
+      state.playerBrandingDraft={...(state.playerBrandingDraft||{}),imageDataUrl};
+      state.playerBrandingRemoveRequested=false;
+      syncMasterPlayerBrandingDraft();
+      formStatus('#me-branding-status','✅ Capa preparada. Clique em “Salvar identidade”.','success');
+    }catch(e){
+      event.target.value='';
+      formStatus('#me-branding-status',`❌ ${e.message}`,'error');
+    }
+  }
+  function removeMasterPlayerBrandingImage(){
+    state.playerBrandingRemoveRequested=true;
+    state.playerBrandingDraft={...(state.playerBrandingDraft||{}),imageDataUrl:''};
+    if($('#me-branding-file'))$('#me-branding-file').value='';
+    renderMasterPlayerBrandingPreview();
+    formStatus('#me-branding-status','Capa removida da prévia. Salve para confirmar.','pending');
+  }
+  async function saveMasterPlayerBranding(){
+    const companyId=$('#me-company-id')?.value||'';
+    if(!companyId)return;
+    const button=$('#me-branding-save');
+    syncMasterPlayerBrandingDraft();
+    busy(button,true,'Salvando...');
+    try{
+      const cfg=masterPlayerBrandingConfig();
+      const payload={
+        action:'save_player_branding',
+        company_id:companyId,
+        title:cfg.title||null,
+        message:cfg.message||null,
+        remove_image:state.playerBrandingRemoveRequested===true,
+      };
+      if(/^data:image\/webp;base64,/i.test(state.playerBrandingDraft?.imageDataUrl||''))payload.image_base64=state.playerBrandingDraft.imageDataUrl;
+      const result=await master(payload);
+      state.playerBranding=result?.branding||null;
+      state.playerBrandingDraft=null;
+      state.playerBrandingRemoveRequested=false;
+      if($('#me-branding-file'))$('#me-branding-file').value='';
+      renderMasterPlayerBrandingPreview();
+      formStatus('#me-branding-status','✅ Identidade do Player salva para esta empresa.','success');
+      toast('Salvo com sucesso','Título, mensagem e capa do Player foram atualizados.');
+    }catch(e){
+      formStatus('#me-branding-status',`❌ ${e.message}`,'error');
+      toast('Erro ao salvar identidade do Player',e.message,'error');
+    }finally{busy(button,false)}
+  }
+
   function reaisToCents(v){ const t=String(v||'').trim().replace(/\./g,'').replace(',','.'); if(!t) return null; const n=Number(t); return Number.isFinite(n)?Math.round(n*100):null; }
   function saveSession(s){ state.session=s; if(s) localStorage.setItem(SESSION_KEY,JSON.stringify(s)); else localStorage.removeItem(SESSION_KEY); }
   function savedSession(){ try{const s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); return s?.access_token&&s?.refresh_token?s:null}catch{return null} }
@@ -287,8 +419,12 @@
       const maxD=limitValue(c,'max_devices'), maxU=limitValue(c,'max_users'), maxS=limitValue(c,'storage_limit_mb'), maxC=limitValue(c,'max_campaigns');
       const isTrial=c.subscription?.status==='trialing';
       const dueSource=isTrial?c.subscription?.trial_ends_at:c.subscription?.current_period_end;
-      const due=dueSource?new Intl.DateTimeFormat('pt-BR',isTrial?{dateStyle:'short',timeStyle:'short'}:{dateStyle:'short'}).format(new Date(dueSource)):(isTrial?'Sem prazo definido':'Sem vencimento');
-      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')} • ${isTrial?'teste até':'vence'} ${esc(due)}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${['super_admin','admin'].includes(state.role)?`<button class="small-button" data-device-access-company="${c.id}">Acesso das TVs</button><button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
+      const dueDate=dueSource?new Date(dueSource):null;
+      const due=dueDate?new Intl.DateTimeFormat('pt-BR',isTrial?{dateStyle:'short',timeStyle:'short'}:{dateStyle:'short'}).format(dueDate):(isTrial?'Sem prazo definido':'Sem vencimento');
+      const dueMs=dueDate?dueDate.getTime()-Date.now():null;
+      const dueState=dueMs===null?'neutral':dueMs<0?'expired':dueMs<=3*86400000?'warning':'ok';
+      const dueHint=dueMs===null?'Defina a data em Gerenciar conta':dueMs<0?'Vencido':dueMs<=86400000?'Vence hoje':dueMs<=3*86400000?`Vence em ${Math.max(1,Math.ceil(dueMs/86400000))} dia(s)`:(isTrial?'Demonstração ativa':'Plano vigente');
+      return `<article class="client-card"><div class="client-top"><div class="client-title"><div class="client-avatar">${esc(c.name.charAt(0).toUpperCase())}</div><div><strong>${esc(c.name)}</strong><small>${esc(c.owner?.email||'Sem e-mail')} • ${esc(c.plan?.name||'Sem plano')}</small></div></div><div><span class="status ${esc(c.status)}">${esc(statusText(c.status))}</span> <span class="status ${esc(subStatus)}">${esc(statusText(subStatus))}</span> <span class="status ${esc(c.subscription?.payment_status||'pending')}">${esc(statusText(c.subscription?.payment_status||'pending'))}</span></div></div><div class="client-expiry ${dueState}"><span>${isTrial?'Teste até':'Vencimento do plano'}</span><strong>${esc(due)}</strong><small>${esc(dueHint)}</small></div><div class="client-usage"><div><span>TVs</span><strong>${c.usage.devices}${maxD===null?'':` / ${maxD}`}</strong></div><div><span>Usuários</span><strong>${c.usage.users}${maxU===null?'':` / ${maxU}`}</strong></div><div><span>Storage</span><strong>${esc(bytes(c.usage.storage_bytes))}${maxS===null?'':` / ${esc(bytes(maxS*1024*1024))}`}</strong></div><div><span>Campanhas</span><strong>${c.usage.campaigns}${maxC===null?'':` / ${maxC}`}</strong></div></div><div class="client-actions"><button class="small-button" data-manage-company="${c.id}">Gerenciar conta</button><button class="small-button" data-company-users="${c.id}">Usuários (${c.members.length})</button>${['super_admin','admin'].includes(state.role)?`<button class="small-button" data-device-access-company="${c.id}">Acesso das TVs</button><button class="small-button" data-replace-company-device="${c.id}">Substituir TV</button>`:''}<button class="small-button" data-toggle-company="${c.id}" data-next-status="${c.status==='active'?'suspended':'active'}">${c.status==='active'?'Suspender':'Reativar'}</button></div></article>`;
     }).join('');
   }
   function renderPlans(){ const plans=state.data.plans||[]; $('#master-plans-grid').innerHTML=plans.map(p=>`<article class="plan-card"><div class="client-top"><div><strong>${esc(p.name)}</strong><small>${esc(p.is_active?'Disponível':'Inativo')}</small></div><span class="status ${p.is_active?'active':'suspended'}">${p.is_active?'Ativo':'Inativo'}</span></div><div class="plan-price">${esc(money(p.monthly_price_cents))}<small>/mês</small></div><p>${esc(p.description||'')}</p><ul><li>${p.max_devices??'∞'} TV(s)</li><li>${p.storage_limit_mb==null?'Ilimitado':`${p.storage_limit_mb} MB`} de mídia</li><li>${p.max_users??'∞'} usuário(s)</li><li>${p.max_campaigns??'∞'} campanha(s)</li></ul><div class="client-actions"><button class="small-button" data-edit-plan="${p.id}">Editar plano</button></div></article>`).join(''); $('#open-plan-button').classList.toggle('hidden',state.role!=='super_admin'); }
@@ -368,7 +504,9 @@
     const o=c.subscription?.limit_overrides||{}; $('#me-max-devices').value=numOrBlank(o.max_devices); $('#me-storage-mb').value=numOrBlank(o.storage_limit_mb); $('#me-max-users').value=numOrBlank(o.max_users); $('#me-max-campaigns').value=numOrBlank(o.max_campaigns);
     const settings=c.settings||{}; $('#me-player-audio').checked=settings.player_audio_enabled!==false; $('#me-player-autostart').checked=settings.player_autostart_enabled!==false;
     renderTrialAccess(c.subscription);
+    formStatus('#me-branding-status');
     openDialog('master-company-dialog');
+    loadMasterPlayerBranding(c.id).catch(e=>formStatus('#me-branding-status',`❌ ${e.message}`,'error'));
   }
   function overrideObj(){ const o={}; [['max_devices','#me-max-devices'],['storage_limit_mb','#me-storage-mb'],['max_users','#me-max-users'],['max_campaigns','#me-max-campaigns']].forEach(([k,s])=>{const v=$(s).value.trim();if(v!=='')o[k]=Number(v)}); return o; }
   async function saveCompany(ev){
@@ -536,7 +674,7 @@
     const b=$('#me-clear-cache'); busy(b,true,'Solicitando...');
     try{await saveCompanyRequest({company_id:id,company_name:$('#me-company-name').value.trim(),company_status:$('#me-company-status').value,plan_id:$('#me-plan').value,subscription_status:$('#me-sub-status').value,payment_status:$('#me-payment-status').value,due_date:$('#me-due-date').value||null,manual_price_cents:reaisToCents($('#me-manual-price').value),limit_overrides:overrideObj(),billing_notes:$('#me-billing-notes').value.trim(),player_audio_enabled:$('#me-player-audio').checked,player_autostart_enabled:$('#me-player-autostart').checked,clear_cache:true});formStatus('#me-status','✅ Limpeza de cache enviada. As TVs baixarão novamente as mídias na próxima sincronização.','success');toast('Comando enviado','Cache da conta será renovado.');await load()}catch(e){formStatus('#me-status',`❌ ${e.message}`,'error');toast('Erro ao enviar comando',e.message,'error')}finally{busy(b,false)}
   }
-  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
+  function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); $('#me-branding-file')?.addEventListener('change',handleMasterPlayerBrandingFile); $('#me-branding-remove')?.addEventListener('click',removeMasterPlayerBrandingImage); $('#me-branding-save')?.addEventListener('click',saveMasterPlayerBranding); ['#me-branding-title','#me-branding-message'].forEach(selector=>$(selector)?.addEventListener('input',syncMasterPlayerBrandingDraft)); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
   async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){saveSession(null);show('master-auth');toast('Sessão expirada','Entre novamente.','error')} }
   boot();
