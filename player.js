@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.0';
+  const APP_VERSION = 'vision-player-web-1.5.1';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -48,6 +48,9 @@
     lastEventTimes: {},
     cachePrefetchVersion: null,
     runtimeFallbackVersion: null,
+    pairingStartInFlight: false,
+    pairingRetryTimer: null,
+    pairingRateLimitedUntil: 0,
   };
 
   if (state.deviceToken) {
@@ -342,8 +345,6 @@
 
   async function startPairing(force = false) {
     showPairing();
-    $('#new-code-button').classList.add('hidden');
-    $('#pairing-status').textContent = 'Gerando código seguro…';
 
     if (!force && state.pairing?.request_id && new Date(state.pairing.expires_at).getTime() > Date.now()) {
       applyPairingBranding(state.pairing.branding || null);
@@ -352,8 +353,33 @@
       return;
     }
 
+    const cooldownRemaining = Math.max(0, Number(state.pairingRateLimitedUntil || 0) - Date.now());
+    if (cooldownRemaining > 0) {
+      const seconds = Math.ceil(cooldownRemaining / 1000);
+      const min = Math.floor(seconds / 60);
+      const sec = String(seconds % 60).padStart(2, '0');
+      $('#pairing-code').textContent = 'AGUARDE';
+      $('#pairing-status').textContent = `Limite temporário de pareamento. Tente novamente em ${min}:${sec}.`;
+      const button = $('#new-code-button');
+      button.classList.remove('hidden');
+      button.disabled = true;
+      return;
+    }
+
+    if (state.pairingStartInFlight) return;
+    state.pairingStartInFlight = true;
+    clearTimeout(state.pairingRetryTimer);
+    state.pairingRetryTimer = null;
+
+    const button = $('#new-code-button');
+    button.classList.add('hidden');
+    button.disabled = true;
+    button.textContent = 'Gerar novo código';
+    $('#pairing-status').textContent = 'Gerando código seguro…';
+
     try {
       const pairing = await functionRequest('device-bootstrap', { action: 'start', platform: detectPlatform(), setup_code: localStorage.getItem(SETUP_CODE_KEY) || null });
+      state.pairingRateLimitedUntil = 0;
       state.pairing = pairing;
       writeJson(PAIRING_KEY, pairing);
       applyPairingBranding(pairing.branding || null);
@@ -361,14 +387,46 @@
       pollPairing(pairing);
     } catch (error) {
       const networkFailure = Number(error?.status || 0) === 0;
+      const rateLimited = Number(error?.status || 0) === 429;
+
+      if (rateLimited) {
+        const retryAfterSeconds = Math.max(1, Number(error?.data?.retry_after_seconds || 600));
+        state.pairingRateLimitedUntil = Date.now() + (retryAfterSeconds * 1000);
+        $('#pairing-code').textContent = 'AGUARDE';
+        button.classList.remove('hidden');
+        button.disabled = true;
+
+        const tickRateLimit = () => {
+          const remaining = Math.max(0, state.pairingRateLimitedUntil - Date.now());
+          if (remaining <= 0) {
+            button.disabled = false;
+            button.textContent = 'Gerar novo código';
+            $('#pairing-status').textContent = 'Limite liberado. Gere um novo código.';
+            return;
+          }
+          const totalSeconds = Math.ceil(remaining / 1000);
+          const min = Math.floor(totalSeconds / 60);
+          const sec = String(totalSeconds % 60).padStart(2, '0');
+          button.textContent = `Aguarde ${min}:${sec}`;
+          $('#pairing-status').textContent = `Muitas solicitações de pareamento. Nova tentativa disponível em ${min}:${sec}.`;
+          state.pairingRetryTimer = setTimeout(tickRateLimit, 1000);
+        };
+        tickRateLimit();
+        return;
+      }
+
       $('#pairing-code').textContent = networkFailure ? 'SEM REDE' : 'ERRO';
+      const retryDelay = networkFailure ? 15000 : 30000;
       $('#pairing-status').textContent = networkFailure
-        ? `${error.message || 'Sem conexão com o servidor.'} Verifique Wi-Fi/cabo e Data e hora automáticas. Tentando novamente…`
-        : `${error.message} • tentando novamente…`;
-      $('#new-code-button').classList.remove('hidden');
-      setTimeout(() => {
+        ? `${error.message || 'Sem conexão com o servidor.'} Verifique Wi-Fi/cabo e Data e hora automáticas. Nova tentativa em 15 segundos…`
+        : `${error.message} • nova tentativa em 30 segundos…`;
+      button.classList.remove('hidden');
+      button.disabled = false;
+      state.pairingRetryTimer = setTimeout(() => {
         if (!state.deviceToken && !state.pairing?.request_id) startPairing(true);
-      }, 5000);
+      }, retryDelay);
+    } finally {
+      state.pairingStartInFlight = false;
     }
   }
 
