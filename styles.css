@@ -1746,3 +1746,26 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   .playlist-card-pro{min-height:0}
   .playlist-preview-grid,.playlist-preview-empty{height:150px}
 }
+
+
+/* Media library v37 — stable previews, direct playlist linking and rotation */
+.media-row-pro{grid-template-columns:160px minmax(220px,1fr) minmax(220px,310px) auto;align-items:center;gap:12px}
+.media-preview-clean{position:relative;height:96px;border-radius:12px;overflow:hidden;background:#091423}
+.media-preview-clean>img,.media-preview-clean>video{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block}
+.media-preview-placeholder{position:relative;z-index:0;color:#536a8d;font-size:24px}
+.media-preview-tools{position:absolute;right:7px;bottom:7px;z-index:3;display:flex;gap:5px}
+.media-overlay-button{width:30px;height:30px;display:grid;place-items:center;border:1px solid rgba(255,255,255,.18);border-radius:9px;background:rgba(6,14,25,.78);color:#fff;font-size:16px;font-weight:900;cursor:pointer;backdrop-filter:blur(8px);box-shadow:0 5px 16px rgba(0,0,0,.24)}
+.media-overlay-button:hover{background:rgba(36,79,150,.90);border-color:rgba(119,165,255,.46)}
+.media-overlay-button:disabled{opacity:.65;cursor:wait}
+.media-body-pro{min-width:0;padding:0}
+.media-body-pro strong{font-size:12px}
+.media-body-pro small{line-height:1.45}
+.media-link-count{display:block;margin-top:5px;color:#6f88ad;font-size:9px;font-weight:750}
+.media-direct-playlist{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;align-items:center;min-width:0}
+.media-direct-playlist select{width:100%;min-width:0;min-height:38px;border:1px solid #2b3d59;border-radius:10px;background:#0d192b;color:#dbe5f4;padding:7px 9px;font-size:10px}
+.media-direct-playlist select:disabled{opacity:.55}
+.media-link-button{white-space:nowrap;min-height:38px}
+.media-actions-pro{margin-top:0;justify-content:flex-end;flex-wrap:wrap}
+@media(max-width:1100px){.media-row-pro{grid-template-columns:135px minmax(180px,1fr) minmax(200px,270px)}.media-actions-pro{grid-column:2/-1;justify-content:flex-end}}
+@media(max-width:760px){.media-row-pro{grid-template-columns:110px minmax(0,1fr)}.media-direct-playlist,.media-actions-pro{grid-column:1/-1}.media-preview-clean{height:90px}}
+@media(max-width:480px){.media-row-pro{grid-template-columns:1fr}.media-preview-clean{height:190px}.media-direct-playlist,.media-actions-pro{grid-column:auto}.media-actions-pro{justify-content:stretch}.media-actions-pro .small-icon-button{flex:1}}
