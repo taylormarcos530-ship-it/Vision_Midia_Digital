@@ -44,9 +44,7 @@ public class MainActivity extends Activity {
     private static final String KEY_SETUP_CODE = "company_setup_code";
     public static final String KEY_AUTOSTART = "autostart_enabled";
     private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
-    private static final String KEY_REMOTE_COMPAT = "remote_network_compat";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
-    private static final String REMOTE_PLAYER_FALLBACK = "https://vision-midia-digital-rkoqfnct1-vision-5529.vercel.app/player.html";
 
     private WebView webView;
     private SharedPreferences prefs;
@@ -130,20 +128,8 @@ public class MainActivity extends Activity {
             showSetupDialog(false);
             return;
         }
-        String base = prefs.getBoolean(KEY_REMOTE_COMPAT, false) ? REMOTE_PLAYER_FALLBACK : LOCAL_PLAYER;
-        String url = base + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
+        String url = LOCAL_PLAYER + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
         webView.loadUrl(url);
-    }
-
-    private void loadRemoteCompatibilityPlayer() {
-        String setupCode = prefs.getString(KEY_SETUP_CODE, "");
-        if (!isValidSetupCode(setupCode)) {
-            showSetupDialog(false);
-            return;
-        }
-        prefs.edit().putBoolean(KEY_REMOTE_COMPAT, true).apply();
-        final String url = REMOTE_PLAYER_FALLBACK + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
-        runOnUiThread(() -> webView.loadUrl(url));
     }
 
     private boolean applySetupFromIntent(Intent intent) {
@@ -244,6 +230,7 @@ public class MainActivity extends Activity {
                 connection.setUseCaches(false);
                 connection.setRequestProperty("Content-Type", "application/json");
                 connection.setRequestProperty("Accept", "application/json");
+                connection.setRequestProperty("User-Agent", "VisionPlayerAndroid/" + getAppVersion());
                 if (apiKey != null && !apiKey.isEmpty()) connection.setRequestProperty("apikey", apiKey);
                 if (deviceToken != null && !deviceToken.isEmpty()) connection.setRequestProperty("x-device-token", deviceToken);
 
@@ -267,16 +254,21 @@ public class MainActivity extends Activity {
                 }
                 return status + "\n" + Base64.encodeToString(body, Base64.NO_WRAP);
             } catch (Exception error) {
-                String message = "Falha de rede no TV Box: " + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
+                String type = error.getClass().getSimpleName();
+                String message;
+                if (error instanceof javax.net.ssl.SSLHandshakeException) {
+                    message = "Não foi possível conectar com segurança. Verifique a internet e ative Data e hora automáticas no TV Box.";
+                } else if (error instanceof java.net.UnknownHostException || error instanceof java.net.ConnectException) {
+                    message = "Sem conexão com a internet. Verifique Wi-Fi ou cabo de rede do TV Box.";
+                } else if (error instanceof java.net.SocketTimeoutException) {
+                    message = "A internet do TV Box não respondeu a tempo. Verifique a conexão e tente novamente.";
+                } else {
+                    message = "Falha de rede no TV Box: " + type + ": " + String.valueOf(error.getMessage());
+                }
                 return "0\n" + Base64.encodeToString(message.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
             } finally {
                 if (connection != null) connection.disconnect();
             }
-        }
-
-        @JavascriptInterface
-        public void useRemotePlayer() {
-            loadRemoteCompatibilityPlayer();
         }
 
         @JavascriptInterface
