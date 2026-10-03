@@ -119,6 +119,7 @@
     mediaPreviewUrls: new Map(),
     mediaRenderSignature: '',
     playlistRenderSignature: '',
+    playlistEditorRenderSignature: '',
     playlistItemRenderLimit: 60,
     playlistMediaRenderLimit: 60,
     playlistMediaQuery: '',
@@ -1829,8 +1830,37 @@
     const validIds = new Set(items.map(item => item.id));
     state.selectedPlaylistItemIds = new Set([...state.selectedPlaylistItemIds].filter(id => validIds.has(id)));
     const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
-
     const itemLimit = Math.max(60, Number(state.playlistItemRenderLimit || 60));
+    const mediaLimitForSignature = Math.max(60, Number(state.playlistMediaRenderLimit || 60));
+    const queryForSignature = String(state.playlistMediaQuery || '').trim().toLowerCase();
+    const editorSignature = [
+      playlist.id,
+      playlist.name,
+      itemLimit,
+      mediaLimitForSignature,
+      queryForSignature,
+      [...state.selectedPlaylistItemIds].sort().join(','),
+      items.map(item => [
+        item.id,item.media_id,item.position,item.duration_override_seconds,item.enabled,item.schedule_enabled,
+        item.start_date,item.end_date,item.start_time,item.end_time,
+        Array.isArray(item.weekdays) ? item.weekdays.join('.') : '',item.updated_at
+      ].join(':')).join('|'),
+      state.media.map(media => [
+        media.id,media.name,media.media_type,media.storage_path,media.updated_at,media.width,media.height,media.size_bytes
+      ].join(':')).join('|')
+    ].join('__');
+    if (
+      editorSignature === state.playlistEditorRenderSignature &&
+      $('#playlist-items-list')?.children.length >= 0 &&
+      $('#playlist-media-picker')
+    ) {
+      syncPlaylistBulkUi();
+      hydratePlaylistPreviews();
+      return;
+    }
+    state.playlistEditorRenderSignature = editorSignature;
+
+
     const visibleItems = items.slice(0, itemLimit);
     const list = $('#playlist-items-list');
     $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
@@ -1863,9 +1893,9 @@
 
     const picker = $('#playlist-media-picker');
     const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
-    const query = String(state.playlistMediaQuery || '').trim().toLowerCase();
+    const query = queryForSignature;
     const filteredMedia = state.media.filter(media => !query || String(media.name || '').toLowerCase().includes(query));
-    const mediaLimit = Math.max(60, Number(state.playlistMediaRenderLimit || 60));
+    const mediaLimit = mediaLimitForSignature;
     const visibleMedia = filteredMedia.slice(0, mediaLimit);
     $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
     if ($('#playlist-media-count')) $('#playlist-media-count').textContent = query
@@ -3159,6 +3189,7 @@
     state.playlistItemRenderLimit = 60;
     state.playlistMediaRenderLimit = 60;
     state.playlistMediaQuery = '';
+    state.playlistEditorRenderSignature = '';
     if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
     renderPlaylistEditor();
     openDialog('playlist-items-dialog');
@@ -3688,6 +3719,7 @@
       state.playlistItemRenderLimit = 60;
       state.playlistMediaRenderLimit = 60;
       state.playlistMediaQuery = '';
+      state.playlistEditorRenderSignature = '';
       if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
     });
   }
