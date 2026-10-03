@@ -120,7 +120,12 @@
       return;
     }
 
-    disableApkButton(button, note, 'Validando APK...', 'Confirmando o APK compilado e os arquivos de validação da build.');
+    button.href = url;
+    button.classList.remove('disabled');
+    button.removeAttribute('aria-disabled');
+    button.textContent = 'Baixar APK para TV Box';
+    button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+    if (note) note.textContent = 'APK compilado disponível. Confirmando os metadados da build…';
 
     try {
       const cacheBust = Date.now().toString(36);
@@ -162,12 +167,14 @@
         note.textContent = `APK compilado e validado • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Instale no TV Box e faça o pareamento pelo código exibido.`;
       }
     } catch (error) {
-      disableApkButton(
-        button,
-        note,
-        'APK indisponível',
-        `Falha ao validar o arquivo compilado: ${error?.message || 'erro desconhecido'}`
-      );
+      // The permanent APK path is the source of truth for download availability.
+      // Validation failures must not create a false "needs compilation" state.
+      button.href = url;
+      button.classList.remove('disabled');
+      button.removeAttribute('aria-disabled');
+      button.textContent = 'Baixar APK para TV Box';
+      button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+      if (note) note.textContent = `APK compilado disponível para download. A checagem automática dos metadados não respondeu: ${error?.message || 'erro desconhecido'}.`;
     }
   }
 
