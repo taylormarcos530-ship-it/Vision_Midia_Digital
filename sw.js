@@ -1,4 +1,5 @@
-const CACHE = 'vision-midia-shell-v34';
+const CACHE = 'vision-midia-shell-v35';
+// preview-refresh-v35-playlists
 const SHELL = [
   './', './index.html', './styles.css', './config.js', './app.js', './payment-ui.js', './saas-shell.js', './manifest.webmanifest', './icon.svg',
   './master.html', './master.css', './master.js', './master-payment.js', './master-embed.js',
