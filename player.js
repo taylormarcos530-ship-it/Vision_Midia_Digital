@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.4.0';
+  const APP_VERSION = 'vision-player-web-1.4.9';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -45,6 +45,16 @@
 
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const clearElement = (element) => { if (!element) return; while (element.firstChild) element.removeChild(element.firstChild); };
+  const newClientId = () => (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function') ? globalThis.newClientId() : `vf-${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
+
+  function applyDisplayOrientation(value = 'auto') {
+    const screen = $('#playback-screen');
+    if (!screen) return;
+    const orientation = ['portrait','landscape'].includes(value) ? value : 'auto';
+    screen.classList.remove('orientation-auto','orientation-portrait','orientation-landscape');
+    screen.classList.add(`orientation-${orientation}`);
+  }
 
   async function waitForChangeOrTimeout(nonce, ms) {
     const deadline = Date.now() + ms;
@@ -104,7 +114,7 @@
     state.lastEventTimes[fingerprint] = now;
     const queue = deviceEventQueue();
     queue.push({
-      client_event_id: crypto.randomUUID(),
+      client_event_id: newClientId(),
       severity: ['info', 'warning', 'error', 'critical'].includes(severity) ? severity : 'info',
       event_code: code,
       message: text,
@@ -200,7 +210,7 @@
 
     state.playlistNonce++;
     try { clearCurrentObjectUrl(); } catch {}
-    $('#media-stage')?.replaceChildren();
+    clearElement($('#media-stage'));
     $('#pairing-screen').classList.add('hidden');
     $('#playback-screen').classList.add('hidden');
     $('#access-screen').classList.remove('hidden');
@@ -456,6 +466,7 @@
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
       await applyDeviceSettings(manifest?.device?.settings || {});
+      applyDisplayOrientation(manifest?.device?.orientation || 'auto');
       await cacheManifestAssets(manifest);
       state.manifest = manifest;
       state.lastSyncAt = new Date().toISOString();
@@ -491,7 +502,7 @@
   }
 
   function showIdle(title, message) {
-    $('#media-stage').replaceChildren();
+    clearElement($('#media-stage'));
     $('#idle-title').textContent = title;
     $('#idle-message').textContent = message;
     $('#idle-overlay').classList.remove('hidden');
@@ -520,7 +531,7 @@
     hideIdle();
     clearCurrentObjectUrl();
     const stage = $('#media-stage');
-    stage.replaceChildren();
+    clearElement(stage);
 
     try {
       if (item.media.type === 'image') {
@@ -609,7 +620,7 @@
       const endedAt = new Date();
       if (state.deviceToken) {
         queuePlayback({
-          client_event_id: crypto.randomUUID(),
+          client_event_id: newClientId(),
           campaign_id: program?.campaign_id || null,
           playlist_id: playlist?.id || null,
           media_id: item.media?.id || null,
@@ -717,7 +728,7 @@
 
         const activeItems = (manifest.items || []).filter(item => itemScheduleActive(item, manifest.program?.timezone));
         if (!activeItems.length) {
-          $('#media-stage').replaceChildren();
+          clearElement($('#media-stage'));
           showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está dentro da programação atual. Revise data, dias da semana e horário no painel.');
           await sleep(3000);
           continue;
@@ -755,6 +766,7 @@
   async function startPlayer() {
     if (!state.deviceToken) return startPairing();
     if (!enforceLocalAccess()) showPlayback();
+    applyDisplayOrientation(state.manifest?.device?.orientation || 'auto');
     setStatus('Conectando…');
     if (state.manifest && !localAccessExpired()) ensurePlaybackLoop();
 
