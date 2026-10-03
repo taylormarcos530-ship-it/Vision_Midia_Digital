@@ -36,6 +36,7 @@ public class MainActivity extends Activity {
     private static final String PREFS = "vision_player_prefs";
     private static final String KEY_SETUP_CODE = "company_setup_code";
     public static final String KEY_AUTOSTART = "autostart_enabled";
+    private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
 
     private WebView webView;
@@ -51,6 +52,7 @@ public class MainActivity extends Activity {
             long silentFor = SystemClock.elapsedRealtime() - lastPlayerPulseAt;
             if (lastPlayerPulseAt > 0L && silentFor > 120_000L && webView != null) {
                 lastPlayerPulseAt = SystemClock.elapsedRealtime();
+                if (prefs != null) prefs.edit().putLong(KEY_WATCHDOG_RECOVERY_AT, System.currentTimeMillis()).apply();
                 String setupCode = prefs == null ? "" : prefs.getString(KEY_SETUP_CODE, "");
                 if (isValidSetupCode(setupCode)) loadPlayer(setupCode);
             }
@@ -207,6 +209,19 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void playerAlive() {
             lastPlayerPulseAt = SystemClock.elapsedRealtime();
+        }
+
+        @JavascriptInterface
+        public String getAppVersion() {
+            return BuildConfig.VERSION_NAME;
+        }
+
+        @JavascriptInterface
+        public String consumeWatchdogRecovery() {
+            long recoveredAt = prefs.getLong(KEY_WATCHDOG_RECOVERY_AT, 0L);
+            if (recoveredAt <= 0L) return "";
+            prefs.edit().remove(KEY_WATCHDOG_RECOVERY_AT).apply();
+            return String.valueOf(recoveredAt);
         }
 
         @JavascriptInterface

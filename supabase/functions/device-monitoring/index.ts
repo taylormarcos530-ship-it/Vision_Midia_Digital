@@ -154,6 +154,8 @@ Deno.serve(async (req) => {
       const screenHeight = safeNumber(body?.screen_height, 1, 100000)
       const storageFreeMb = safeNumber(body?.storage_free_mb, 0, 10_000_000)
       const appVersion = String(body?.app_version || '').slice(0, 80) || null
+      const playerVersion = String(body?.player_version || body?.app_version || '').slice(0, 80) || null
+      const apkVersion = String(body?.apk_version || '').slice(0, 80) || null
       const orientation = String(body?.orientation || '').slice(0, 40) || null
       const lastSyncAt = body?.last_sync_at ? new Date(body.last_sync_at) : null
       const cacheItems = safeNumber(body?.cache_items, 0, 100000)
@@ -168,6 +170,9 @@ Deno.serve(async (req) => {
         status: 'online',
         last_seen_at: now,
         app_version: appVersion,
+        player_version: playerVersion,
+        apk_version: apkVersion,
+        reported_orientation: orientation,
         screen_width: screenWidth,
         screen_height: screenHeight,
         storage_free_mb: storageFreeMb == null ? null : Math.round(storageFreeMb),
@@ -204,6 +209,9 @@ Deno.serve(async (req) => {
           storage_free_mb: storageFreeMb == null ? null : Math.round(storageFreeMb),
           details: {
             ...details,
+            player_version: playerVersion,
+            apk_version: apkVersion,
+            reported_orientation: orientation,
             last_sync_at: lastSyncAt && !Number.isNaN(lastSyncAt.getTime()) ? lastSyncAt.toISOString() : null,
             cache_items: cacheItems == null ? 0 : Math.round(cacheItems),
             cache_bytes: cacheBytes == null ? 0 : Math.round(cacheBytes),

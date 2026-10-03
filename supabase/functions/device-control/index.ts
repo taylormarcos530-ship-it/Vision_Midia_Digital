@@ -68,14 +68,15 @@ Deno.serve(async req => {
     if (deviceError) throw deviceError
     if (!device || device.retired_at) return J({ error: 'device_not_found' }, 404)
 
-    if (action !== 'restart_player') return J({ error: 'unknown_action' }, 400)
+    const allowedCommands = ['restart_player','sync_now','clear_cache','reload_programming']
+    if (!allowedCommands.includes(action)) return J({ error: 'unknown_action' }, 400)
 
     const { data: pending, error: pendingError } = await admin
       .from('device_commands')
       .select('id,status,requested_at')
       .eq('company_id', companyId)
       .eq('device_id', deviceId)
-      .eq('command_type', 'restart_player')
+      .eq('command_type', action)
       .in('status', ['pending','sent'])
       .order('requested_at', { ascending: false })
       .limit(1)
@@ -88,7 +89,7 @@ Deno.serve(async req => {
       .insert({
         company_id: companyId,
         device_id: deviceId,
-        command_type: 'restart_player',
+        command_type: action,
         requested_by: userData.user.id,
         status: 'pending',
       })
@@ -99,7 +100,7 @@ Deno.serve(async req => {
     try {
       const { error: auditError } = await admin.from('master_audit_logs').insert({
         actor_user_id: userData.user.id,
-        action: 'device_restart_requested',
+        action: `device_${action}_requested`,
         company_id: companyId,
         details: { device_id: deviceId, device_name: device.name, command_id: command.id },
       })

@@ -42,6 +42,7 @@
     playbackHadError: false,
     lastEventTimes: {},
     cachePrefetchVersion: null,
+    runtimeFallbackVersion: null,
   };
 
   const $ = (selector) => document.querySelector(selector);
@@ -369,6 +370,8 @@
     await monitorGateway({
       action: 'heartbeat',
       app_version: APP_VERSION,
+      player_version: APP_VERSION,
+      apk_version: nativeAppVersion(),
       screen_width: screen.width || innerWidth,
       screen_height: screen.height || innerHeight,
       orientation: screen.orientation?.type || (innerWidth >= innerHeight ? 'landscape' : 'portrait'),
@@ -381,7 +384,7 @@
       cache_bytes: state.cacheBytes,
       playback_queue_size: playbackQueue().length,
       event_queue_size: deviceEventQueue().length,
-      details: { standalone: matchMedia('(display-mode: standalone)').matches, language: navigator.language },
+      details: { standalone: matchMedia('(display-mode: standalone)').matches, language: navigator.language, player_version: APP_VERSION, apk_version: nativeAppVersion() },
     });
   }
 
@@ -429,6 +432,23 @@
 
   function notifyNativePlayerAlive() {
     try { window.VisionAndroid?.playerAlive?.(); } catch {}
+  }
+
+  function nativeAppVersion() {
+    try { return String(window.VisionAndroid?.getAppVersion?.() || '').slice(0, 80) || null; }
+    catch { return null; }
+  }
+
+  function consumeNativeWatchdogRecovery() {
+    try { return String(window.VisionAndroid?.consumeWatchdogRecovery?.() || '') || null; }
+    catch { return null; }
+  }
+
+  async function clearPlayerCache() {
+    state.cachePrefetchVersion = null;
+    await caches.delete(MEDIA_CACHE).catch(() => false);
+    state.cacheItems = 0;
+    state.cacheBytes = 0;
   }
 
   function restartPlayerRuntime() {
@@ -516,7 +536,7 @@
   async function cacheManifestAssets(manifest) {
     const cache = await caches.open(MEDIA_CACHE);
     const seen = new Set();
-    const candidates = (manifest.items || []).filter(item => {
+    const candidates = [...(manifest.items || []), ...(manifest.fallback?.items || [])].filter(item => {
       if (!item?.media || !['image','video'].includes(item.media.type) || seen.has(item.media.id)) return false;
       seen.add(item.media.id);
       return true;
@@ -568,7 +588,7 @@
         ? `Campanha: ${manifest.program.campaign_name}`
         : 'Programação padrão';
       setStatus(navigator.onLine ? `Online • ${programLabel}` : `Offline • ${programLabel}`);
-      if (changed) state.playlistNonce++;
+      if (changed) { state.runtimeFallbackVersion = null; state.playlistNonce++; }
       ensurePlaybackLoop();
     } catch (error) {
       if (isAccessError(error)) throw error;
@@ -765,6 +785,7 @@
       state.currentMediaId = null;
       if (nonce !== state.playlistNonce) return;
     }
+    return completed;
   }
 
   const LOCAL_WEEKDAY_INDEX = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
@@ -818,7 +839,7 @@
     const result=await gateway({action:'commands'});
     for(const command of result?.commands||[]){
       if(state.processingCommands.has(command.id))continue;
-      if(!['screenshot','restart_player'].includes(command.command_type))continue;
+      if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming'].includes(command.command_type))continue;
       state.processingCommands.add(command.id);
       try{
         if(command.command_type==='screenshot'){
@@ -831,18 +852,48 @@
           await gateway({action:'command_result',command_id:command.id,status:'completed'});
           queueDeviceEvent('player_restart_requested','info','Reinício remoto recebido do painel.',{command_id:command.id},30000);
           setTimeout(restartPlayerRuntime,250);
+          continue;
+        }
+
+        if(command.command_type==='sync_now'){
+          await syncManifest();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          queueDeviceEvent('manual_sync_completed','info','Sincronização remota concluída.',{command_id:command.id},15000);
+          continue;
+        }
+
+        if(command.command_type==='clear_cache'){
+          await clearPlayerCache();
+          state.runtimeFallbackVersion=null;
+          state.playlistNonce++;
+          await syncManifest();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          queueDeviceEvent('cache_cleared','info','Cache local limpo por comando remoto.',{command_id:command.id},15000);
+          continue;
+        }
+
+        if(command.command_type==='reload_programming'){
+          state.runtimeFallbackVersion=null;
+          state.playlistNonce++;
+          await syncManifest();
+          ensurePlaybackLoop();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          queueDeviceEvent('programming_reloaded','info','Programação recarregada por comando remoto.',{command_id:command.id},15000);
         }
       }catch(error){
         if(command.command_type==='screenshot'){
           await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
         }else{
           await gateway({action:'command_result',command_id:command.id,status:'failed',error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+          if(command.command_type==='clear_cache'){
+            queueDeviceEvent('cache_error','error','Falha ao limpar ou reconstruir o cache local.',{command_id:command.id,error:String(error?.message||error).slice(0,300)},30000);
+          }
         }
       }finally{state.processingCommands.delete(command.id)}
     }
   }
 
-  function shuffled(items) {
+  function shuffled(items) {  function shuffled(items) {
     const copy = [...items];
     for (let i = copy.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -857,34 +908,72 @@
       while (state.deviceToken) {
         const manifest = state.manifest;
         const nonce = state.playlistNonce;
-        if (!manifest?.playlist || !manifest.items?.length) {
-          showIdle('Vision Player conectado', 'Aguardando uma playlist com mídias ser atribuída a esta TV.');
+        const fallback = manifest?.fallback || null;
+        const fallbackActive = (fallback?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
+        const fallbackLocked = Boolean(
+          manifest?.version &&
+          state.runtimeFallbackVersion === manifest.version &&
+          fallback?.playlist &&
+          fallbackActive.length
+        );
+
+        let playlist = fallbackLocked ? fallback.playlist : manifest?.playlist;
+        let items = fallbackLocked ? fallbackActive : (manifest?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
+        let program = fallbackLocked
+          ? { ...(manifest?.program || {}), source:'fallback', fallback_reason:'runtime_failure' }
+          : manifest?.program;
+        let usingFallback = fallbackLocked;
+
+        if ((!playlist || !items.length) && fallback?.playlist && fallbackActive.length) {
+          playlist = fallback.playlist;
+          items = fallbackActive;
+          usingFallback = true;
+          if (manifest?.version) state.runtimeFallbackVersion = manifest.version;
+          program = { ...(manifest?.program || {}), source:'fallback', fallback_reason:'no_active_primary_media' };
+          queueDeviceEvent('fallback_activated','warning','Playlist de emergência ativada.',{
+            primary_playlist_id:manifest?.playlist?.id||null,
+            fallback_playlist_id:fallback.playlist.id,
+            reason:'no_active_primary_media',
+          },60000);
+        }
+
+        if (!playlist || !items.length) {
+          if (manifest?.playlist) {
+            $('#media-stage').replaceChildren();
+            showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está disponível agora e não há fallback utilizável.');
+          } else {
+            showIdle('Vision Player conectado', 'Aguardando uma playlist com mídias ser atribuída a esta TV.');
+          }
           await sleep(3000);
           continue;
         }
 
-        const activeItems = (manifest.items || []).filter(item => itemScheduleActive(item, manifest.program?.timezone));
-        if (!activeItems.length) {
-          $('#media-stage').replaceChildren();
-          showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está dentro da programação atual. Revise data, dias da semana e horário no painel.');
-          await sleep(3000);
-          continue;
-        }
-        const queue = manifest.playlist.shuffle ? shuffled(activeItems) : [...activeItems];
-        if (manifest.playlist.repeat_mode === 'single' && queue.length) {
-          await playItem(queue[0], manifest.playlist, manifest.program, nonce);
+        const queue = playlist.shuffle ? shuffled(items) : [...items];
+        let completedCount = 0;
+
+        if (playlist.repeat_mode === 'single' && queue.length) {
+          if (await playItem(queue[0], playlist, program, nonce)) completedCount++;
           if (nonce !== state.playlistNonce) continue;
+        } else {
+          for (const item of queue) {
+            if (nonce !== state.playlistNonce) break;
+            if (await playItem(item, playlist, program, nonce)) completedCount++;
+          }
+          if (nonce !== state.playlistNonce) continue;
+        }
+
+        if (!usingFallback && completedCount === 0 && fallback?.playlist && fallbackActive.length) {
+          if (manifest?.version) state.runtimeFallbackVersion = manifest.version;
+          queueDeviceEvent('fallback_activated','warning','Playlist de emergência ativada após falha da programação principal.',{
+            primary_playlist_id:manifest?.playlist?.id||null,
+            fallback_playlist_id:fallback.playlist.id,
+            reason:'primary_playback_failed',
+          },60000);
           continue;
         }
 
-        for (const item of queue) {
-          if (nonce !== state.playlistNonce) break;
-          await playItem(item, manifest.playlist, manifest.program, nonce);
-        }
-
-        if (nonce !== state.playlistNonce) continue;
-        if (manifest.playlist.repeat_mode === 'none') {
-          const completedVersion = manifest.version;
+        if (playlist.repeat_mode === 'none') {
+          const completedVersion = manifest?.version;
           showIdle('Playlist concluída', 'Aguardando uma alteração na programação.');
           while (state.deviceToken && state.manifest?.version === completedVersion && nonce === state.playlistNonce) {
             await sleep(3000);
@@ -896,7 +985,7 @@
     }
   }
 
-  function ensurePlaybackLoop() {
+  function ensurePlaybackLoop() {  function ensurePlaybackLoop() {
     if (!state.running) playbackLoop().catch(error => console.error('playback loop', error));
   }
 
@@ -906,7 +995,11 @@
     setStatus('Conectando…');
     if (state.manifest && !localAccessExpired()) ensurePlaybackLoop();
 
-    queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, platform: detectPlatform() }, 60_000);
+    const watchdogRecovery = consumeNativeWatchdogRecovery();
+    if (watchdogRecovery) {
+      queueDeviceEvent('watchdog_restart','warning','Watchdog reiniciou o Vision Player após perda de resposta.',{recovered_at:watchdogRecovery,apk_version:nativeAppVersion()},15000);
+    }
+    queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
     try { await heartbeat(); await flushPlaybackQueue(); await flushDeviceEventQueue(); }
     catch { /* sync below handles visual state */ }
     try { await syncManifest(); }

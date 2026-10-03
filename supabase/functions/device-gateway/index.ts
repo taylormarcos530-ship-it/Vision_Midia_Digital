@@ -126,8 +126,14 @@ function itemScheduleIsActive(item, clock) {
   return campaignIsActive(item, clock)
 }
 async function resolveProgram(admin, device) {
-  const [{ data: company, error: companyError }, { data: campaigns, error: campaignsError }, { data: targets, error: targetsError }, { data: assignment, error: assignmentError }] = await Promise.all([
-    admin.from('companies').select('timezone').eq('id', device.company_id).maybeSingle(),
+  const [
+    { data: company, error: companyError },
+    { data: campaigns, error: campaignsError },
+    { data: targets, error: targetsError },
+    { data: assignment, error: assignmentError },
+    { data: membership, error: membershipError },
+  ] = await Promise.all([
+    admin.from('companies').select('timezone,fallback_playlist_id').eq('id', device.company_id).maybeSingle(),
     admin.from('campaigns')
       .select('id,name,playlist_id,start_date,end_date,start_time,end_time,weekdays,priority,all_devices,updated_at,created_at')
       .eq('company_id', device.company_id)
@@ -136,20 +142,40 @@ async function resolveProgram(admin, device) {
       .order('created_at', { ascending: false }),
     admin.from('campaign_devices').select('campaign_id').eq('company_id', device.company_id).eq('device_id', device.id),
     admin.from('device_playlist_assignments').select('playlist_id,updated_at').eq('device_id', device.id).maybeSingle(),
+    admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle(),
   ])
   if (companyError) throw companyError
   if (campaignsError) throw campaignsError
   if (targetsError) throw targetsError
   if (assignmentError) throw assignmentError
+  if (membershipError) throw membershipError
+
+  let group = null
+  if (membership?.group_id) {
+    const { data, error } = await admin.from('device_groups')
+      .select('id,name,playlist_id,updated_at')
+      .eq('company_id', device.company_id)
+      .eq('id', membership.group_id)
+      .maybeSingle()
+    if (error) throw error
+    group = data || null
+  }
 
   const clock = localDateParts(new Date(), company?.timezone || 'America/Sao_Paulo')
   const targeted = new Set((targets || []).map(row => row.campaign_id))
   const campaign = (campaigns || []).find(item => (item.all_devices || targeted.has(item.id)) && campaignIsActive(item, clock)) || null
+  const fallbackPlaylistId = device.fallback_playlist_id || company?.fallback_playlist_id || null
+  const assignmentVersion = {
+    device: assignment?.updated_at || null,
+    group_member: membership?.created_at || null,
+    group: group?.updated_at || null,
+  }
 
   if (campaign) {
     return {
       playlistId: campaign.playlist_id,
-      assignmentUpdatedAt: assignment?.updated_at || null,
+      fallbackPlaylistId: fallbackPlaylistId === campaign.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
       program: {
         source: 'campaign',
         campaign_id: campaign.id,
@@ -157,18 +183,153 @@ async function resolveProgram(admin, device) {
         priority: campaign.priority,
         schedule_updated_at: campaign.updated_at,
         timezone: clock.timeZone,
+        group_id: group?.id || null,
+        group_name: group?.name || null,
+      },
+    }
+  }
+
+  if (assignment?.playlist_id) {
+    return {
+      playlistId: assignment.playlist_id,
+      fallbackPlaylistId: fallbackPlaylistId === assignment.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
+      program: {
+        source: 'default',
+        campaign_id: null,
+        campaign_name: null,
+        priority: null,
+        schedule_updated_at: null,
+        timezone: clock.timeZone,
+        group_id: group?.id || null,
+        group_name: group?.name || null,
+      },
+    }
+  }
+
+  if (group?.playlist_id) {
+    return {
+      playlistId: group.playlist_id,
+      fallbackPlaylistId: fallbackPlaylistId === group.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
+      program: {
+        source: 'group',
+        campaign_id: null,
+        campaign_name: null,
+        priority: null,
+        schedule_updated_at: group.updated_at,
+        timezone: clock.timeZone,
+        group_id: group.id,
+        group_name: group.name,
       },
     }
   }
 
   return {
-    playlistId: assignment?.playlist_id || null,
-    assignmentUpdatedAt: assignment?.updated_at || null,
-    program: { source: assignment ? 'default' : 'none', campaign_id: null, campaign_name: null, priority: null, schedule_updated_at: null, timezone: clock.timeZone },
+    playlistId: null,
+    fallbackPlaylistId,
+    assignmentUpdatedAt: assignmentVersion,
+    program: {
+      source: 'none',
+      campaign_id: null,
+      campaign_name: null,
+      priority: null,
+      schedule_updated_at: null,
+      timezone: clock.timeZone,
+      group_id: group?.id || null,
+      group_name: group?.name || null,
+    },
   }
 }
 
-function accountSubscriptionBlock(company, subscription) {
+async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSchedules, timeZone) {
+  if (!playlistId) return null
+  const { data: playlist, error: playlistError } = await admin
+    .from('playlists')
+    .select('id,name,shuffle,repeat_mode,updated_at')
+    .eq('id', playlistId)
+    .eq('company_id', companyId)
+    .maybeSingle()
+  if (playlistError) throw playlistError
+  if (!playlist) return null
+
+  const { data: playlistItems, error: itemsError } = await admin
+    .from('playlist_items')
+    .select('id,media_id,position,duration_override_seconds,enabled,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
+    .eq('playlist_id', playlist.id)
+    .eq('company_id', companyId)
+    .eq('enabled', true)
+    .order('position', { ascending: true })
+  if (itemsError) throw itemsError
+
+  const itemClock = localDateParts(new Date(), timeZone || 'America/Sao_Paulo')
+  const effectivePlaylistItems = supportsItemSchedules
+    ? (playlistItems || [])
+    : (playlistItems || []).filter(item => itemScheduleIsActive(item, itemClock))
+  const mediaIds = [...new Set(effectivePlaylistItems.map(item => item.media_id))]
+  let media = []
+  if (mediaIds.length) {
+    const { data: mediaRows, error: mediaError } = await admin
+      .from('media_assets')
+      .select('id,name,media_type,mime_type,storage_path,source_url,duration_seconds,size_bytes,checksum_sha256,width,height,processing_status,updated_at')
+      .eq('company_id', companyId)
+      .in('id', mediaIds)
+      .eq('processing_status', 'ready')
+    if (mediaError) throw mediaError
+    media = mediaRows || []
+  }
+
+  const mediaById = new Map(media.map(item => [item.id, item]))
+  const items = []
+  for (const item of effectivePlaylistItems) {
+    const asset = mediaById.get(item.media_id)
+    if (!asset) continue
+    let url = asset.source_url || null
+    if (asset.storage_path) {
+      const { data: signed, error: signedError } = await admin.storage
+        .from('vision-media')
+        .createSignedUrl(asset.storage_path, 6 * 60 * 60)
+      if (signedError) {
+        console.error('signed url failed', asset.id, signedError)
+        continue
+      }
+      url = signed?.signedUrl || null
+    }
+    if (!url) continue
+    items.push({
+      id: item.id,
+      position: item.position,
+      duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
+      schedule: {
+        enabled: Boolean(item.schedule_enabled),
+        start_date: item.start_date || null,
+        end_date: item.end_date || null,
+        start_time: item.start_time || null,
+        end_time: item.end_time || null,
+        weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6],
+      },
+      media: {
+        id: asset.id,
+        name: asset.name,
+        type: asset.media_type,
+        mime_type: asset.mime_type,
+        url,
+        size_bytes: asset.size_bytes,
+        checksum: [asset.checksum_sha256 || asset.updated_at, asset.storage_path || asset.source_url || ''].join(':'),
+        width: asset.width,
+        height: asset.height,
+      },
+    })
+  }
+
+  return {
+    updatedAt: playlist.updated_at,
+    playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
+    items,
+  }
+}
+
+function accountSubscriptionBlockfunction accountSubscriptionBlock(company, subscription) {
   if (!company || company.status !== 'active') {
     return { reason:'company_suspended', message:'A conta desta TV está suspensa.' }
   }
@@ -354,7 +515,7 @@ Deno.serve(async (req) => {
         .maybeSingle()
       if (commandError) throw commandError
       if (!command) return json({ error:'command_not_found' }, 404)
-      if (!['restart_player'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
+      if (!['restart_player','sync_now','clear_cache','reload_programming'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
       const update = status === 'completed'
         ? { status:'completed', completed_at:new Date().toISOString(), error_message:null, result:{ acknowledged:true } }
         : { status:'failed', completed_at:new Date().toISOString(), error_message:String(body?.error_message || 'command_failed').slice(0,500) }
@@ -418,112 +579,67 @@ Deno.serve(async (req) => {
 
     if (action === 'manifest') {
       const resolved = await resolveProgram(admin, device)
-
-      if (!resolved.playlistId) {
-        return json({
-          version: await sha256Hex(JSON.stringify({
-            device_config: [device.orientation, device.settings || {}],
-            access: [device.access_status, device.access_expires_at],
-            program: resolved.program,
-          })),
-          device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
-          program: resolved.program,
-          playlist: null,
-          items: [],
-          generated_at: new Date().toISOString(),
-        })
-      }
-
-      const { data: playlist, error: playlistError } = await admin
-        .from('playlists')
-        .select('id,name,shuffle,repeat_mode,updated_at')
-        .eq('id', resolved.playlistId)
-        .eq('company_id', device.company_id)
-        .maybeSingle()
-      if (playlistError) throw playlistError
-      if (!playlist) return json({ error: 'assigned_playlist_missing' }, 409)
-
-      const { data: playlistItems, error: itemsError } = await admin
-        .from('playlist_items')
-        .select('id,media_id,position,duration_override_seconds,enabled,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
-        .eq('playlist_id', playlist.id)
-        .eq('company_id', device.company_id)
-        .eq('enabled', true)
-        .order('position', { ascending: true })
-      if (itemsError) throw itemsError
-
-      const itemClock = localDateParts(new Date(), resolved.program?.timezone || 'America/Sao_Paulo')
       const supportsItemSchedules = body?.supports_item_schedules === true
-      const effectivePlaylistItems = supportsItemSchedules ? (playlistItems || []) : (playlistItems || []).filter(item => itemScheduleIsActive(item, itemClock))
-      const mediaIds = [...new Set(effectivePlaylistItems.map((item) => item.media_id))]
-      let media = []
-      if (mediaIds.length) {
-        const { data: mediaRows, error: mediaError } = await admin
-          .from('media_assets')
-          .select('id,name,media_type,mime_type,storage_path,source_url,duration_seconds,size_bytes,checksum_sha256,width,height,processing_status,updated_at')
-          .eq('company_id', device.company_id)
-          .in('id', mediaIds)
-          .eq('processing_status', 'ready')
-        if (mediaError) throw mediaError
-        media = mediaRows || []
+
+      let primary = await loadPlaylistPayload(
+        admin,
+        device.company_id,
+        resolved.playlistId,
+        supportsItemSchedules,
+        resolved.program?.timezone,
+      )
+      const fallback = resolved.fallbackPlaylistId
+        ? await loadPlaylistPayload(admin, device.company_id, resolved.fallbackPlaylistId, supportsItemSchedules, resolved.program?.timezone)
+        : null
+
+      if (resolved.playlistId && !primary && !fallback) {
+        return json({ error: 'assigned_playlist_missing' }, 409)
       }
 
-      const mediaById = new Map(media.map((item) => [item.id, item]))
-      const items = []
-      for (const item of effectivePlaylistItems) {
-        const asset = mediaById.get(item.media_id)
-        if (!asset) continue
-        let url = asset.source_url || null
-        if (asset.storage_path) {
-          const { data: signed, error: signedError } = await admin.storage
-            .from('vision-media')
-            .createSignedUrl(asset.storage_path, 6 * 60 * 60)
-          if (signedError) {
-            console.error('signed url failed', asset.id, signedError)
-            continue
-          }
-          url = signed?.signedUrl || null
+      let program = resolved.program
+      let fallbackPayload = fallback
+      if ((!primary || !primary.items.length) && fallback?.items?.length) {
+        primary = fallback
+        fallbackPayload = null
+        program = {
+          ...resolved.program,
+          source: 'fallback',
+          fallback_reason: resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist',
         }
-        if (!url) continue
-        items.push({
-          id: item.id,
-          position: item.position,
-          duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
-          schedule: { enabled: Boolean(item.schedule_enabled), start_date: item.start_date || null, end_date: item.end_date || null, start_time: item.start_time || null, end_time: item.end_time || null, weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6] },
-          media: {
-            id: asset.id,
-            name: asset.name,
-            type: asset.media_type,
-            mime_type: asset.mime_type,
-            url,
-            size_bytes: asset.size_bytes,
-            checksum: [asset.checksum_sha256 || asset.updated_at, asset.storage_path || asset.source_url || ''].join(':'),
-            width: asset.width,
-            height: asset.height,
-          },
-        })
       }
 
       const versionSource = JSON.stringify({
-        device_config: [device.orientation, device.settings || {}],
+        device_config: [device.orientation, device.settings || {}, device.fallback_playlist_id || null],
         access: [device.access_status, device.access_expires_at],
         assignment: resolved.assignmentUpdatedAt,
-        program: resolved.program,
-        playlist: playlist.updated_at,
-        items: items.map((item) => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
+        program,
+        playlist: primary?.updatedAt || null,
+        items: (primary?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
+        fallback_playlist: fallbackPayload?.updatedAt || null,
+        fallback_items: (fallbackPayload?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
       })
 
       return json({
         version: await sha256Hex(versionSource),
-        device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
-        program: resolved.program,
-        playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
-        items,
+        device: {
+          id: device.id,
+          name: device.name,
+          orientation: device.orientation,
+          settings: device.settings || {},
+          access_status: device.access_status || 'active',
+          access_expires_at: device.access_expires_at || null,
+        },
+        program,
+        playlist: primary?.playlist || null,
+        items: primary?.items || [],
+        fallback: fallbackPayload?.items?.length
+          ? { playlist: fallbackPayload.playlist, items: fallbackPayload.items }
+          : null,
         generated_at: new Date().toISOString(),
       })
     }
 
-    if (action === 'playback' || action === 'playback_batch') {
+    if (action === 'playback' || action === 'playback_batch') {    if (action === 'playback' || action === 'playback_batch') {
       const events = action === 'playback_batch' ? body?.events : [body]
       if (!Array.isArray(events) || events.length < 1 || events.length > 100) {
         return json({ error: 'invalid_playback_batch' }, 400)

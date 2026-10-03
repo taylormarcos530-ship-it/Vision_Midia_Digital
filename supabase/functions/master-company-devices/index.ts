@@ -110,7 +110,7 @@ Deno.serve(async req => {
         .update(update)
         .eq('id', deviceId)
         .eq('company_id', companyId)
-        .select('id,name,platform,orientation,status,last_seen_at,paired_at,retired_at,access_status,access_expires_at,access_updated_at')
+        .select('id,name,platform,orientation,reported_orientation,status,last_seen_at,last_sync_at,player_version,apk_version,app_version,screen_width,screen_height,storage_free_mb,cache_items,cache_bytes,paired_at,retired_at,access_status,access_expires_at,access_updated_at')
         .single()
       if (updateError) throw updateError
 
@@ -132,7 +132,7 @@ Deno.serve(async req => {
       return J({ ok: true, device: { ...updated, access_state: accessLabel(updated) } })
     }
 
-    if (action === 'restart_player') {
+    if (['restart_player','sync_now','clear_cache','reload_programming'].includes(action)) {
       if (!['super_admin', 'admin'].includes(pa.role)) return J({ error: 'master_read_only' }, 403)
       const deviceId = String(body.device_id || '').trim()
       if (!deviceId) return J({ error: 'device_required' }, 400)
@@ -151,7 +151,7 @@ Deno.serve(async req => {
         .select('id,status,requested_at')
         .eq('company_id', companyId)
         .eq('device_id', deviceId)
-        .eq('command_type', 'restart_player')
+        .eq('command_type', action)
         .in('status', ['pending','sent'])
         .order('requested_at', { ascending: false })
         .limit(1)
@@ -164,7 +164,7 @@ Deno.serve(async req => {
         .insert({
           company_id: companyId,
           device_id: deviceId,
-          command_type: 'restart_player',
+          command_type: action,
           requested_by: u.user.id,
           status: 'pending',
         })
@@ -175,7 +175,7 @@ Deno.serve(async req => {
       try {
         const { error: auditError } = await admin.from('master_audit_logs').insert({
           actor_user_id: u.user.id,
-          action: 'device_restart_requested',
+          action: `device_${action}_requested`,
           company_id: companyId,
           details: { device_id: deviceId, device_name: device.name, command_id: command.id, source:'master-company-devices' },
         })
@@ -203,6 +203,23 @@ Deno.serve(async req => {
     if (de) throw de
     if (se) throw se
 
+    const deviceIds = (devices || []).map(device => device.id)
+    let latestCommands = []
+    if (deviceIds.length) {
+      const { data: commandRows, error: commandError } = await admin.from('device_commands')
+        .select('id,device_id,command_type,status,requested_at,delivered_at,completed_at,error_message')
+        .eq('company_id', companyId)
+        .in('device_id', deviceIds)
+        .order('requested_at', { ascending: false })
+        .limit(Math.min(500, Math.max(50, deviceIds.length * 10)))
+      if (commandError) throw commandError
+      latestCommands = commandRows || []
+    }
+    const latestCommandByDevice = new Map()
+    for (const command of latestCommands) {
+      if (!latestCommandByDevice.has(command.device_id)) latestCommandByDevice.set(command.device_id, command)
+    }
+
     let maxDevices = null
     if (sub) {
       const override = sub.limit_overrides?.max_devices
@@ -216,7 +233,7 @@ Deno.serve(async req => {
 
     return J({
       ok: true,
-      devices: (devices || []).map(device => ({ ...device, access_state: accessLabel(device) })),
+      devices: (devices || []).map(device => ({ ...device, access_state: accessLabel(device), latest_command: latestCommandByDevice.get(device.id) || null })),
       max_devices: maxDevices,
     })
   } catch (e) {
