@@ -285,7 +285,7 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
   for (const item of effectivePlaylistItems) {
     const asset = mediaById.get(item.media_id)
     if (!asset) {
-      if (item.is_essential) essentialUnavailable = true
+      if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
       continue
     }
     let url = asset.source_url || null
@@ -295,13 +295,13 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
         .createSignedUrl(asset.storage_path, 6 * 60 * 60)
       if (signedError) {
         console.error('signed url failed', asset.id, signedError)
-        if (item.is_essential) essentialUnavailable = true
+        if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
         continue
       }
       url = signed?.signedUrl || null
     }
     if (!url) {
-      if (item.is_essential) essentialUnavailable = true
+      if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
       continue
     }
     items.push({

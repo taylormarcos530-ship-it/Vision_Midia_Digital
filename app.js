@@ -984,6 +984,8 @@
     const fallback = $('#company-fallback-playlist');
     if (!grid || !empty || !fallback) return;
     const canManage = ['owner','admin','operator'].includes(state.companyRole);
+    const addGroup = $('#add-device-group');
+    if (addGroup) addGroup.disabled = !canManage;
     fallback.innerHTML = '<option value="">Sem fallback da empresa</option>' + state.playlists.map(playlist =>
       `<option value="${playlist.id}" ${state.company?.fallback_playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
     ).join('');
@@ -1287,7 +1289,7 @@
         </details>
 
         <label class="device-assignment">Grupo
-          <select data-device-group="${device.id}" ${state.deviceGroups.length ? '' : 'disabled'}>
+          <select data-device-group="${device.id}" ${state.deviceGroups.length && ['owner','admin','operator'].includes(state.companyRole) ? '' : 'disabled'}>
             <option value="">${state.deviceGroups.length ? 'Sem grupo' : 'Crie um grupo primeiro'}</option>
             ${groupOptions}
           </select>
