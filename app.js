@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  // preview-refresh-v37-media-library
   // preview-refresh-v36-complete-playlists
 
   const CONFIG = window.VISION_CONFIG;
@@ -100,6 +101,8 @@
     isBusy: false,
     deviceCaptureStates: new Map(),
     autoCaptureRequested: new Set(),
+    mediaPreviewUrls: new Map(),
+    mediaRenderSignature: '',
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -1311,6 +1314,72 @@
     }).join('');
   }
 
+  function mediaOrientationLabel(media) {
+    const width = Number(media?.width || 0);
+    const height = Number(media?.height || 0);
+    if (!width || !height) return 'Orientação não detectada';
+    if (width === height) return 'Quadrada';
+    return width > height ? 'Horizontal' : 'Vertical';
+  }
+
+  async function signedMediaUrlCached(media) {
+    const key = `${media.id}:${media.storage_path}`;
+    const cached = state.mediaPreviewUrls.get(key);
+    if (cached?.url && cached.expiresAt > Date.now() + 60_000) return cached.url;
+    const url = await getSignedMediaUrl(media.storage_path);
+    state.mediaPreviewUrls.set(key, { url, expiresAt: Date.now() + 12 * 60_000 });
+    return url;
+  }
+
+  function currentMediaRenderSignature() {
+    const mediaPart = state.media.map(media => [
+      media.id, media.storage_path, media.updated_at, media.name, media.width, media.height, media.size_bytes
+    ].join(':')).join('|');
+    const itemPart = state.playlistItems.map(item => `${item.id}:${item.playlist_id}:${item.media_id}`).join('|');
+    const playlistPart = state.playlists.map(playlist => `${playlist.id}:${playlist.name}`).join('|');
+    return `${mediaPart}__${itemPart}__${playlistPart}`;
+  }
+
+  function mediaPlaylistOptions(mediaId) {
+    if (!state.playlists.length) return '<option value="">Crie uma playlist primeiro</option>';
+    const linked = new Set(state.playlistItems.filter(item => item.media_id === mediaId).map(item => item.playlist_id));
+    return '<option value="">Escolha a playlist…</option>' + state.playlists.map(playlist => {
+      const already = linked.has(playlist.id);
+      return `<option value="${playlist.id}" ${already ? 'disabled' : ''}>${escapeHtml(playlist.name)}${already ? ' • já vinculada' : ''}</option>`;
+    }).join('');
+  }
+
+  async function hydrateMediaPreviews() {
+    for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
+      const preview = $([`[data-media-preview="${CSS.escape(media.id)}"]`].join(''));
+      if (!preview || preview.dataset.loadedPath === media.storage_path) continue;
+      try {
+        const url = await signedMediaUrlCached(media);
+        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
+        let element;
+        if (media.media_type === 'image') {
+          element = new Image();
+          element.loading = 'lazy';
+          element.decoding = 'async';
+          element.alt = media.name || 'Imagem';
+          element.src = url;
+          try { await element.decode(); } catch {}
+        } else {
+          element = document.createElement('video');
+          element.muted = true;
+          element.preload = 'metadata';
+          element.playsInline = true;
+          element.src = url;
+        }
+        if (!preview.isConnected) continue;
+        const placeholder = preview.querySelector('.media-preview-placeholder');
+        preview.insertBefore(element, placeholder || preview.firstChild);
+        placeholder?.remove();
+        preview.dataset.loadedPath = media.storage_path;
+      } catch { /* mantém placeholder sem piscar */ }
+    }
+  }
+
   function renderMedia() {
     const grid = $('#media-grid');
     const empty = $('#media-empty');
@@ -1318,27 +1387,53 @@
     empty.classList.toggle('hidden', has);
     grid.classList.toggle('hidden', !has);
     grid.className = 'media-list-compact';
-    if (!has) { grid.innerHTML = ''; return; }
+    if (!has) {
+      grid.innerHTML = '';
+      state.mediaRenderSignature = '';
+      return;
+    }
+
+    const signature = currentMediaRenderSignature();
+    if (signature === state.mediaRenderSignature && grid.children.length === state.media.length) {
+      hydrateMediaPreviews();
+      return;
+    }
+    state.mediaRenderSignature = signature;
 
     grid.innerHTML = state.media.map(media => {
-      const used = state.playlistItems.filter(item => item.media_id === media.id).length;
+      const linkedItems = state.playlistItems.filter(item => item.media_id === media.id);
+      const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
+      const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
+      const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
       return `
-      <article class="media-row-compact" data-media-card="${media.id}">
-        <div class="media-preview" data-media-preview="${media.id}"><span>${media.media_type === 'video' ? '▶' : '▧'}</span><span class="media-type-tag">${escapeHtml(media.media_type)}</span></div>
-        <div class="media-body"><strong title="${escapeHtml(media.name)}">${escapeHtml(media.name)}</strong><small>${escapeHtml(formatBytes(media.size_bytes))}${media.width && media.height ? ` • ${media.width}×${media.height}` : ''}${media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : ''} • em ${used} item(ns) de playlist</small></div>
-        <div class="media-actions"><button class="small-icon-button" data-open-media="${media.id}">Visualizar</button><button class="small-icon-button" data-delete-media="${media.id}">Excluir</button></div>
+      <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
+        <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
+          ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
+            <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
+            <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
+          </div>` : ''}
+        </div>
+        <div class="media-body media-body-pro">
+          <strong title="${escapeHtml(media.name)}">${escapeHtml(media.name)}</strong>
+          <small>${escapeHtml(formatBytes(media.size_bytes))} • ${escapeHtml(dimensions)}${duration} • ${escapeHtml(orientation)}</small>
+          <span class="media-link-count">${linkedPlaylists.size ? `Em ${linkedPlaylists.size} playlist${linkedPlaylists.size === 1 ? '' : 's'}` : 'Ainda não vinculada a playlist'}</span>
+        </div>
+        <div class="media-direct-playlist">
+          <select data-media-playlist-select="${media.id}" ${state.playlists.length ? '' : 'disabled'}>
+            ${mediaPlaylistOptions(media.id)}
+          </select>
+          <button class="small-icon-button media-link-button" type="button" data-link-media-playlist="${media.id}" ${state.playlists.length ? '' : 'disabled'}>+ Vincular</button>
+        </div>
+        <div class="media-actions media-actions-pro">
+          <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
+          <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
+        </div>
       </article>`;
     }).join('');
 
-    state.media.filter(m => m.storage_path && ['image','video'].includes(m.media_type)).forEach(async media => {
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        const preview = $(`[data-media-preview="${CSS.escape(media.id)}"]`);
-        if (!preview || !url) return;
-        if (media.media_type === 'image') { const img = document.createElement('img'); img.loading='lazy'; img.alt=media.name; img.src=url; preview.prepend(img); }
-        else { const video=document.createElement('video'); video.muted=true; video.preload='metadata'; video.playsInline=true; video.src=url; preview.prepend(video); }
-      } catch { /* placeholder */ }
-    });
+    hydrateMediaPreviews();
   }
 
   function playlistCardDuration(items, mediaById) {
@@ -2122,8 +2217,14 @@
       toast('Cadastro recebido', 'Seu acesso está aguardando aprovação do administrador.');
     } catch (error) {
       const code = String(error?.message || '');
-      const friendly = /email_already_registered/i.test(code) ? 'Este e-mail já está cadastrado.'
-        : /platform_client_limit_reached/i.test(code) ? 'No momento não há novas vagas de clientes nesta infraestrutura.'
+      if (/email_already_registered/i.test(code)) {
+        switchAuthTab('login');
+        $('#login-email').value = email;
+        $('#login-password').focus();
+        toast('E-mail já cadastrado', 'Esse e-mail já possui uma conta. Entre com sua senha ou use “Esqueci minha senha”.', 'error', 6500);
+        return;
+      }
+      const friendly = /platform_client_limit_reached/i.test(code) ? 'No momento não há novas vagas de clientes nesta infraestrutura.'
         : /plan_not_available/i.test(code) ? 'O plano selecionado não está mais disponível.'
         : /signup_rate_limited/i.test(code) ? 'Muitas tentativas. Aguarde alguns minutos e tente novamente.'
         : friendlyAuthError(error);
@@ -2658,6 +2759,119 @@
     } catch (error) { toast('Erro ao excluir mídia', error.message, 'error'); }
   }
 
+  async function linkMediaToPlaylist(mediaId, playlistId) {
+    const media = state.media.find(item => item.id === mediaId);
+    const playlist = state.playlists.find(item => item.id === playlistId);
+    if (!media || !playlist) return toast('Escolha uma playlist', 'Selecione a playlist antes de vincular a mídia.', 'error');
+
+    const duplicate = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === playlistId);
+    if (duplicate) return toast('Mídia já vinculada', `${media.name} já faz parte de ${playlist.name}.`, 'error');
+
+    const playlistItems = state.playlistItems.filter(item => item.playlist_id === playlistId);
+    const nextPosition = playlistItems.length ? Math.max(...playlistItems.map(item => Number(item.position || 0))) + 1 : 0;
+    try {
+      await restRequest('playlist_items', {
+        method:'POST',
+        body:{
+          company_id:state.company.id,
+          playlist_id:playlistId,
+          media_id:mediaId,
+          position:nextPosition,
+          duration_override_seconds:media.media_type === 'image' ? 10 : null,
+          enabled:true,
+        },
+        prefer:'return=minimal',
+      });
+      toast('Mídia vinculada', `${media.name} foi adicionada à playlist ${playlist.name}.`);
+      state.mediaRenderSignature = '';
+      await loadAllData();
+    } catch (error) {
+      toast('Não foi possível vincular', error.message, 'error');
+    }
+  }
+
+  async function rotateMediaImage(mediaId, degrees = 90) {
+    const media = state.media.find(item => item.id === mediaId);
+    if (!media || media.media_type !== 'image' || !media.storage_path) return;
+    const button = document.querySelector(`[data-rotate-media="${CSS.escape(mediaId)}"][data-rotation="${degrees}"]`);
+    setBusy(button, true, '…');
+
+    let tempUrl = null;
+    let newPath = null;
+    try {
+      const signedUrl = await signedMediaUrlCached(media);
+      const response = await fetch(signedUrl, { cache:'no-store' });
+      if (!response.ok) throw new Error('Não foi possível baixar a imagem para girar.');
+      const originalBlob = await response.blob();
+      tempUrl = URL.createObjectURL(originalBlob);
+
+      const image = await new Promise((resolve, reject) => {
+        const el = new Image();
+        const timeout = setTimeout(() => reject(new Error('Tempo excedido ao abrir a imagem.')), 15000);
+        el.onload = () => { clearTimeout(timeout); resolve(el); };
+        el.onerror = () => { clearTimeout(timeout); reject(new Error('Não foi possível abrir a imagem.')); };
+        el.src = tempUrl;
+      });
+
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      if (!sourceWidth || !sourceHeight) throw new Error('A resolução da imagem não pôde ser detectada.');
+
+      const canvas = document.createElement('canvas');
+      canvas.width = sourceHeight;
+      canvas.height = sourceWidth;
+      const ctx = canvas.getContext('2d', { alpha:true });
+      if (!ctx) throw new Error('Este navegador não conseguiu preparar a rotação.');
+      ctx.imageSmoothingEnabled = true;
+      ctx.imageSmoothingQuality = 'high';
+      ctx.translate(canvas.width / 2, canvas.height / 2);
+      ctx.rotate((Number(degrees) >= 0 ? 90 : -90) * Math.PI / 180);
+      ctx.drawImage(image, -sourceWidth / 2, -sourceHeight / 2);
+
+      const outputType = ['image/jpeg','image/png','image/webp'].includes(media.mime_type) ? media.mime_type : 'image/webp';
+      const blob = await new Promise(resolve => canvas.toBlob(resolve, outputType, outputType === 'image/jpeg' ? 0.94 : 0.92));
+      if (!blob?.size) throw new Error('Não foi possível gerar a imagem girada.');
+
+      const ext = outputType === 'image/jpeg' ? 'jpg' : outputType === 'image/png' ? 'png' : 'webp';
+      newPath = `${state.company.id}/${crypto.randomUUID()}-rotated.${ext}`;
+      const encodedPath = newPath.split('/').map(encodeURIComponent).join('/');
+      await storageRequest(`/object/${CONFIG.storageBucket}/${encodedPath}`, {
+        body:blob,
+        contentType:outputType,
+        extraHeaders:{ 'x-upsert':'false' },
+      });
+
+      await restRequest('media_assets', {
+        method:'PATCH',
+        query:`id=eq.${encodeURIComponent(media.id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body:{
+          storage_path:newPath,
+          mime_type:outputType,
+          size_bytes:blob.size,
+          width:canvas.width,
+          height:canvas.height,
+        },
+        prefer:'return=minimal',
+      });
+
+      const oldPath = media.storage_path;
+      for (const key of [...state.mediaPreviewUrls.keys()]) {
+        if (key.startsWith(`${media.id}:`)) state.mediaPreviewUrls.delete(key);
+      }
+      state.mediaRenderSignature = '';
+      await loadAllData();
+      toast('Imagem girada', `Agora ela está em formato ${canvas.width > canvas.height ? 'horizontal' : canvas.width < canvas.height ? 'vertical' : 'quadrado'}.`);
+      storageRequest(`/object/${CONFIG.storageBucket}`, { method:'DELETE', body:{ prefixes:[oldPath] } }).catch(() => {});
+      newPath = null;
+    } catch (error) {
+      if (newPath) storageRequest(`/object/${CONFIG.storageBucket}`, { method:'DELETE', body:{ prefixes:[newPath] } }).catch(() => {});
+      toast('Não foi possível girar a imagem', error.message, 'error', 6000);
+    } finally {
+      if (tempUrl) URL.revokeObjectURL(tempUrl);
+      setBusy(button, false);
+    }
+  }
+
   async function handleCreatePlaylist(event) {
     event.preventDefault();
     const button = $('#playlist-save');
@@ -3143,6 +3357,14 @@
       if (deleteDeviceButton) return deleteDevice(deleteDeviceButton.dataset.deleteDevice);
       const openMediaButton = event.target.closest('[data-open-media]');
       if (openMediaButton) return openMedia(openMediaButton.dataset.openMedia);
+      const rotateMediaButton = event.target.closest('[data-rotate-media]');
+      if (rotateMediaButton) return rotateMediaImage(rotateMediaButton.dataset.rotateMedia, Number(rotateMediaButton.dataset.rotation || 90));
+      const linkMediaButton = event.target.closest('[data-link-media-playlist]');
+      if (linkMediaButton) {
+        const mediaId = linkMediaButton.dataset.linkMediaPlaylist;
+        const playlistId = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`)?.value || '';
+        return linkMediaToPlaylist(mediaId, playlistId);
+      }
       const deleteMediaButton = event.target.closest('[data-delete-media]');
       if (deleteMediaButton) return deleteMedia(deleteMediaButton.dataset.deleteMedia);
       const deletePlaylistButton = event.target.closest('[data-delete-playlist]');
