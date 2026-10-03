@@ -367,11 +367,16 @@
   function savedSession(){ try{const s=JSON.parse(localStorage.getItem(SESSION_KEY)||'null'); return s?.access_token&&s?.refresh_token?s:null}catch{return null} }
   async function parse(res){ const t=await res.text(); let d=null; try{d=t?JSON.parse(t):null}catch{d=t}; if(!res.ok){const e=new Error(d?.error_description||d?.message||d?.error||`HTTP ${res.status}`); e.status=res.status; throw e} return d; }
   async function auth(path, body){ return parse(await fetch(`${CONFIG.supabaseUrl}/auth/v1${path}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,'Content-Type':'application/json'},body:JSON.stringify(body)})); }
+  function passwordRecoveryRedirectUrl(){
+    const isPublicOrigin=value=>/^https:\/\//i.test(String(value||''))&&!/localhost|127\.0\.0\.1/i.test(String(value||''));
+    if(isPublicOrigin(location.origin))return new URL('./index.html',location.href).href;
+    try{if(document.referrer){const ref=new URL(document.referrer);if(isPublicOrigin(ref.origin))return `${ref.origin}/index.html`}}catch{}
+    return 'https://vision-midia-digital-e74lzn2i5-vision-5529.vercel.app/index.html';
+  }
   async function sendPasswordRecovery(email){
     const target=String(email||'').trim().toLowerCase();
     if(!target||!target.includes('@'))throw new Error('E-mail do responsável não encontrado.');
-    const redirectTo=new URL('./index.html',location.href).href;
-    return auth('/recover',{email:target,redirect_to:redirectTo});
+    return auth('/recover',{email:target,redirect_to:passwordRecoveryRedirectUrl()});
   }
   function emailForUserId(userId){
     for(const company of state.data?.companies||[]){
