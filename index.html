@@ -419,7 +419,7 @@
               <span class="module-icon">▶</span>
               <div><span class="eyebrow">PROGRAMAÇÃO DE CONTEÚDO</span><h2>Playlists</h2><p>Organize o que vai ao ar, confira duração, programação e TVs vinculadas sem abrir cada playlist.</p></div>
             </div>
-            <button id="add-playlist-button" class="button primary">+ Nova playlist</button>
+            <div style="display:flex;gap:10px;flex-wrap:wrap"><button id="add-dynamic-content-button" class="button ghost" type="button">☁ Conteúdo dinâmico</button><button id="add-playlist-button" class="button primary">+ Nova playlist</button></div>
           </div>
 
           <div id="playlist-tools" class="playlist-tools hidden">
@@ -689,6 +689,18 @@
         <button class="button ghost" data-close-dialog="device-dialog" type="button">Cancelar</button>
         <button id="device-save" class="button primary" type="submit">Salvar TV</button>
       </div>
+    </form>
+  </dialog>
+
+
+  <dialog id="dynamic-content-dialog" class="app-dialog">
+    <form id="dynamic-content-form" class="dialog-body">
+      <div class="dialog-header"><div><span class="eyebrow">CONTEÚDO DINÂMICO</span><h3>Adicionar à biblioteca</h3><p class="dialog-subtitle">Crie um slide atualizado automaticamente e depois adicione-o a qualquer playlist.</p></div><button class="icon-button" data-close-dialog="dynamic-content-dialog" type="button">×</button></div>
+      <label>Tipo<select id="dynamic-content-type"><option value="clock">Relógio e data</option><option value="weather">Clima e previsão</option><option value="news">Notícias</option></select></label>
+      <label id="dynamic-city-field">Cidade<input id="dynamic-content-city" type="text" maxlength="100" value="Anápolis" placeholder="Ex.: Anápolis" /></label>
+      <label id="dynamic-category-field" class="hidden">Categoria<select id="dynamic-content-category"><option value="geral">Geral / Brasil</option><option value="negocios">Negócios</option><option value="tecnologia">Tecnologia</option><option value="esportes">Esportes</option></select></label>
+      <label>Duração na playlist<input id="dynamic-content-duration" type="number" min="5" max="300" value="15" /> <small>segundos</small></label>
+      <div class="dialog-actions"><button class="button ghost" data-close-dialog="dynamic-content-dialog" type="button">Cancelar</button><button id="dynamic-content-save" class="button primary" type="submit">Criar conteúdo</button></div>
     </form>
   </dialog>
 
