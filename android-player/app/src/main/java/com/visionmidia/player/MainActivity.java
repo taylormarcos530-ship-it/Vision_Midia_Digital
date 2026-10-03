@@ -316,14 +316,27 @@ public class MainActivity extends Activity {
         public void restartApp() {
             lastPlayerPulseAt = SystemClock.elapsedRealtime();
             runOnUiThread(() -> {
-                Intent restart = getPackageManager().getLaunchIntentForPackage(getPackageName());
-                if (restart == null) {
+                // MainActivity usa launchMode=singleTask. O fluxo antigo iniciava a mesma
+                // Activity com CLEAR_TOP e depois chamava finish(), o que podia finalizar
+                // a própria task reutilizada em alguns Android TV Box.
+                //
+                // CLEAR_TASK + NEW_TASK elimina a task atual antes de criar uma nova
+                // instância explícita do Vision Player. Não passa pelo launcher e não
+                // apaga SharedPreferences/WebView storage, preservando setup e pairing.
+                Intent restart = new Intent(MainActivity.this, MainActivity.class);
+                restart.addFlags(
+                        Intent.FLAG_ACTIVITY_NEW_TASK
+                                | Intent.FLAG_ACTIVITY_CLEAR_TASK
+                                | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                );
+                try {
+                    startActivity(restart);
+                    overridePendingTransition(0, 0);
+                } catch (Exception error) {
+                    // Fallback seguro: se o firmware bloquear a recriação da task,
+                    // mantenha o app aberto e recarregue o Player sem perder vínculo.
                     loadPlayer(prefs.getString(KEY_SETUP_CODE, ""));
-                    return;
                 }
-                restart.addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP | Intent.FLAG_ACTIVITY_NEW_TASK);
-                startActivity(restart);
-                finish();
             });
         }
     }
