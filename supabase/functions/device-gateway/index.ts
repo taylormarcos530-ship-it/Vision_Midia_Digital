@@ -329,7 +329,7 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
   }
 }
 
-function accountSubscriptionBlockfunction accountSubscriptionBlock(company, subscription) {
+function accountSubscriptionBlock(company, subscription) {
   if (!company || company.status !== 'active') {
     return { reason:'company_suspended', message:'A conta desta TV está suspensa.' }
   }
@@ -639,7 +639,7 @@ Deno.serve(async (req) => {
       })
     }
 
-    if (action === 'playback' || action === 'playback_batch') {    if (action === 'playback' || action === 'playback_batch') {
+    if (action === 'playback' || action === 'playback_batch') {
       const events = action === 'playback_batch' ? body?.events : [body]
       if (!Array.isArray(events) || events.length < 1 || events.length > 100) {
         return json({ error: 'invalid_playback_batch' }, 400)

@@ -893,7 +893,7 @@
     }
   }
 
-  function shuffled(items) {  function shuffled(items) {
+  function shuffled(items) {
     const copy = [...items];
     for (let i = copy.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
@@ -985,7 +985,7 @@
     }
   }
 
-  function ensurePlaybackLoop() {  function ensurePlaybackLoop() {
+  function ensurePlaybackLoop() {
     if (!state.running) playbackLoop().catch(error => console.error('playback loop', error));
   }
 
