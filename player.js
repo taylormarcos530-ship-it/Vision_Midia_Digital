@@ -142,16 +142,60 @@
     return data;
   }
 
+  function decodeNativeBase64(value) {
+    const binary = atob(String(value || ''));
+    if (typeof TextDecoder !== 'undefined') {
+      const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+    try {
+      return decodeURIComponent([...binary].map(ch => '%' + ch.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+    } catch {
+      return binary;
+    }
+  }
+
   async function functionRequest(name, body, deviceToken = null) {
+    const url = `${CONFIG.supabaseUrl}/functions/v1/${name}`;
+    const payload = JSON.stringify(body || {});
+
+    if (window.VisionAndroid?.postJson) {
+      const envelope = String(window.VisionAndroid.postJson(
+        url,
+        payload,
+        CONFIG.supabasePublishableKey,
+        deviceToken || ''
+      ) || '');
+      const separator = envelope.indexOf('\n');
+      const status = Number(separator >= 0 ? envelope.slice(0, separator) : 0);
+      const encoded = separator >= 0 ? envelope.slice(separator + 1) : '';
+      const text = encoded ? decodeNativeBase64(encoded) : '';
+      if (status === 0) {
+        const error = new Error(text || 'O TV Box não conseguiu acessar o servidor.');
+        error.status = 0;
+        throw error;
+      }
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; }
+      catch { data = text; }
+      if (status < 200 || status >= 300) {
+        const error = new Error(data?.message || data?.error || `Erro HTTP ${status}`);
+        error.status = status;
+        error.data = data;
+        throw error;
+      }
+      return data;
+    }
+
     const headers = {
       apikey: CONFIG.supabasePublishableKey,
       'Content-Type': 'application/json',
     };
     if (deviceToken) headers['x-device-token'] = deviceToken;
-    const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/${name}`, {
+    const response = await fetch(url, {
       method: 'POST',
       headers,
-      body: JSON.stringify(body || {}),
+      body: payload,
       cache: 'no-store',
     });
     return parseResponse(response);
@@ -273,8 +317,13 @@
       pollPairing(pairing);
     } catch (error) {
       $('#pairing-code').textContent = 'ERRO';
-      $('#pairing-status').textContent = error.message;
+      $('#pairing-status').textContent = navigator.onLine
+        ? `${error.message} • tentando novamente…`
+        : 'Sem internet no TV Box • tentando novamente…';
       $('#new-code-button').classList.remove('hidden');
+      setTimeout(() => {
+        if (!state.deviceToken && !state.pairing?.request_id) startPairing(true);
+      }, 5000);
     }
   }
 
