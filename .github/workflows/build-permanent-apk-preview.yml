@@ -10,6 +10,9 @@ on:
       - 'player.html'
       - 'player.css'
       - 'player.js'
+      - 'app.js'
+      - 'index.html'
+      - 'widget.html'
       - '.github/workflows/build-android-player.yml'
       - 'config.js'
       - 'icon.svg'
@@ -69,10 +72,12 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
-          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js widget.html android-player/app/src/main/assets/
 
-      - name: Validate player JavaScript
-        run: node --check player.js
+      - name: Validate web JavaScript
+        run: |
+          node --check player.js
+          node --check app.js
 
       - name: Build installable preview APK
         run: gradle -p android-player --no-daemon assembleDebug
