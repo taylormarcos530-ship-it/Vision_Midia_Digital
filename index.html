@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=42" />
+  <link rel="stylesheet" href="./styles.css?v=43" />
   <title>Vision Mídia Digital</title>
 </head>
 <body>
@@ -599,7 +599,9 @@
         <div><span class="eyebrow">VISUALIZAÇÃO DA TV</span><h3 id="view-tv-title">TV</h3><p id="view-tv-status" class="dialog-subtitle">—</p></div>
         <button class="icon-button" data-close-dialog="view-tv-dialog" type="button">×</button>
       </div>
-      <div id="view-tv-preview" class="tv-viewer-preview"><div class="tv-viewer-empty">Carregando…</div></div>
+      <div class="tv-viewer-stage-shell">
+        <div id="view-tv-preview" class="tv-viewer-preview"><div class="tv-viewer-empty">Carregando…</div></div>
+      </div>
       <div class="tv-viewer-footer">
         <small id="view-tv-captured-at">Sem captura disponível</small>
         <button id="view-tv-refresh" class="button primary" type="button">📷 Atualizar agora</button>
@@ -952,7 +954,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=43" defer></script>
+  <script src="./app.js?v=44" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
