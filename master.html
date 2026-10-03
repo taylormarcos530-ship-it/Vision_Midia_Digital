@@ -120,6 +120,32 @@
             </form>
           </article>
 
+          <article class="panel platform-email-settings-panel">
+            <div class="panel-head">
+              <div><small>E-MAIL / SEGURANÇA</small><h3>Recuperação de senha com Resend</h3></div>
+              <span id="ps-resend-badge" class="master-only-badge">NÃO CONFIGURADO</span>
+            </div>
+            <p class="helper">Use um remetente do seu próprio domínio para enviar redefinições de senha com a identidade da Vision Mídia Digital, sem depender do limite de e-mail padrão do Supabase.</p>
+            <form id="email-provider-form" class="stack">
+              <label>Chave API do Resend
+                <input id="ps-resend-key" type="password" autocomplete="new-password" placeholder="Cole a chave re_..." />
+                <small>Por segurança, a chave não volta para a tela depois de salva.</small>
+              </label>
+              <div class="form-grid two">
+                <label>Nome do remetente
+                  <input id="ps-resend-name" maxlength="80" value="Vision Mídia Digital" />
+                </label>
+                <label>E-mail remetente
+                  <input id="ps-resend-sender" type="email" maxlength="254" placeholder="no-reply@seudominio.com.br" />
+                </label>
+              </div>
+              <label class="switch-line"><input id="ps-resend-enabled" type="checkbox" /> Ativar Resend para redefinições enviadas pelo Master</label>
+              <div id="ps-resend-domain-status" class="form-status pending">Nenhum domínio validado ainda.</div>
+              <div id="ps-resend-status" class="form-status hidden" role="status" aria-live="polite"></div>
+              <button id="ps-resend-save" class="button primary" type="submit">Validar e salvar Resend</button>
+            </form>
+          </article>
+
           <article class="panel login-visual-settings-panel">
             <div class="panel-head">
               <div><small>APARÊNCIA</small><h3>Imagem lateral da tela de login</h3></div>
@@ -382,7 +408,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=43" defer></script>
+  <script src="./master.js?v=44" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>
