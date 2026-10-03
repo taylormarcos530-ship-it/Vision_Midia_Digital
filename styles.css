@@ -1769,3 +1769,21 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 @media(max-width:1100px){.media-row-pro{grid-template-columns:135px minmax(180px,1fr) minmax(200px,270px)}.media-actions-pro{grid-column:2/-1;justify-content:flex-end}}
 @media(max-width:760px){.media-row-pro{grid-template-columns:110px minmax(0,1fr)}.media-direct-playlist,.media-actions-pro{grid-column:1/-1}.media-preview-clean{height:90px}}
 @media(max-width:480px){.media-row-pro{grid-template-columns:1fr}.media-preview-clean{height:190px}.media-direct-playlist,.media-actions-pro{grid-column:auto}.media-actions-pro{justify-content:stretch}.media-actions-pro .small-icon-button{flex:1}}
+
+
+/* v41 — large playlist editor + stable preview controls */
+.playlist-editor-column-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}
+.playlist-editor-column-head h4{margin:0}
+.playlist-editor-count{font-size:9px;font-weight:800;color:#8194af;padding:4px 7px;border:1px solid rgba(128,154,196,.16);border-radius:999px;background:rgba(255,255,255,.02)}
+.playlist-library-search{position:sticky;top:0;z-index:3;display:grid;gap:5px;padding:7px 0 9px;background:#0d182a}
+.playlist-library-search span{font-size:9px;font-weight:800;color:#8799b4;text-transform:uppercase;letter-spacing:.06em}
+.playlist-library-search input{width:100%;min-height:38px;border:1px solid #2a3d5b;border-radius:10px;background:#0a1526;color:#e6edf8;padding:8px 10px;outline:none}
+.playlist-library-search input:focus{border-color:#4f7cff;box-shadow:0 0 0 3px rgba(79,124,255,.10)}
+.playlist-load-more{width:100%;margin-top:9px;min-height:38px}
+.playlist-search-empty{grid-column:1/-1}
+.media-preview-clean[data-preview-error="1"] .media-preview-placeholder{color:#d58a52}
+.media-preview-clean[data-preview-error="1"]::before{content:"Prévia indisponível";position:absolute;left:8px;top:7px;z-index:2;padding:3px 6px;border-radius:6px;background:rgba(5,12,23,.78);color:#f4b47c;font-size:7px;font-weight:800}
+@media(max-width:720px){
+  .playlist-editor-column-head{align-items:flex-start}
+  .playlist-library-search{position:static}
+}
