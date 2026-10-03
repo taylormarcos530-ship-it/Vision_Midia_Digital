@@ -712,12 +712,9 @@
       state.deviceCommands = deviceCommands || [];
       state.companyMembers = companyMembers || [];
       state.profiles = profiles || [];
-      const [screenshots, brandingRows] = await Promise.all([
-        restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` }),
-        restRequest('company_player_branding', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
-      ]);
+      const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
-      state.playerBranding = brandingRows?.[0] || null;
+      state.playerBranding = null;
       renderAll();
       updateConnectionStatus(true);
     } catch (error) {
