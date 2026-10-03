@@ -58,6 +58,14 @@
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  function replaceNodeChildren(node, ...children) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+    for (const child of children) {
+      if (child) node.appendChild(child);
+    }
+  }
+
   function clientId() {
     try {
       if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -282,7 +290,7 @@
 
     state.playlistNonce++;
     try { clearCurrentObjectUrl(); } catch {}
-    $('#media-stage')?.replaceChildren();
+    replaceNodeChildren($('#media-stage'));
     $('#pairing-screen').classList.add('hidden');
     $('#playback-screen').classList.add('hidden');
     $('#access-screen').classList.remove('hidden');
@@ -701,7 +709,7 @@
 
   function showIdle(title, message) {
     clearCurrentObjectUrl();
-    $('#media-stage').replaceChildren();
+    replaceNodeChildren($('#media-stage'));
     $('#idle-title').textContent = title;
     $('#idle-message').textContent = message;
     $('#idle-overlay').classList.remove('hidden');
@@ -729,7 +737,7 @@
 
   function swapStageElement(stage, element, objectUrl = null) {
     const previousUrl = state.currentObjectUrl;
-    stage.replaceChildren(element);
+    replaceNodeChildren(stage, element);
     state.currentObjectUrl = objectUrl;
     if (previousUrl && previousUrl !== objectUrl) URL.revokeObjectURL(previousUrl);
   }
@@ -1046,7 +1054,7 @@
 
         if (!playlist || !items.length) {
           if (manifest?.playlist) {
-            $('#media-stage').replaceChildren();
+            replaceNodeChildren($('#media-stage'));
             showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está disponível agora e não há fallback utilizável.');
           } else {
             showIdle('Vision Player conectado', 'Aguardando uma playlist com mídias ser atribuída a esta TV.');
