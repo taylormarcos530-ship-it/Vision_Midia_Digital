@@ -1799,9 +1799,22 @@
     state.selectedPlaylistItemIds = new Set([...state.selectedPlaylistItemIds].filter(id => validIds.has(id)));
     const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
 
+    const itemLimit = Math.max(60, Number(state.playlistItemRenderLimit || 60));
+    const visibleItems = items.slice(0, itemLimit);
     const list = $('#playlist-items-list');
     $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
-    list.innerHTML = items.map((item, index) => {
+    if ($('#playlist-items-count')) $('#playlist-items-count').textContent = items.length
+      ? `${Math.min(visibleItems.length, items.length)} de ${items.length} mídias`
+      : '0 mídias';
+    const moreItems = $('#playlist-items-more');
+    if (moreItems) {
+      moreItems.classList.toggle('hidden', visibleItems.length >= items.length);
+      moreItems.textContent = visibleItems.length < items.length
+        ? `Carregar mais (${items.length - visibleItems.length} restantes)`
+        : 'Todas carregadas';
+    }
+
+    list.innerHTML = visibleItems.map((item, index) => {
       const media = mediaById[item.media_id];
       const isImage = media?.media_type === 'image';
       const seconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
@@ -1818,9 +1831,29 @@
     }).join('');
 
     const picker = $('#playlist-media-picker');
-    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
     const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
-    picker.innerHTML = state.media.map(media => { const order=included.get(media.id); return `<div class="picker-row ${order?'already-selected':''}"><div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type==='video'?'▶':'▧'}</span></div><div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small><span class="playlist-selection-state ${order?'selected':''}">${order?`Já adicionada • ordem ${order}`:'Ainda não selecionada'}</span></div><button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order?'disabled':''}>${order?'Adicionada':'+ Adicionar'}</button></div>`; }).join('');
+    const query = String(state.playlistMediaQuery || '').trim().toLowerCase();
+    const filteredMedia = state.media.filter(media => !query || String(media.name || '').toLowerCase().includes(query));
+    const mediaLimit = Math.max(60, Number(state.playlistMediaRenderLimit || 60));
+    const visibleMedia = filteredMedia.slice(0, mediaLimit);
+    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
+    if ($('#playlist-media-count')) $('#playlist-media-count').textContent = query
+      ? `${filteredMedia.length} resultado${filteredMedia.length === 1 ? '' : 's'}`
+      : `${state.media.length} disponíveis`;
+    const moreMedia = $('#playlist-media-more');
+    if (moreMedia) {
+      moreMedia.classList.toggle('hidden', visibleMedia.length >= filteredMedia.length);
+      moreMedia.textContent = visibleMedia.length < filteredMedia.length
+        ? `Carregar mais (${filteredMedia.length - visibleMedia.length} restantes)`
+        : 'Todas carregadas';
+    }
+
+    picker.innerHTML = !filteredMedia.length && state.media.length
+      ? '<div class="mini-empty playlist-search-empty">Nenhuma mídia encontrada com essa busca.</div>'
+      : visibleMedia.map(media => {
+          const order=included.get(media.id);
+          return `<div class="picker-row ${order?'already-selected':''}"><div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type==='video'?'▶':'▧'}</span></div><div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small><span class="playlist-selection-state ${order?'selected':''}">${order?`Já adicionada • ordem ${order}`:'Ainda não selecionada'}</span></div><button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order?'disabled':''}>${order?'Adicionada':'+ Adicionar'}</button></div>`;
+        }).join('');
 
     const replace = $('#playlist-bulk-replace-media');
     if (replace) replace.innerHTML = '<option value="">Substituir por...</option>' + state.media.map(media => `<option value="${media.id}">${escapeHtml(media.name)}</option>`).join('');
@@ -1833,19 +1866,21 @@
     for (const media of state.media.filter(item => visibleIds.has(item.id))) {
       const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
       if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        targets.forEach(target => {
-          if (target.dataset.loaded === '1') return;
-          target.dataset.loaded = '1';
-          if (media.media_type === 'image') {
-            const img = document.createElement('img'); img.alt = media.name; img.loading = 'lazy'; img.src = url; target.prepend(img);
-          } else {
-            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'metadata'; video.src = url; target.prepend(video);
-            video.addEventListener('loadedmetadata', () => { try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {} }, { once:true });
-          }
-        });
-      } catch { /* keep placeholder */ }
+      for (const target of targets) {
+        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        target.dataset.loadingPath = media.storage_path;
+        try {
+          const url = await signedMediaUrlCached(media);
+          const element = await loadStablePreviewElement(media, url);
+          if (!target.isConnected) continue;
+          target.replaceChildren(element);
+          target.dataset.loadedPath = media.storage_path;
+        } catch {
+          // Mantém o placeholder e tenta novamente quando a tela for atualizada.
+        } finally {
+          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
+        }
+      }
     }
   }
 
@@ -3090,6 +3125,10 @@
   function openPlaylistEditor(id) {
     state.editingPlaylistId = id;
     state.selectedPlaylistItemIds = new Set();
+    state.playlistItemRenderLimit = 60;
+    state.playlistMediaRenderLimit = 60;
+    state.playlistMediaQuery = '';
+    if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
     renderPlaylistEditor();
     openDialog('playlist-items-dialog');
   }
@@ -3478,6 +3517,19 @@
     $('#playlist-search')?.addEventListener('input', renderPlaylists);
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
     $('#playlist-sort')?.addEventListener('change', renderPlaylists);
+    $('#playlist-media-search')?.addEventListener('input', event => {
+      state.playlistMediaQuery = event.target.value || '';
+      state.playlistMediaRenderLimit = 60;
+      renderPlaylistEditor();
+    });
+    $('#playlist-items-more')?.addEventListener('click', () => {
+      state.playlistItemRenderLimit = Number(state.playlistItemRenderLimit || 60) + 60;
+      renderPlaylistEditor();
+    });
+    $('#playlist-media-more')?.addEventListener('click', () => {
+      state.playlistMediaRenderLimit = Number(state.playlistMediaRenderLimit || 60) + 60;
+      renderPlaylistEditor();
+    });
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
     $('#branding-copy-url')?.addEventListener('click', async () => { const value=$('#branding-player-url')?.value || ''; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url')?.select();document.execCommand('copy');toast('Link copiado')} });
@@ -3597,7 +3649,14 @@
     document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
     $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; });
-    $('#playlist-items-dialog').addEventListener('close', () => { state.editingPlaylistId = null; state.selectedPlaylistItemIds = new Set(); });
+    $('#playlist-items-dialog').addEventListener('close', () => {
+      state.editingPlaylistId = null;
+      state.selectedPlaylistItemIds = new Set();
+      state.playlistItemRenderLimit = 60;
+      state.playlistMediaRenderLimit = 60;
+      state.playlistMediaQuery = '';
+      if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
+    });
   }
 
   bootstrap().catch(error => {
