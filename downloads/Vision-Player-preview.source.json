@@ -1,6 +1,6 @@
 {
-  "source_sha256": "a2553e2b985b96a5e0816c1c5287d9a1fd4f7621ab11150dbb6d5a0a92e6ac6e",
-  "git_sha": "ba6122a1a45c6a4366938649bfff6e10eb8fbba2",
+  "source_sha256": "7bcb078cf18b1a26aba64fc1565b96d08323361ec202a8a6ae14469867ca4c51",
+  "git_sha": "fd01661f5ecbb2a6c22011a29675cad49bd7fde0",
   "files": [
     "player.html",
     "player.css",
