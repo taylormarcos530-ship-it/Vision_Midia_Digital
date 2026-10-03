@@ -25,12 +25,19 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.EditText;
 import android.widget.Toast;
+import android.util.Base64;
 
 import androidx.annotation.Nullable;
 import androidx.webkit.WebViewAssetLoader;
 import androidx.webkit.WebViewClientCompat;
 
 import java.util.Locale;
+import java.io.ByteArrayOutputStream;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.nio.charset.StandardCharsets;
 
 public class MainActivity extends Activity {
     private static final String PREFS = "vision_player_prefs";
@@ -204,6 +211,53 @@ public class MainActivity extends Activity {
                 }
                 enterImmersiveMode();
             });
+        }
+
+        @JavascriptInterface
+        public String postJson(String url, String jsonBody, String apiKey, String deviceToken) {
+            HttpURLConnection connection = null;
+            try {
+                URL target = new URL(url);
+                if (!"https".equalsIgnoreCase(target.getProtocol())) {
+                    throw new IllegalArgumentException("Apenas HTTPS é permitido.");
+                }
+
+                connection = (HttpURLConnection) target.openConnection();
+                connection.setRequestMethod("POST");
+                connection.setConnectTimeout(15000);
+                connection.setReadTimeout(20000);
+                connection.setDoOutput(true);
+                connection.setUseCaches(false);
+                connection.setRequestProperty("Content-Type", "application/json");
+                connection.setRequestProperty("Accept", "application/json");
+                if (apiKey != null && !apiKey.isEmpty()) connection.setRequestProperty("apikey", apiKey);
+                if (deviceToken != null && !deviceToken.isEmpty()) connection.setRequestProperty("x-device-token", deviceToken);
+
+                byte[] payload = (jsonBody == null ? "{}" : jsonBody).getBytes(StandardCharsets.UTF_8);
+                connection.setFixedLengthStreamingMode(payload.length);
+                try (OutputStream output = connection.getOutputStream()) {
+                    output.write(payload);
+                    output.flush();
+                }
+
+                int status = connection.getResponseCode();
+                InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
+                byte[] body = new byte[0];
+                if (input != null) {
+                    try (InputStream stream = input; ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
+                        byte[] chunk = new byte[4096];
+                        int read;
+                        while ((read = stream.read(chunk)) != -1) buffer.write(chunk, 0, read);
+                        body = buffer.toByteArray();
+                    }
+                }
+                return status + "\n" + Base64.encodeToString(body, Base64.NO_WRAP);
+            } catch (Exception error) {
+                String message = "Falha de rede no TV Box: " + error.getClass().getSimpleName() + ": " + String.valueOf(error.getMessage());
+                return "0\n" + Base64.encodeToString(message.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+            } finally {
+                if (connection != null) connection.disconnect();
+            }
         }
 
         @JavascriptInterface
