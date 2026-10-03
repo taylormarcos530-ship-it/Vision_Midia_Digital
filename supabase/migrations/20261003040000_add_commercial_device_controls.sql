@@ -152,3 +152,35 @@ comment on column public.devices.fallback_playlist_id is
   'Optional emergency playlist for this device. Must belong to the same company.';
 comment on table public.device_groups is
   'Company-isolated TV groups used for shared default programming.';
+
+
+create or replace function public.set_device_group(
+  p_company_id uuid,
+  p_device_id uuid,
+  p_group_id uuid default null
+)
+returns void
+language plpgsql
+security invoker
+set search_path = ''
+as $$
+begin
+  if not (select private.has_company_role(p_company_id, array['owner','admin','operator']::text[])) then
+    raise exception 'forbidden' using errcode = '42501';
+  end if;
+  if not exists (select 1 from public.devices d where d.id=p_device_id and d.company_id=p_company_id and d.retired_at is null) then
+    raise exception 'device_not_found' using errcode = 'P0002';
+  end if;
+  if p_group_id is not null and not exists (select 1 from public.device_groups g where g.id=p_group_id and g.company_id=p_company_id) then
+    raise exception 'group_not_found' using errcode = 'P0002';
+  end if;
+  delete from public.device_group_members where company_id=p_company_id and device_id=p_device_id;
+  if p_group_id is not null then
+    insert into public.device_group_members(group_id,device_id,company_id,added_by)
+    values (p_group_id,p_device_id,p_company_id,(select auth.uid()));
+  end if;
+end;
+$$;
+
+revoke all on function public.set_device_group(uuid,uuid,uuid) from public, anon;
+grant execute on function public.set_device_group(uuid,uuid,uuid) to authenticated;

@@ -875,21 +875,24 @@
 
   function devicePlaybackHealth(device) {
     const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
-    if (!assignment?.playlist_id) {
+    const group = deviceGroupFor(device.id);
+    const playlistId = assignment?.playlist_id || group?.playlist_id || null;
+    if (!playlistId) {
       return { level:'warning', playlistName:'Nenhuma', stateLabel:'Sem playlist', playlistId:null };
     }
-    const playlist = state.playlists.find(row => row.id === assignment.playlist_id);
-    const items = state.playlistItems.filter(row => row.playlist_id === assignment.playlist_id);
+    const playlist = state.playlists.find(row => row.id === playlistId);
+    const items = state.playlistItems.filter(row => row.playlist_id === playlistId);
     const enabledItems = items.filter(row => row.enabled);
     const activeItems = enabledItems.filter(playlistItemActiveNow);
+    const sourceSuffix = !assignment?.playlist_id && group?.playlist_id ? ' • via grupo' : '';
 
     if (!enabledItems.length) {
-      return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:'Sem mídia ativa', playlistId:assignment.playlist_id };
+      return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:`Sem mídia ativa${sourceSuffix}`, playlistId };
     }
     if (!activeItems.length) {
-      return { level:'warning', playlistName:playlist?.name || 'Playlist', stateLabel:'Fora da programação agora', playlistId:assignment.playlist_id };
+      return { level:'warning', playlistName:playlist?.name || 'Playlist', stateLabel:`Fora da programação agora${sourceSuffix}`, playlistId };
     }
-    return { level:'success', playlistName:playlist?.name || 'Playlist', stateLabel:'Pronta para exibir', playlistId:assignment.playlist_id };
+    return { level:'success', playlistName:playlist?.name || 'Playlist', stateLabel:`Pronta para exibir${sourceSuffix}`, playlistId };
   }
 
   function formatLastSeen(value) {
