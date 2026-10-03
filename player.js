@@ -533,7 +533,7 @@
         img.src = url;
         img.style.width = '100%';
         img.style.height = '100%';
-        img.style.objectFit = 'contain';
+        img.style.objectFit = 'cover';
         img.style.objectPosition = 'center';
         stage.appendChild(img);
         await Promise.race([
@@ -555,7 +555,7 @@
         video.preload = 'auto';
         video.style.width = '100%';
         video.style.height = '100%';
-        video.style.objectFit = 'contain';
+        video.style.objectFit = 'cover';
         video.style.objectPosition = 'center';
         stage.appendChild(video);
         let playbackStarted = false;
@@ -672,7 +672,7 @@
     const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponível.');ctx.fillStyle='#000';ctx.fillRect(0,0,width,height);
     const sourceW=media.tagName==='VIDEO'?(media.videoWidth||0):(media.naturalWidth||0),sourceH=media.tagName==='VIDEO'?(media.videoHeight||0):(media.naturalHeight||0);
     if(!sourceW||!sourceH)throw new Error('A mídia ainda não está pronta para captura.');
-    const contain=Math.min(width/sourceW,height/sourceH),drawW=sourceW*contain,drawH=sourceH*contain,x=(width-drawW)/2,y=(height-drawH)/2;
+    const cover=Math.max(width/sourceW,height/sourceH),drawW=sourceW*cover,drawH=sourceH*cover,x=(width-drawW)/2,y=(height-drawH)/2;
     ctx.drawImage(media,x,y,drawW,drawH);
     const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));
     if(!blob)throw new Error('Não foi possível gerar a captura.');
