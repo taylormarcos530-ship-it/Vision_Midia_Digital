@@ -30,9 +30,9 @@ button { font: inherit; }
 
 
 /* Orientation fallback for fixed-output TV/TV Box WebViews.
-   The virtual Player stage swaps viewport axes. Media gets the inverse physical
-   box before the 90deg turn, so object-fit is calculated against the correct
-   aspect ratio instead of a horizontal rectangle trapped inside portrait. */
+   Rotate the virtual Player stage exactly once. Every child media element then
+   inherits that rotation automatically, so portrait/landscape cannot be
+   cancelled by a second 90deg transform on the media itself. */
 body.force-player-portrait .playback-screen,
 body.force-player-landscape .playback-screen{
   position:fixed;
@@ -52,19 +52,17 @@ body.force-player-portrait .media-stage img,
 body.force-player-portrait .media-stage video,
 body.force-player-landscape .media-stage img,
 body.force-player-landscape .media-stage video{
-  width:100vw !important;
-  height:100vh !important;
+  width:100% !important;
+  height:100% !important;
   max-width:none !important;
   max-height:none !important;
   object-fit:contain !important;
   object-position:center center !important;
-  transform:rotate(90deg) !important;
-  transform-origin:center center !important;
+  transform:none !important;
 }
 body.force-player-portrait .media-stage iframe,
 body.force-player-landscape .media-stage iframe{
-  width:100vw;
-  height:100vh;
-  transform:rotate(90deg);
-  transform-origin:center center;
+  width:100%;
+  height:100%;
+  transform:none;
 }
