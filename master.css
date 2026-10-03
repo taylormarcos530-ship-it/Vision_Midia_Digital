@@ -584,3 +584,32 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .owner-access-box .button{width:100%}
   .owner-access-box>small{grid-column:auto}
 }
+
+
+/* v42 — SaaS expiry alerts, customer notifications and protected destructive actions */
+.master-alert-grid{margin-top:16px}
+.master-expiry-list{display:grid;gap:8px;margin-top:14px}
+.master-expiry-item{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:5px 12px;align-items:center;padding:11px 12px;border:1px solid #2b3b58;border-radius:11px;background:#0c1425}
+.master-expiry-item strong,.master-expiry-item small{display:block}
+.master-expiry-item small{margin-top:3px;color:#8fa0ba}
+.master-expiry-item .expiry-chip{font-size:10px;font-weight:850;border-radius:999px;padding:6px 9px;white-space:nowrap}
+.master-expiry-item.warning{border-color:rgba(245,158,11,.38);background:rgba(245,158,11,.07)}
+.master-expiry-item.warning .expiry-chip{color:#fbbf24;background:rgba(245,158,11,.12)}
+.master-expiry-item.expired{border-color:rgba(239,68,68,.38);background:rgba(239,68,68,.07)}
+.master-expiry-item.expired .expiry-chip{color:#f87171;background:rgba(239,68,68,.12)}
+.master-expiry-empty{padding:20px;border:1px dashed #2b3b58;border-radius:11px;text-align:center;color:#8292aa}
+.master-notification-panel textarea{resize:vertical;min-height:88px}
+.master-notification-actions{margin-top:0}
+.button.danger{background:#3a1d25;color:#ff9eaa;border:1px solid #6b3340}
+.button.danger:not(:disabled):hover{background:#4a222c}
+.company-danger-zone{grid-template-columns:minmax(0,1fr) auto;align-items:center}
+.company-danger-zone>div{display:grid;gap:5px}
+.company-danger-zone small{color:#9caac0;line-height:1.45}
+@media(max-width:720px){
+  .master-alert-grid{grid-template-columns:1fr}
+  .master-expiry-item{grid-template-columns:1fr}
+  .master-expiry-item .expiry-chip{justify-self:start}
+  .master-notification-actions{display:grid;grid-template-columns:1fr}
+  .company-danger-zone{grid-template-columns:1fr}
+  .company-danger-zone .button{width:100%}
+}
