@@ -121,7 +121,7 @@
     for (const file of PLAYER_SOURCE_FILES) {
       const response = await fetch(file, { cache: 'no-store' });
       if (!response.ok) throw new Error(`Não foi possível validar ${file}.`);
-      payload += `${file}\n${await response.text()}\n`;
+      payload += `${file.replace(/^\\.\\//, '')}\n${await response.text()}\n`;
     }
     return sha256Hex(payload);
   }
