@@ -471,3 +471,26 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .master-module-heading h2{font-size:22px}
   .master-module-hero>.button{width:100%}
 }
+
+
+/* Preview readability fixes — explicit contrast for Master settings */
+#lv-fit,#lv-position{
+  background:#fff!important;
+  color:#0b1220!important;
+  -webkit-text-fill-color:#0b1220;
+  color-scheme:light;
+}
+#lv-fit option,#lv-position option{background:#fff;color:#0b1220}
+#lv-subtitle,#ps-signup-message,#ps-renewal-message{
+  background:#0c1323!important;
+  color:#fff!important;
+  -webkit-text-fill-color:#fff;
+  caret-color:#fff;
+}
+#lv-subtitle::placeholder,#ps-signup-message::placeholder,#ps-renewal-message::placeholder{color:#9aa8bf;opacity:1}
+@media(max-width:720px){
+  input,select,textarea{font-size:16px}
+  .master-main,.master-content{width:100%;max-width:100%;min-width:0;overflow-x:hidden}
+  .master-topbar{width:100%;max-width:100%}
+  .login-visual-settings-grid,.master-settings-workspace{min-width:0;width:100%}
+}
