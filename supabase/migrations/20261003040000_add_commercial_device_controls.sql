@@ -237,3 +237,31 @@ create trigger device_groups_company_immutable
 before update of company_id on public.device_groups
 for each row execute function private.prevent_company_id_change();
 
+-- Keep group programming when an existing TV is replaced. The established
+-- replacement RPC inserts the new device with replaces_device_id in the same
+-- transaction; move only the membership from the matching company.
+create or replace function private.transfer_device_group_on_replacement()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  if new.replaces_device_id is null then return new; end if;
+
+  update public.device_group_members
+  set device_id = new.id
+  where company_id = new.company_id
+    and device_id = new.replaces_device_id;
+
+  return new;
+end;
+$$;
+
+drop trigger if exists devices_transfer_group_on_replacement on public.devices;
+create trigger devices_transfer_group_on_replacement
+after insert on public.devices
+for each row
+when (new.replaces_device_id is not null)
+execute function private.transfer_device_group_on_replacement();
+
