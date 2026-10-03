@@ -160,18 +160,27 @@
     const payload = JSON.stringify(body || {});
 
     if (window.VisionAndroid?.postJson) {
-      const envelope = String(window.VisionAndroid.postJson(
-        url,
-        payload,
-        CONFIG.supabasePublishableKey,
-        deviceToken || ''
-      ) || '');
+      let envelope = '';
+      try {
+        envelope = String(window.VisionAndroid.postJson(
+          url,
+          payload,
+          CONFIG.supabasePublishableKey,
+          deviceToken || ''
+        ) || '');
+      } catch (bridgeError) {
+        try { window.VisionAndroid?.useRemotePlayer?.(); } catch {}
+        const error = new Error(`Falha na ponte Android: ${bridgeError?.message || bridgeError}`);
+        error.status = 0;
+        throw error;
+      }
       const separator = envelope.indexOf('\n');
       const status = Number(separator >= 0 ? envelope.slice(0, separator) : 0);
       const encoded = separator >= 0 ? envelope.slice(separator + 1) : '';
       const text = encoded ? decodeNativeBase64(encoded) : '';
       if (status === 0) {
-        const error = new Error(text || 'O TV Box não conseguiu acessar o servidor.');
+        try { window.VisionAndroid?.useRemotePlayer?.(); } catch {}
+        const error = new Error(text || 'O TV Box não conseguiu acessar o servidor. Abrindo modo de compatibilidade…');
         error.status = 0;
         throw error;
       }
