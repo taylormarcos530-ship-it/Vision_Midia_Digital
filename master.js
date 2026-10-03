@@ -368,10 +368,7 @@
   async function parse(res){ const t=await res.text(); let d=null; try{d=t?JSON.parse(t):null}catch{d=t}; if(!res.ok){const e=new Error(d?.error_description||d?.message||d?.error||`HTTP ${res.status}`); e.status=res.status; throw e} return d; }
   async function auth(path, body){ return parse(await fetch(`${CONFIG.supabaseUrl}/auth/v1${path}`,{method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,'Content-Type':'application/json'},body:JSON.stringify(body)})); }
   function passwordRecoveryRedirectUrl(){
-    const isPublicOrigin=value=>/^https:\/\//i.test(String(value||''))&&!/localhost|127\.0\.0\.1/i.test(String(value||''));
-    if(isPublicOrigin(location.origin))return new URL('./index.html',location.href).href;
-    try{if(document.referrer){const ref=new URL(document.referrer);if(isPublicOrigin(ref.origin))return `${ref.origin}/index.html`}}catch{}
-    return 'https://vision-midia-digital-e74lzn2i5-vision-5529.vercel.app/index.html';
+    return 'https://vision-midia-digital.vercel.app/index.html';
   }
   async function sendPasswordRecovery(email){
     const target=String(email||'').trim().toLowerCase();
@@ -381,7 +378,7 @@
     }catch(error){
       const message=String(error?.message||error||'');
       if(/resend_not_configured|resend_api_key_required|sender_email_required/i.test(message))throw new Error('Configure o Resend no Dashboard SaaS antes de enviar redefinições.');
-      if(/resend_sender_domain_not_verified/i.test(message))throw new Error('O domínio do remetente ainda não está verificado no Resend.');
+      if(/resend_sender_domain_not_verified/i.test(message))throw new Error('O domínio do remetente ainda não está verificado no Resend. Enquanto isso, use o modo temporário onboarding@resend.dev.');
       if(/resend_send_failed/i.test(message))throw new Error('O Resend recusou o envio. Verifique domínio, remetente e chave API.');
       throw error;
     }
@@ -612,12 +609,13 @@
     if(!$('#email-provider-form'))return;
     $('#ps-resend-key').value='';
     $('#ps-resend-name').value=c.resend_sender_name||'Vision Mídia Digital';
-    $('#ps-resend-sender').value=c.resend_sender_email||'';
+    $('#ps-resend-sender').value=c.resend_sender_email||'onboarding@resend.dev';
     $('#ps-resend-enabled').checked=c.resend_enabled===true;
 
     const badge=$('#ps-resend-badge');
     if(badge){
-      badge.textContent=c.resend_enabled===true?'ATIVO':status.api_key_configured?'CHAVE OK':'NÃO CONFIGURADO';
+      const testMode=(c.resend_sender_email||'').toLowerCase()==='onboarding@resend.dev';
+      badge.textContent=c.resend_enabled===true?(testMode?'MODO TESTE':'ATIVO'):status.api_key_configured?'CHAVE OK':'NÃO CONFIGURADO';
     }
 
     const domains=Array.isArray(status.domains)?status.domains:[];
@@ -632,8 +630,8 @@
         domainStatus.className='form-status pending';
       }else{
         domainStatus.textContent=status.api_key_configured
-          ? 'A chave está conectada, mas ainda não existe domínio verificado no Resend.'
-          : 'Informe a chave do Resend e um remetente de domínio próprio.';
+          ? 'A chave está conectada. Até entrar o .com.br, use onboarding@resend.dev como remetente temporário; o link de redefinição já volta para vision-midia-digital.vercel.app.'
+          : 'Cole a chave do Resend. Por enquanto o remetente temporário será onboarding@resend.dev e o link volta para vision-midia-digital.vercel.app.';
         domainStatus.className='form-status pending';
       }
     }
@@ -891,8 +889,24 @@
     if(!email){toast('E-mail não encontrado','Atualize a lista de clientes e tente novamente.','error');return false}
     if(!confirm(`Enviar um link de redefinição de senha para ${email}?`))return false;
     try{
-      await sendPasswordRecovery(email);
-      toast('Redefinição enviada',`O link seguro foi enviado para ${email}.`);
+      const result=await sendPasswordRecovery(email);
+      if(result?.delivery==='manual'&&result?.action_link){
+        let copied=false;
+        try{
+          await navigator.clipboard.writeText(result.action_link);
+          copied=true;
+        }catch{}
+        if(!copied)window.prompt('O Resend está em modo temporário. Copie este link seguro e envie ao cliente:',result.action_link);
+        toast(
+          'Link seguro gerado',
+          copied
+            ? 'O Resend ainda está em modo temporário; o link de redefinição foi copiado para você enviar ao cliente.'
+            : 'O Resend ainda está em modo temporário; envie o link seguro mostrado ao cliente.',
+          'success'
+        );
+        return true;
+      }
+      toast('Redefinição enviada',`O e-mail personalizado da Vision Mídia Digital foi enviado para ${email}.`);
       return true;
     }catch(e){
       toast('Erro ao enviar redefinição',e.message||'Não foi possível enviar o link.','error');
