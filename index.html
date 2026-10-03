@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=33" />
+  <link rel="stylesheet" href="./styles.css?v=34" />
   <title>Vision Mídia Digital</title>
 </head>
 <body>
@@ -414,21 +414,39 @@
         </section>
 
         <section id="view-playlists" class="view-section premium-view hidden">
-          <div class="section-toolbar module-hero module-hero-playlists">
+          <div class="section-toolbar module-hero module-hero-playlists playlist-hero-compact">
             <div class="module-heading">
               <span class="module-icon">▶</span>
-              <div><span class="eyebrow">PROGRAMAÇÃO DE CONTEÚDO</span><h2>Playlists</h2><p>Monte sequências de exibição, ajuste duração e programe quando cada conteúdo deve entrar no ar.</p></div>
+              <div><span class="eyebrow">PROGRAMAÇÃO DE CONTEÚDO</span><h2>Playlists</h2><p>Organize o que vai ao ar, confira duração, programação e TVs vinculadas sem abrir cada playlist.</p></div>
             </div>
             <button id="add-playlist-button" class="button primary">+ Nova playlist</button>
           </div>
-          <div class="workflow-strip">
+
+          <div id="playlist-tools" class="playlist-tools hidden">
+            <label class="playlist-search-control"><span>Buscar</span><input id="playlist-search" type="search" placeholder="Nome ou descrição da playlist" autocomplete="off" /></label>
+            <label><span>Status</span><select id="playlist-status-filter">
+              <option value="all">Todas</option>
+              <option value="active">Ativas</option>
+              <option value="scheduled">Programadas</option>
+              <option value="unscheduled">Sem programação</option>
+              <option value="empty">Vazias</option>
+            </select></label>
+            <label><span>Ordenar</span><select id="playlist-sort">
+              <option value="updated_desc">Atualização mais recente</option>
+              <option value="name_asc">Nome A–Z</option>
+            </select></label>
+          </div>
+
+          <div id="playlist-workflow" class="workflow-strip playlist-first-run-flow hidden">
             <span><b>01</b> Escolha as mídias</span><i>→</i><span><b>02</b> Organize a ordem</span><i>→</i><span><b>03</b> Defina a programação</span>
           </div>
-          <div id="playlists-grid" class="cards-grid"></div>
+
+          <div id="playlists-grid" class="playlist-grid-pro"></div>
           <div id="playlists-empty" class="empty-panel hidden">
             <div class="empty-icon">▶</div>
             <h3>Nenhuma playlist criada</h3>
-            <p>Crie uma playlist e adicione as mídias da sua biblioteca.</p>
+            <p>Crie uma playlist, adicione suas mídias e defina quando cada conteúdo deve entrar no ar.</p>
+            <button class="button primary" type="button" data-open-playlist-create>Criar primeira playlist</button>
           </div>
         </section>
 
@@ -903,7 +921,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js" defer></script>
+  <script src="./app.js?v=34" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
