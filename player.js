@@ -169,7 +169,6 @@
           deviceToken || ''
         ) || '');
       } catch (bridgeError) {
-        try { window.VisionAndroid?.useRemotePlayer?.(); } catch {}
         const error = new Error(`Falha na ponte Android: ${bridgeError?.message || bridgeError}`);
         error.status = 0;
         throw error;
@@ -179,8 +178,7 @@
       const encoded = separator >= 0 ? envelope.slice(separator + 1) : '';
       const text = encoded ? decodeNativeBase64(encoded) : '';
       if (status === 0) {
-        try { window.VisionAndroid?.useRemotePlayer?.(); } catch {}
-        const error = new Error(text || 'O TV Box não conseguiu acessar o servidor. Abrindo modo de compatibilidade…');
+        const error = new Error(text || 'Sem conexão com o servidor. Verifique a internet e a data/hora do TV Box.');
         error.status = 0;
         throw error;
       }
@@ -325,10 +323,11 @@
       renderPairing(pairing);
       pollPairing(pairing);
     } catch (error) {
-      $('#pairing-code').textContent = 'ERRO';
-      $('#pairing-status').textContent = navigator.onLine
-        ? `${error.message} • tentando novamente…`
-        : 'Sem internet no TV Box • tentando novamente…';
+      const networkFailure = Number(error?.status || 0) === 0;
+      $('#pairing-code').textContent = networkFailure ? 'SEM REDE' : 'ERRO';
+      $('#pairing-status').textContent = networkFailure
+        ? `${error.message || 'Sem conexão com o servidor.'} Verifique Wi-Fi/cabo e Data e hora automáticas. Tentando novamente…`
+        : `${error.message} • tentando novamente…`;
       $('#new-code-button').classList.remove('hidden');
       setTimeout(() => {
         if (!state.deviceToken && !state.pairing?.request_id) startPairing(true);
@@ -1087,7 +1086,7 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 30_000);
+    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
