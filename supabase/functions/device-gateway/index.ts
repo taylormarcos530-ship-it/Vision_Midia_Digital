@@ -421,7 +421,11 @@ Deno.serve(async (req) => {
 
       if (!resolved.playlistId) {
         return json({
-          version: await sha256Hex(JSON.stringify({ device: device.updated_at, access: [device.access_status, device.access_expires_at], program: resolved.program })),
+          version: await sha256Hex(JSON.stringify({
+            device_config: [device.orientation, device.settings || {}],
+            access: [device.access_status, device.access_expires_at],
+            program: resolved.program,
+          })),
           device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
           program: resolved.program,
           playlist: null,
@@ -501,7 +505,7 @@ Deno.serve(async (req) => {
       }
 
       const versionSource = JSON.stringify({
-        device: device.updated_at,
+        device_config: [device.orientation, device.settings || {}],
         access: [device.access_status, device.access_expires_at],
         assignment: resolved.assignmentUpdatedAt,
         program: resolved.program,
