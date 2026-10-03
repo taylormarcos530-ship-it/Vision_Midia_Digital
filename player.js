@@ -872,3 +872,5 @@
     $('#new-code-button').classList.remove('hidden');
   });
 })();
+
+/* APK build trigger: fullscreen-cover-v1 */
