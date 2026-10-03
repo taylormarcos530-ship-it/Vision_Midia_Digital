@@ -944,6 +944,28 @@
     return state.deviceCommands.find(row => row.device_id === deviceId) || null;
   }
 
+  function screenshotMatchesConfiguredOrientation(device, shot) {
+    const width = Number(shot?.width || 0);
+    const height = Number(shot?.height || 0);
+    if (!width || !height) return true;
+    const mode = String(device?.orientation || 'auto');
+    if (mode === 'landscape') return width >= height;
+    if (mode === 'portrait') return height >= width;
+    return true;
+  }
+
+  function deviceProgramPreviewMedia(device) {
+    const direct = state.deviceAssignments.find(row => row.device_id === device.id);
+    const group = deviceGroupFor(device.id);
+    const playlistId = direct?.playlist_id || group?.playlist_id || null;
+    if (!playlistId) return null;
+    const item = state.playlistItems
+      .filter(row => row.playlist_id === playlistId && row.enabled !== false)
+      .sort((a,b) => Number(a.position || 0) - Number(b.position || 0))
+      .find(row => state.media.some(media => media.id === row.media_id));
+    return item ? state.media.find(media => media.id === item.media_id) || null : null;
+  }
+
   function remoteCommandLabel(type) {
     return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
   }
@@ -1167,10 +1189,22 @@
       };
     }
     if (shot?.storage_path) {
+      if (!screenshotMatchesConfiguredOrientation(device, shot)) {
+        const media = deviceProgramPreviewMedia(device);
+        return {
+          className: 'capture-program-fallback',
+          useScreenshot: false,
+          body: media
+            ? `<div class="device-program-preview" data-device-program-preview="${escapeHtml(media.id)}"><div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Carregando programação…</strong></div></div>`
+            : '<div class="device-capture-state"><span class="device-preview-symbol">↻</span><strong>Captura antiga incompatível</strong><small>Esta captura foi feita antes da correção de rotação. Faça uma nova captura quando a TV estiver online.</small></div>',
+          caption: 'Prévia da programação • captura antiga descartada',
+        };
+      }
       const cached = cachedDeviceScreenshotEntry(shot);
       const orientationClass = Number(shot.height || 0) > Number(shot.width || 0) ? 'capture-portrait' : 'capture-landscape';
       return {
         className: `has-screenshot ${orientationClass}`,
+        useScreenshot: true,
         body: cached?.url
           ? `<img src="${escapeHtml(cached.url)}" alt="Captura da TV" decoding="async" data-screenshot-cache-key="${escapeHtml(deviceScreenshotCacheKey(shot))}">`
           : '<div class="device-capture-state"><span class="capture-spinner" aria-hidden="true"></span><strong>Carregando captura…</strong></div>',
@@ -1248,7 +1282,7 @@
           <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
 
-        <div class="device-screen ${captureUi.className}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}">
+        <div class="device-screen ${captureUi.className}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}" data-screenshot-valid="${captureUi.useScreenshot === false ? '0' : '1'}">
           ${captureUi.body}
         </div>
         <div class="device-screen-footer">
@@ -1347,7 +1381,32 @@
     }).join('');
 
     hydrateDeviceScreenshots();
+    hydrateDeviceProgramPreviews();
     scheduleAutomaticDeviceCaptures();
+  }
+
+  async function hydrateDeviceProgramPreviews() {
+    const targets = $$('[data-device-program-preview]');
+    for (const target of targets) {
+      const mediaId = target.dataset.deviceProgramPreview;
+      const media = state.media.find(item => item.id === mediaId);
+      if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
+      if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+      target.dataset.loadingPath = media.storage_path;
+      try {
+        const url = await signedMediaUrlCached(media);
+        const element = await loadStablePreviewElement(media, url);
+        if (!target.isConnected) continue;
+        target.replaceChildren(element);
+        target.dataset.loadedPath = media.storage_path;
+      } catch {
+        if (target.isConnected) {
+          target.innerHTML = '<div class="device-capture-state"><span class="device-preview-symbol">!</span><strong>Prévia indisponível</strong><small>A captura antiga foi descartada. Faça uma nova captura quando a TV estiver online.</small></div>';
+        }
+      } finally {
+        if (target.isConnected) delete target.dataset.loadingPath;
+      }
+    }
   }
 
   function scheduleAutomaticDeviceCaptures() {
@@ -1368,7 +1427,7 @@
   async function hydrateDeviceScreenshots() {
     for (const shot of state.deviceScreenshots) {
       const target = $(`[data-device-screenshot="${CSS.escape(shot.device_id)}"]`);
-      if (!target || !shot.storage_path) continue;
+      if (!target || !shot.storage_path || target.dataset.screenshotValid === '0') continue;
 
       const key = deviceScreenshotCacheKey(shot);
       const cached = cachedDeviceScreenshotEntry(shot);
@@ -1427,6 +1486,26 @@
     $('#view-tv-status').textContent = `${statusLabel(effectiveDeviceStatus(device))} • ${formatLastSeen(device.last_seen_at)}`;
     const preview = $('#view-tv-preview');
     const shot = latestScreenshotForDevice(deviceId);
+    if (shot?.storage_path && !screenshotMatchesConfiguredOrientation(device, shot)) {
+      const media = deviceProgramPreviewMedia(device);
+      preview.classList.remove('is-portrait-capture');
+      preview.style.aspectRatio = '16 / 9';
+      $('#view-tv-captured-at').textContent = 'Captura antiga descartada • exibindo prévia da programação';
+      if (!media?.storage_path || !['image','video'].includes(media.media_type)) {
+        preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga desta TV foi feita com orientação incompatível.<br><small>Quando a TV ficar online, use “Atualizar agora” para gerar uma nova captura.</small></div>';
+        return;
+      }
+      preview.innerHTML = '<div class="tv-viewer-empty">Carregando prévia da programação…</div>';
+      try {
+        const url = await signedMediaUrlCached(media);
+        const element = await loadStablePreviewElement(media, url);
+        if (state.viewingDeviceId !== deviceId) return;
+        preview.replaceChildren(element);
+      } catch {
+        preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga foi descartada e a prévia da programação não pôde ser aberta.</div>';
+      }
+      return;
+    }
     if (!shot?.storage_path) {
       preview.classList.remove('is-portrait-capture');
       preview.style.aspectRatio = '16 / 9';
