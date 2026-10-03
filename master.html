@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b1020" />
   <title>Vision Mídia Digital • Master</title>
-  <link rel="stylesheet" href="./master.css?v=32" />
+  <link rel="stylesheet" href="./master.css?v=39" />
 </head>
 <body>
   <div id="master-toast-root" class="toast-root" aria-live="polite"></div>
@@ -205,6 +205,12 @@
       <div class="form-grid two"><label>Nome da empresa<input id="me-company-name" maxlength="120" required /></label><label>Status da empresa<select id="me-company-status"><option value="active">Ativa</option><option value="suspended">Suspensa</option></select></label></div>
       <div class="form-grid two"><label>Plano<select id="me-plan"></select></label><label>Status da assinatura<select id="me-sub-status"><option value="pending_approval">Aguardando aprovação</option><option value="trialing">Teste</option><option value="active">Ativa</option><option value="past_due">Pagamento pendente</option><option value="suspended">Suspensa</option><option value="cancelled">Cancelada</option></select></label></div>
       <div class="form-grid two"><label>Situação do pagamento<select id="me-payment-status"><option value="pending">Pendente</option><option value="paid">Pago</option><option value="overdue">Vencido</option><option value="waived">Liberado manualmente</option></select></label><label>Vencimento<input id="me-due-date" type="date" /></label></div>
+      <div class="limit-box trial-access-box">
+        <div class="trial-access-head"><div><strong>Acesso temporário / demonstração</strong><small>Libere o sistema por alguns minutos sem marcar uma mensalidade como paga.</small></div><span id="me-trial-status" class="status pending">Sem teste ativo</span></div>
+        <div class="trial-quick-actions"><button class="button ghost" type="button" data-trial-minutes="10">10 min</button><button class="button ghost" type="button" data-trial-minutes="30">30 min</button><button class="button ghost" type="button" data-trial-minutes="60">1 hora</button><button class="button ghost" type="button" data-trial-minutes="1440">1 dia</button></div>
+        <div class="trial-custom-line"><label>Tempo personalizado (minutos)<input id="me-trial-custom-minutes" type="number" min="1" max="43200" value="10" /></label><button id="me-trial-custom" class="button primary" type="button">Liberar teste</button></div>
+        <small>Ao terminar o prazo, o painel e o Player voltam a bloquear automaticamente. Os dados, mídias e configurações do cliente são preservados.</small>
+      </div>
       <label>Link de pagamento Mercado Pago<input id="me-payment-url" type="url" maxlength="1200" placeholder="https://..." /><small>Enquanto a integração automática não estiver conectada, cole aqui o link de cobrança deste cliente. Ele verá o botão “Pagar agora”.</small></label>
       <div class="limit-box pix-master-box">
         <strong>Pagamento por PIX <small>(opcional)</small></strong>
@@ -303,7 +309,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=33" defer></script>
+  <script src="./master.js?v=39" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>
