@@ -820,7 +820,10 @@
   async function captureCurrentFrame() {
     const media = $('#media-stage img, #media-stage video');
     if (!media) throw new Error('Nenhuma imagem ou vídeo está sendo exibido agora.');
-    const viewW=Math.max(1,innerWidth||screen.width||1920),viewH=Math.max(1,innerHeight||screen.height||1080);
+    let viewW=Math.max(1,innerWidth||screen.width||1920),viewH=Math.max(1,innerHeight||screen.height||1080);
+    const configuredOrientation=String(document.documentElement.dataset.playerOrientation||'auto');
+    if(configuredOrientation==='landscape'&&viewH>viewW)[viewW,viewH]=[viewH,viewW];
+    if(configuredOrientation==='portrait'&&viewW>viewH)[viewW,viewH]=[viewH,viewW];
     const scale=Math.min(1,1920/Math.max(viewW,viewH));
     const width=Math.max(1,Math.round(viewW*scale)),height=Math.max(1,Math.round(viewH*scale));
     const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
