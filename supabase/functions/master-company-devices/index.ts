@@ -172,12 +172,17 @@ Deno.serve(async req => {
         .single()
       if (commandError) throw commandError
 
-      await admin.from('master_audit_logs').insert({
-        actor_user_id: u.user.id,
-        action: 'device_restart_requested',
-        company_id: companyId,
-        details: { device_id: deviceId, device_name: device.name, command_id: command.id, source:'master-company-devices' },
-      }).catch(() => null)
+      try {
+        const { error: auditError } = await admin.from('master_audit_logs').insert({
+          actor_user_id: u.user.id,
+          action: 'device_restart_requested',
+          company_id: companyId,
+          details: { device_id: deviceId, device_name: device.name, command_id: command.id, source:'master-company-devices' },
+        })
+        if (auditError) console.warn('master-company-devices audit', auditError.message)
+      } catch (auditError) {
+        console.warn('master-company-devices audit', auditError)
+      }
 
       return J({ ok:true, command })
     }
