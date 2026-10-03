@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - main
+      - fix/preserve-current-view-refresh
     paths:
       - 'android-player/**'
       - 'player.html'
