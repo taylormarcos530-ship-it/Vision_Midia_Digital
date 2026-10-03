@@ -497,7 +497,7 @@ Deno.serve(async (req) => {
             mime_type: asset.mime_type,
             url,
             size_bytes: asset.size_bytes,
-            checksum: asset.checksum_sha256 || asset.updated_at,
+            checksum: [asset.checksum_sha256 || asset.updated_at, asset.storage_path || asset.source_url || ''].join(':'),
             width: asset.width,
             height: asset.height,
           },
