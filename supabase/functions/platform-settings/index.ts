@@ -124,9 +124,12 @@ Deno.serve(async(req)=>{
       if(enabled&&!secret)return J({error:'resend_api_key_required'},400)
       if(enabled&&!senderEmail)return J({error:'sender_email_required'},400)
 
-      const domains=secret?await resendDomains(secret):[]
       const domain=emailDomain(senderEmail)
       const testMode=senderEmail==='onboarding@resend.dev'
+      // Resend keys may be intentionally restricted to sending only. The temporary
+      // onboarding sender does not require domain-list permission, so do not call
+      // /domains in test mode.
+      const domains=secret&&!testMode?await resendDomains(secret):[]
       const verified=Boolean(domain&&domains.some((item:any)=>clean(item?.name,180).toLowerCase()===domain&&clean(item?.status,40).toLowerCase()==='verified'))
       if(enabled&&!verified&&!testMode)return J({
         error:'resend_sender_domain_not_verified',
