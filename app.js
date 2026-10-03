@@ -118,6 +118,10 @@
     autoCaptureRequested: new Set(),
     mediaPreviewUrls: new Map(),
     mediaRenderSignature: '',
+    playlistRenderSignature: '',
+    playlistItemRenderLimit: 60,
+    playlistMediaRenderLimit: 60,
+    playlistMediaQuery: '',
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -1494,34 +1498,55 @@
     }).join('');
   }
 
+  async function loadStablePreviewElement(media, url) {
+    if (media.media_type === 'image') {
+      const image = new Image();
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.alt = media.name || 'Imagem';
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Tempo excedido ao carregar a miniatura.')), 12000);
+        image.onload = () => { clearTimeout(timeout); resolve(); };
+        image.onerror = () => { clearTimeout(timeout); reject(new Error('Miniatura indisponível.')); };
+        image.src = url;
+      });
+      return image;
+    }
+    const video = document.createElement('video');
+    video.muted = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Tempo excedido ao carregar o vídeo.')), 12000);
+      video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+      video.onerror = () => { clearTimeout(timeout); reject(new Error('Prévia do vídeo indisponível.')); };
+      video.src = url;
+    });
+    try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {}
+    return video;
+  }
+
   async function hydrateMediaPreviews() {
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
-      const preview = $([`[data-media-preview="${CSS.escape(media.id)}"]`].join(''));
-      if (!preview || preview.dataset.loadedPath === media.storage_path) continue;
+      const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
+      if (!preview || preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
+      preview.dataset.loadingPath = media.storage_path;
       try {
         const url = await signedMediaUrlCached(media);
         if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
-        let element;
-        if (media.media_type === 'image') {
-          element = new Image();
-          element.loading = 'lazy';
-          element.decoding = 'async';
-          element.alt = media.name || 'Imagem';
-          element.src = url;
-          try { await element.decode(); } catch {}
-        } else {
-          element = document.createElement('video');
-          element.muted = true;
-          element.preload = 'metadata';
-          element.playsInline = true;
-          element.src = url;
-        }
+        const element = await loadStablePreviewElement(media, url);
         if (!preview.isConnected) continue;
-        const placeholder = preview.querySelector('.media-preview-placeholder');
-        preview.insertBefore(element, placeholder || preview.firstChild);
-        placeholder?.remove();
+        const old = preview.querySelector(':scope > img, :scope > video');
+        if (old) old.replaceWith(element);
+        else preview.insertBefore(element, preview.firstChild);
+        preview.querySelector('.media-preview-placeholder')?.remove();
         preview.dataset.loadedPath = media.storage_path;
-      } catch { /* mantém placeholder sem piscar */ }
+        delete preview.dataset.previewError;
+      } catch {
+        if (preview.isConnected) preview.dataset.previewError = '1';
+      } finally {
+        if (preview.isConnected && preview.dataset.loadingPath === media.storage_path) delete preview.dataset.loadingPath;
+      }
     }
   }
 
