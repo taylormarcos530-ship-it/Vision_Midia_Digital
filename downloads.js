@@ -101,13 +101,13 @@
   }
 
   const PLAYER_SOURCE_FILES = [
-    './player.html',
-    './player.css',
-    './player.js',
-    './config.js',
-    './icon.svg',
-    './player.webmanifest',
-    './sw.js',
+    { url: './player.html', name: 'player.html' },
+    { url: './player.css', name: 'player.css' },
+    { url: './player.js', name: 'player.js' },
+    { url: './config.js', name: 'config.js' },
+    { url: './icon.svg', name: 'icon.svg' },
+    { url: './player.webmanifest', name: 'player.webmanifest' },
+    { url: './sw.js', name: 'sw.js' },
   ];
 
   async function sha256Hex(value) {
@@ -119,9 +119,9 @@
   async function currentPlayerSourceHash() {
     let payload = '';
     for (const file of PLAYER_SOURCE_FILES) {
-      const response = await fetch(file, { cache: 'no-store' });
-      if (!response.ok) throw new Error(`Não foi possível validar ${file}.`);
-      payload += `${file}\n${await response.text()}\n`;
+      const response = await fetch(file.url, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`Não foi possível validar ${file.name}.`);
+      payload += `${file.name}\n${await response.text()}\n`;
     }
     return sha256Hex(payload);
   }
