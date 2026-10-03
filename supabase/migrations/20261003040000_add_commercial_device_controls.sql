@@ -1,6 +1,9 @@
 -- Prepared only. Do not apply without explicit release authorization.
 -- Commercial device controls: richer telemetry, fallback playlists and isolated TV groups.
 
+alter table public.playlist_items
+  add column if not exists is_essential boolean not null default false;
+
 alter table public.companies
   add column if not exists fallback_playlist_id uuid references public.playlists(id) on delete set null;
 
@@ -184,3 +187,6 @@ $$;
 
 revoke all on function public.set_device_group(uuid,uuid,uuid) from public, anon;
 grant execute on function public.set_device_group(uuid,uuid,uuid) to authenticated;
+
+comment on column public.playlist_items.is_essential is
+  'When true, failure to resolve this enabled item can activate an available fallback playlist.';

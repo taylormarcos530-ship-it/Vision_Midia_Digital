@@ -2046,7 +2046,7 @@
       queryForSignature,
       [...state.selectedPlaylistItemIds].sort().join(','),
       items.map(item => [
-        item.id,item.media_id,item.position,item.duration_override_seconds,item.enabled,item.schedule_enabled,
+        item.id,item.media_id,item.position,item.duration_override_seconds,item.enabled,item.is_essential,item.schedule_enabled,
         item.start_date,item.end_date,item.start_time,item.end_time,
         Array.isArray(item.weekdays) ? item.weekdays.join('.') : '',item.updated_at
       ].join(':')).join('|'),
@@ -2090,9 +2090,9 @@
           <input class="playlist-select-box" type="checkbox" data-select-playlist-item="${item.id}" ${checked ? 'checked' : ''} aria-label="Selecionar ${escapeHtml(media?.name || 'mídia')}" />
           <span class="drag-handle" title="Arrastar para ordenar">⋮⋮</span>
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span></div></div>
+          <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span>${item.is_essential ? '<span class="schedule-chip active" title="Se esta mídia não puder ser carregada, o Player pode ativar a playlist de emergência.">Essencial</span>' : ''}</div></div>
           ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
-          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como essencial para fallback'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
 
@@ -3625,6 +3625,21 @@
     await setSelectedPlaylistEnabled(!item.enabled);
   }
 
+  async function togglePlaylistItemEssential(itemId) {
+    const item = state.playlistItems.find(row => row.id === itemId);
+    if (!item) return;
+    try {
+      await restRequest('playlist_items', {
+        method:'PATCH',
+        query:`id=eq.${encodeURIComponent(itemId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body:{ is_essential:!item.is_essential },
+        prefer:'return=minimal',
+      });
+      await loadAllData();
+      toast(!item.is_essential ? 'Mídia essencial' : 'Mídia comum', !item.is_essential ? 'A indisponibilidade desta mídia pode acionar o fallback.' : 'Esta mídia deixou de acionar o fallback sozinha.');
+    } catch (error) { toast('Erro ao atualizar mídia essencial', error.message, 'error'); }
+  }
+
   async function replaceSelectedPlaylistMedia() {
     const mediaId = $('#playlist-bulk-replace-media')?.value || '';
     const ids = [...state.selectedPlaylistItemIds];
@@ -3890,6 +3905,8 @@
       if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
       const editItemSchedule = event.target.closest('[data-edit-item-schedule]');
       if (editItemSchedule) { state.selectedPlaylistItemIds = new Set([editItemSchedule.dataset.editItemSchedule]); renderPlaylistEditor(); return openPlaylistScheduleDialog([editItemSchedule.dataset.editItemSchedule]); }
+      const toggleEssential = event.target.closest('[data-toggle-item-essential]');
+      if (toggleEssential) return togglePlaylistItemEssential(toggleEssential.dataset.toggleItemEssential);
       const toggleItem = event.target.closest('[data-toggle-item-enabled]');
       if (toggleItem) return togglePlaylistItemEnabled(toggleItem.dataset.toggleItemEnabled);
       const removeItem = event.target.closest('[data-remove-item]');

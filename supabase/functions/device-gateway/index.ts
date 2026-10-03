@@ -255,7 +255,7 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
 
   const { data: playlistItems, error: itemsError } = await admin
     .from('playlist_items')
-    .select('id,media_id,position,duration_override_seconds,enabled,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
+    .select('id,media_id,position,duration_override_seconds,enabled,is_essential,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
     .eq('playlist_id', playlist.id)
     .eq('company_id', companyId)
     .eq('enabled', true)
@@ -281,9 +281,13 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
 
   const mediaById = new Map(media.map(item => [item.id, item]))
   const items = []
+  let essentialUnavailable = false
   for (const item of effectivePlaylistItems) {
     const asset = mediaById.get(item.media_id)
-    if (!asset) continue
+    if (!asset) {
+      if (item.is_essential) essentialUnavailable = true
+      continue
+    }
     let url = asset.source_url || null
     if (asset.storage_path) {
       const { data: signed, error: signedError } = await admin.storage
@@ -291,13 +295,18 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
         .createSignedUrl(asset.storage_path, 6 * 60 * 60)
       if (signedError) {
         console.error('signed url failed', asset.id, signedError)
+        if (item.is_essential) essentialUnavailable = true
         continue
       }
       url = signed?.signedUrl || null
     }
-    if (!url) continue
+    if (!url) {
+      if (item.is_essential) essentialUnavailable = true
+      continue
+    }
     items.push({
       id: item.id,
+      essential: Boolean(item.is_essential),
       position: item.position,
       duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
       schedule: {
@@ -324,6 +333,7 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
 
   return {
     updatedAt: playlist.updated_at,
+    essentialUnavailable,
     playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
     items,
   }
@@ -597,14 +607,18 @@ Deno.serve(async (req) => {
       }
 
       let program = resolved.program
-      let fallbackPayload = fallback
-      if ((!primary || !primary.items.length) && fallback?.items?.length) {
+      const fallbackUsable = Boolean(fallback?.items?.length && !fallback?.essentialUnavailable)
+      let fallbackPayload = fallbackUsable ? fallback : null
+      if ((!primary || !primary.items.length || primary.essentialUnavailable) && fallbackUsable) {
+        const fallbackReason = primary?.essentialUnavailable
+          ? 'essential_media_unavailable'
+          : (resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist')
         primary = fallback
         fallbackPayload = null
         program = {
           ...resolved.program,
           source: 'fallback',
-          fallback_reason: resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist',
+          fallback_reason: fallbackReason,
         }
       }
 
@@ -614,9 +628,9 @@ Deno.serve(async (req) => {
         assignment: resolved.assignmentUpdatedAt,
         program,
         playlist: primary?.updatedAt || null,
-        items: (primary?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
+        items: (primary?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
         fallback_playlist: fallbackPayload?.updatedAt || null,
-        fallback_items: (fallbackPayload?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
+        fallback_items: (fallbackPayload?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
       })
 
       return json({
