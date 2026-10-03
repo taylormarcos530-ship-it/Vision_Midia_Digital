@@ -44,6 +44,7 @@ public class MainActivity extends Activity {
     private static final String KEY_SETUP_CODE = "company_setup_code";
     public static final String KEY_AUTOSTART = "autostart_enabled";
     private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
+    private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
 
     private WebView webView;
@@ -193,6 +194,23 @@ public class MainActivity extends Activity {
 
 
     private class PlayerBridge {
+        @JavascriptInterface
+        public String getDeviceToken() {
+            return prefs == null ? "" : prefs.getString(KEY_DEVICE_TOKEN, "");
+        }
+
+        @JavascriptInterface
+        public void storeDeviceToken(String token) {
+            String value = token == null ? "" : token.trim();
+            if (value.length() < 20 || value.length() > 512 || prefs == null) return;
+            prefs.edit().putString(KEY_DEVICE_TOKEN, value).apply();
+        }
+
+        @JavascriptInterface
+        public void clearDeviceToken() {
+            if (prefs != null) prefs.edit().remove(KEY_DEVICE_TOKEN).apply();
+        }
+
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
