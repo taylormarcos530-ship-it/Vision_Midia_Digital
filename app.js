@@ -563,7 +563,7 @@
     accessGateTimer = setInterval(refreshGateSoon, 10_000);
     setInterval(() => {
       if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
-    }, 10_000);
+    }, 3_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -740,7 +740,7 @@
     if (device.status === 'disabled') return 'disabled';
     if (device.access_status === 'pending') return 'pending';
     if (!device.last_seen_at) return device.paired_at ? 'offline' : (device.status || 'pending');
-    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 90_000;
+    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 12_000;
     return stale ? 'offline' : 'online';
   }
 
@@ -836,6 +836,40 @@
     return state.deviceScreenshots.find(row => row.device_id === deviceId) || null;
   }
 
+
+  function remoteCommandLabel(type) {
+    return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
+  }
+
+  async function requestDeviceMaintenanceCommand(deviceId, commandType, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device || !['sync_now','clear_cache','reload_programming'].includes(commandType) || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (commandType === 'clear_cache' && !confirm(`Limpar o cache local da TV “${device.name}” e sincronizar novamente?`)) return false;
+    setBusy(button, true, 'Enviando...');
+    try {
+      const result = await functionRequest('device-control', { body:{ action:commandType, company_id:state.company.id, device_id:deviceId }, authenticated:true });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast(result?.duplicate ? 'Comando já pendente' : 'Comando enviado', `${device.name}: ${remoteCommandLabel(commandType)}.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) { toast('Falha no comando remoto', error.message, 'error'); return false; }
+    finally { setBusy(button, false); }
+  }
+
+  async function requestDeviceRestart(deviceId, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (!confirm(`Reiniciar o Vision Player da TV “${device.name}”? A reprodução volta automaticamente depois do reinício.`)) return false;
+    setBusy(button, true, 'Solicitando...');
+    try {
+      const result = await functionRequest('device-control', { body:{ action:'restart_player', company_id:state.company.id, device_id:deviceId }, authenticated:true });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast('Reinício solicitado', `${device.name}: comando enviado ao Player.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) { toast('Não foi possível reiniciar', error.message, 'error'); return false; }
+    finally { setBusy(button, false); }
+  }
 
   function currentDevicePlanUsage() {
     const plan = (state.publicConfig?.plans || []).find(item => item.id === state.subscription?.plan_id) || null;
@@ -1000,6 +1034,10 @@
             <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋮</summary>
             <div class="device-more-popover">
               ${['owner','admin'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-replace-device="${device.id}">⇄ Substituir TV</button>` : ''}
+              ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="sync_now" data-maintenance-device="${device.id}">⟳ Sincronizar agora</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="reload_programming" data-maintenance-device="${device.id}">▶ Recarregar programação</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="clear_cache" data-maintenance-device="${device.id}">⌫ Limpar cache</button>` : ''}
               <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
               <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
             </div>
@@ -3497,6 +3535,10 @@
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
       const viewDevice = event.target.closest('[data-view-device]');
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
+      const restartDevice = event.target.closest('[data-restart-device]');
+      if (restartDevice) return requestDeviceRestart(restartDevice.dataset.restartDevice, restartDevice);
+      const maintenanceButton = event.target.closest('[data-maintenance-command][data-maintenance-device]');
+      if (maintenanceButton) return requestDeviceMaintenanceCommand(maintenanceButton.dataset.maintenanceDevice, maintenanceButton.dataset.maintenanceCommand, maintenanceButton);
       const quickOrientation = event.target.closest('[data-quick-orientation]');
       if (quickOrientation) return setQuickDeviceOrientation(quickOrientation.dataset.quickOrientation, quickOrientation.dataset.orientation);
       const captureDevice = event.target.closest('[data-capture-device]');
