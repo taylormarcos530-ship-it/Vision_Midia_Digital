@@ -19,6 +19,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.SystemClock;
+import android.provider.Settings;
 import android.text.InputFilter;
 import android.text.InputType;
 import android.view.KeyEvent;
@@ -50,16 +51,23 @@ public class MainActivity extends Activity {
     private static final String PREFS = "vision_player_prefs";
     private static final String KEY_SETUP_CODE = "company_setup_code";
     public static final String KEY_AUTOSTART = "autostart_enabled";
+    public static final String KEY_KIOSK_RETURN = "kiosk_return_enabled";
+    private static final String KEY_KIOSK_MAINTENANCE_UNTIL = "kiosk_maintenance_until";
     private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
     private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
+    private static final long KIOSK_RETURN_RETRY_MS = 650L;
+    private static final long KIOSK_RETURN_GUARD_MS = 1500L;
+    private static final long KIOSK_MAINTENANCE_DURATION_MS = 10L * 60L * 1000L;
 
     private WebView webView;
     private SharedPreferences prefs;
     private WebViewAssetLoader assetLoader;
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
+    private final Handler kioskHandler = new Handler(Looper.getMainLooper());
     private volatile long lastPlayerPulseAt = 0L;
     private boolean watchdogActive = false;
+    private boolean kioskReturnInProgress = false;
     private final Runnable playerWatchdog = new Runnable() {
         @Override
         public void run() {
@@ -200,13 +208,93 @@ public class MainActivity extends Activity {
     }
 
     private void showPlayerMenu() {
+        String kioskStatus = isKioskReturnEnabled() ? "ativado" : "desativado";
         new AlertDialog.Builder(this)
                 .setTitle("Vision Player")
-                .setMessage("Código da empresa: " + prefs.getString(KEY_SETUP_CODE, "—"))
-                .setPositiveButton("Alterar código", (d, which) -> showSetupDialog(true))
-                .setNeutralButton("Recarregar", (d, which) -> loadPlayer(prefs.getString(KEY_SETUP_CODE, "")))
-                .setNegativeButton("Voltar ao Player", null)
+                .setMessage("Código da empresa: " + prefs.getString(KEY_SETUP_CODE, "—") + "\nQuiosque leve: " + kioskStatus)
+                .setItems(new String[]{
+                        "Voltar ao Player",
+                        "Recarregar",
+                        "Abrir configurações (manutenção por 10 min)",
+                        "Alterar código"
+                }, (dialog, which) -> {
+                    if (which == 1) {
+                        loadPlayer(prefs.getString(KEY_SETUP_CODE, ""));
+                    } else if (which == 2) {
+                        openAndroidSettingsForMaintenance();
+                    } else if (which == 3) {
+                        showSetupDialog(true);
+                    }
+                })
                 .show();
+    }
+
+    private boolean isKioskReturnEnabled() {
+        return prefs != null && prefs.getBoolean(KEY_KIOSK_RETURN, false);
+    }
+
+    private boolean isKioskMaintenanceActive() {
+        if (prefs == null) return false;
+        long until = prefs.getLong(KEY_KIOSK_MAINTENANCE_UNTIL, 0L);
+        if (until <= 0L) return false;
+        if (until <= System.currentTimeMillis()) {
+            prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
+            return false;
+        }
+        return true;
+    }
+
+    private void launchPlayerToFront() {
+        Intent launch = new Intent(this, MainActivity.class);
+        launch.addFlags(
+                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                        | Intent.FLAG_ACTIVITY_CLEAR_TOP
+                        | Intent.FLAG_ACTIVITY_NO_ANIMATION
+                        | Intent.FLAG_ACTIVITY_NO_USER_ACTION
+        );
+        try {
+            startActivity(launch);
+            overridePendingTransition(0, 0);
+        } catch (Exception ignored) {
+            // Android 10 e alguns firmwares de TV Box podem bloquear Activity em background.
+            // O retorno é best-effort e nunca usa lock task nem permissões invasivas.
+        }
+    }
+
+    private void tryReturnToPlayer() {
+        if (!isKioskReturnEnabled() || isKioskMaintenanceActive() || kioskReturnInProgress || isFinishing()) return;
+
+        // onUserLeaveHint roda antes de onPause quando o usuário pressiona Home.
+        // A primeira tentativa acontece enquanto a Activity ainda é visível; uma única
+        // repetição curta cobre firmwares de TV Box que concluem a troca de task depois.
+        kioskReturnInProgress = true;
+        launchPlayerToFront();
+        kioskHandler.postDelayed(() -> {
+            if (!isKioskReturnEnabled() || isKioskMaintenanceActive() || isFinishing()) {
+                kioskReturnInProgress = false;
+                return;
+            }
+            if (!hasWindowFocus()) launchPlayerToFront();
+            kioskHandler.postDelayed(() -> kioskReturnInProgress = false, KIOSK_RETURN_GUARD_MS);
+        }, KIOSK_RETURN_RETRY_MS);
+    }
+
+    private void openAndroidSettingsForMaintenance() {
+        if (prefs == null) return;
+        prefs.edit()
+                .putLong(KEY_KIOSK_MAINTENANCE_UNTIL, System.currentTimeMillis() + KIOSK_MAINTENANCE_DURATION_MS)
+                .apply();
+        kioskHandler.removeCallbacksAndMessages(null);
+        kioskReturnInProgress = false;
+
+        try {
+            Intent settingsIntent = new Intent(Settings.ACTION_SETTINGS);
+            startActivity(settingsIntent);
+            Toast.makeText(this, "Manutenção liberada por até 10 min. Volte ao Vision Player para reativar o retorno automático.", Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
+            Toast.makeText(this, "Não foi possível abrir as configurações deste TV Box.", Toast.LENGTH_LONG).show();
+        }
     }
 
 
@@ -231,6 +319,17 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
+        }
+
+        @JavascriptInterface
+        public void setKioskReturn(boolean enabled) {
+            SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, enabled);
+            if (!enabled) editor.remove(KEY_KIOSK_MAINTENANCE_UNTIL);
+            editor.apply();
+            if (!enabled) {
+                kioskHandler.removeCallbacksAndMessages(null);
+                kioskReturnInProgress = false;
+            }
         }
 
         @JavascriptInterface
@@ -416,9 +515,20 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        tryReturnToPlayer();
+    }
+
+    @Override
     protected void onResume() {
         super.onResume();
         enterImmersiveMode();
+        kioskReturnInProgress = false;
+        kioskHandler.removeCallbacksAndMessages(null);
+        if (prefs != null && prefs.getLong(KEY_KIOSK_MAINTENANCE_UNTIL, 0L) > 0L) {
+            prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
+        }
         lastPlayerPulseAt = SystemClock.elapsedRealtime();
         watchdogActive = true;
         watchdogHandler.removeCallbacks(playerWatchdog);
@@ -438,6 +548,7 @@ public class MainActivity extends Activity {
     protected void onDestroy() {
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
+        kioskHandler.removeCallbacksAndMessages(null);
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();

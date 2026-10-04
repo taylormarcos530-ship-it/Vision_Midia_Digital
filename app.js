@@ -19,7 +19,7 @@
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
   const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.2';
-  const EXPECTED_APK_VERSION = '1.5.0-preview';
+  const EXPECTED_APK_VERSION = '1.5.1-preview';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -1537,6 +1537,7 @@
         <div class="device-setting-chips">
           <span class="device-setting-chip ${device.settings?.audio_enabled === false ? 'off' : 'on'}">🔊 Áudio ${device.settings?.audio_enabled === false ? 'desligado' : 'ligado'}</span>
           <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
+          <span class="device-setting-chip ${device.settings?.kiosk_return_enabled === true ? 'on' : 'off'}">↩ Quiosque leve ${device.settings?.kiosk_return_enabled === true ? 'ligado' : 'desligado'}</span>
         </div>
         <label class="device-orientation-quick">
           <span>Rotação da tela inteira</span>
@@ -3598,6 +3599,7 @@
         ...currentSettings,
         audio_enabled: $('#device-audio-enabled').checked,
         autostart_enabled: $('#device-autostart-enabled').checked,
+        kiosk_return_enabled: $('#device-kiosk-return-enabled').checked,
       },
     };
     if (!payload.name) return;
@@ -3642,6 +3644,7 @@
     const settings = device.settings && typeof device.settings === 'object' ? device.settings : {};
     $('#device-audio-enabled').checked = settings.audio_enabled !== false;
     $('#device-autostart-enabled').checked = settings.autostart_enabled !== false;
+    $('#device-kiosk-return-enabled').checked = settings.kiosk_return_enabled === true;
     $('#device-dialog-title').textContent = 'Editar TV';
     openDialog('device-dialog');
   }

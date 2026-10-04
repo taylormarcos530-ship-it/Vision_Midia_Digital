@@ -673,6 +673,7 @@
       queueDeviceEvent('cache_revision_applied','info','Cache local renovado por solicitação do painel.',{revision},30000);
     }
     try { window.VisionAndroid?.setAutostart?.(settings.autostart_enabled !== false); } catch {}
+    try { window.VisionAndroid?.setKioskReturn?.(settings.kiosk_return_enabled === true); } catch {}
   }
 
   async function cacheMediaItem(cache, item, { foreground = false } = {}) {
