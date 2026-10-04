@@ -1,6 +1,6 @@
 {
-  "source_sha256": "515cc7261f94fa5486fbf545ee929abc9dd02450ebd25374cc29c2bb8f922512",
-  "git_sha": "1041bbf4c9f55d20b400b9eafc495859d2cb8026",
+  "source_sha256": "4735e2834c1d96de7fb8f85209ea1165c5b3c1817de166d798f1780d130ba033",
+  "git_sha": "9651918a2131cf9fc08771c60314f84cf7c05ad2",
   "files": [
     "player.html",
     "player.css",
@@ -16,5 +16,5 @@
   ],
   "apk_version": "1.5.3-preview",
   "version_code": 15,
-  "apk_sha256": "0cf3aa676a75afe668b1d1e231f58a3fe2b040611f57c283c3ab18a7e6b34a00"
+  "apk_sha256": "1f7f4bf72853b1c3b865e3e05563a1fa238f350e69fa3fdf2e78f256edd873b8"
 }
