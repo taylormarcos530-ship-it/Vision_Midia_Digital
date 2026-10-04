@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=49" />
+  <link rel="stylesheet" href="./styles.css?v=50" />
   <title>Vision Mídia Digital</title>
 </head>
 <body>
@@ -181,6 +181,7 @@
             <span id="sidebar-user-email">usuario@email.com</span>
           </div>
         </div>
+        <button id="app-notifications" class="nav-item" type="button"><span>🔔</span> Ativar notificações</button>
         <button id="switch-account-button" class="nav-item" type="button"><span>⇄</span> Trocar de conta</button>
         <button id="logout-button" class="nav-item danger" type="button"><span>↪</span> Sair</button>
       </div>
@@ -297,39 +298,24 @@
             <div><strong>Plano atual</strong><span>Carregando limite de TVs…</span></div>
           </div>
 
-          <article class="panel player-branding-panel">
+          <div class="module-context-row player-managed-note">
+            <span>🔒 Identidade do Player gerenciada pelo Master</span>
+            <span>O título, a mensagem e a capa são aplicados automaticamente ao Vision Player desta empresa.</span>
+          </div>
+
+          <article class="panel device-groups-panel">
             <div class="panel-header">
-              <div><span class="eyebrow">PLAYER / TV BOX</span><h3>Tela de instalação e vinculação</h3></div>
-              <small>Configuração exclusiva desta empresa</small>
+              <div><span class="eyebrow">PROGRAMAÇÃO EM ESCALA</span><h3>Grupos de TVs e emergência</h3><small>A playlist específica da TV tem prioridade sobre o grupo. O fallback só entra quando a programação principal não pode ser reproduzida.</small></div>
+              <button id="add-device-group" class="button ghost" type="button">+ Novo grupo</button>
             </div>
-            <div class="branding-layout">
-              <div id="player-branding-preview" class="branding-preview">
-                <div class="branding-preview-placeholder">V</div>
-                <strong id="branding-preview-title">Vision Player</strong>
-                <span id="branding-preview-message">Instale o Player e vincule a TV pelo código.</span>
-              </div>
-              <form id="player-branding-form" class="branding-form">
-                <label>Título da tela de vinculação
-                  <input id="branding-title" type="text" maxlength="120" placeholder="Ex.: Mercado Central" />
-                </label>
-                <label>Mensagem
-                  <input id="branding-message" type="text" maxlength="240" placeholder="Ex.: Digite o código no painel para vincular esta TV." />
-                </label>
-                <label>Imagem de fundo / capa
-                  <input id="branding-file" type="file" accept="image/jpeg,image/png,image/webp" />
-                </label>
-                <div class="branding-code-box">
-                  <span>Código interno da instalação</span>
-                  <strong id="branding-setup-code">Será gerado ao salvar</strong>
-                </div>
-                <label>Link personalizado do Player
-                  <div class="copy-line"><input id="branding-player-url" type="text" readonly /><button id="branding-copy-url" class="small-icon-button" type="button">Copiar</button></div>
-                </label>
-                <div class="branding-actions"><button id="branding-open-player" class="button ghost" type="button">Abrir Player</button><button id="branding-save" class="button primary" type="submit">Salvar tela</button></div>
-                <p class="form-hint">A imagem e os textos pertencem somente a esta conta. O Player continuará exibindo o código de 6 dígitos para vincular a TV.</p>
-              </form>
-            </div>
+            <label class="company-fallback-control">Playlist de emergência da empresa
+              <select id="company-fallback-playlist"><option value="">Sem fallback da empresa</option></select>
+              <small>Pode ser substituída por um fallback específico na configuração de cada TV.</small>
+            </label>
+            <div id="device-groups-grid" class="device-groups-grid"></div>
+            <div id="device-groups-empty" class="mini-empty">Nenhum grupo criado. Exemplos: Recepção, Caixas, Totens, Filial 02.</div>
           </article>
+
           <div id="devices-grid" class="cards-grid"></div>
           <div id="devices-empty" class="empty-panel hidden">
             <div class="empty-icon">▣</div>
@@ -419,7 +405,7 @@
               <span class="module-icon">▶</span>
               <div><span class="eyebrow">PROGRAMAÇÃO DE CONTEÚDO</span><h2>Playlists</h2><p>Organize o que vai ao ar, confira duração, programação e TVs vinculadas sem abrir cada playlist.</p></div>
             </div>
-            <div style="display:flex;gap:10px;flex-wrap:wrap"><button id="add-dynamic-content-button" class="button ghost" type="button">☁ Conteúdo dinâmico</button><button id="add-playlist-button" class="button primary">+ Nova playlist</button></div>
+            <button id="add-playlist-button" class="button primary">+ Nova playlist</button>
           </div>
 
           <div id="playlist-tools" class="playlist-tools hidden">
@@ -679,6 +665,10 @@
           </select>
         </label>
       </div>
+      <label>Playlist de emergência desta TV
+        <select id="device-fallback-playlist"><option value="">Usar fallback da empresa</option></select>
+        <small>Opcional. Se definida, tem prioridade sobre o fallback geral da empresa e nunca aponta de volta para a playlist principal.</small>
+      </label>
       <div class="device-settings-box">
         <strong>Comportamento do Vision Player</strong>
         <label class="switch-line"><input id="device-audio-enabled" type="checkbox" checked /> Áudio da TV ativado</label>
@@ -692,15 +682,20 @@
     </form>
   </dialog>
 
-
-  <dialog id="dynamic-content-dialog" class="app-dialog">
-    <form id="dynamic-content-form" class="dialog-body">
-      <div class="dialog-header"><div><span class="eyebrow">CONTEÚDO DINÂMICO</span><h3>Adicionar à biblioteca</h3><p class="dialog-subtitle">Crie um slide atualizado automaticamente e depois adicione-o a qualquer playlist.</p></div><button class="icon-button" data-close-dialog="dynamic-content-dialog" type="button">×</button></div>
-      <label>Tipo<select id="dynamic-content-type"><option value="clock">Relógio e data</option><option value="weather">Clima e previsão</option><option value="news">Notícias</option></select></label>
-      <label id="dynamic-city-field">Cidade<input id="dynamic-content-city" type="text" maxlength="100" value="Anápolis" placeholder="Ex.: Anápolis" /></label>
-      <label id="dynamic-category-field" class="hidden">Categoria<select id="dynamic-content-category"><option value="geral">Geral / Brasil</option><option value="negocios">Negócios</option><option value="tecnologia">Tecnologia</option><option value="esportes">Esportes</option></select></label>
-      <label>Duração na playlist<input id="dynamic-content-duration" type="number" min="5" max="300" value="15" /> <small>segundos</small></label>
-      <div class="dialog-actions"><button class="button ghost" data-close-dialog="dynamic-content-dialog" type="button">Cancelar</button><button id="dynamic-content-save" class="button primary" type="submit">Criar conteúdo</button></div>
+  <dialog id="device-group-dialog" class="app-dialog">
+    <form id="device-group-form" class="dialog-body">
+      <div class="dialog-header">
+        <div><span class="eyebrow">GRUPO DE TVs</span><h3 id="device-group-dialog-title">Novo grupo de TVs</h3></div>
+        <button class="icon-button" data-close-dialog="device-group-dialog" type="button">×</button>
+      </div>
+      <input id="device-group-id" type="hidden" />
+      <label>Nome do grupo<input id="device-group-name" type="text" maxlength="120" required placeholder="Ex.: Recepção, Caixas, Filial 02" /></label>
+      <label>Playlist padrão do grupo<select id="device-group-playlist"><option value="">Sem playlist</option></select></label>
+      <p class="form-hint">Depois de criar o grupo, escolha o grupo diretamente no card de cada TV. Uma playlist específica configurada na TV continua tendo prioridade.</p>
+      <div class="dialog-actions">
+        <button class="button ghost" data-close-dialog="device-group-dialog" type="button">Cancelar</button>
+        <button id="device-group-save" class="button primary" type="submit">Salvar grupo</button>
+      </div>
     </form>
   </dialog>
 
@@ -743,14 +738,17 @@
 
       <div class="playlist-editor-grid compact-playlist-editor">
         <div>
-          <h4>Sequência de reprodução</h4>
+          <div class="playlist-editor-column-head"><h4>Sequência de reprodução</h4><span id="playlist-items-count" class="playlist-editor-count">0 mídias</span></div>
           <div id="playlist-items-list" class="sortable-list compact-sortable-list"></div>
           <div id="playlist-items-empty" class="mini-empty hidden">Ainda não há mídias nesta playlist.</div>
+          <button id="playlist-items-more" class="button ghost playlist-load-more hidden" type="button">Carregar mais mídias</button>
         </div>
         <div>
-          <h4>Biblioteca</h4>
+          <div class="playlist-editor-column-head"><h4>Biblioteca</h4><span id="playlist-media-count" class="playlist-editor-count">0 disponíveis</span></div>
+          <label class="playlist-library-search"><span>Buscar mídia</span><input id="playlist-media-search" type="search" placeholder="Nome da imagem ou vídeo" autocomplete="off" /></label>
           <div id="playlist-media-picker" class="media-picker compact-media-picker"></div>
           <div id="playlist-media-empty" class="mini-empty hidden">Envie uma mídia primeiro.</div>
+          <button id="playlist-media-more" class="button ghost playlist-load-more hidden" type="button">Carregar mais da biblioteca</button>
         </div>
       </div>
       <div class="dialog-actions">
@@ -933,7 +931,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=49" defer></script>
+  <script src="./app.js?v=50" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
