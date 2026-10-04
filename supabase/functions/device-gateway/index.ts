@@ -143,6 +143,17 @@ async function resolveProgram(admin, device) {
   if (assignmentError) throw assignmentError
 
   const clock = localDateParts(new Date(), company?.timezone || 'America/Sao_Paulo')
+
+  // Enrollment invariant: authorization alone never starts playback.
+  // A TV must receive an explicit base playlist assignment before campaigns may override it.
+  if (!assignment?.playlist_id) {
+    return {
+      playlistId: null,
+      assignmentUpdatedAt: assignment?.updated_at || null,
+      program: { source: 'none', campaign_id: null, campaign_name: null, priority: null, schedule_updated_at: null, timezone: clock.timeZone },
+    }
+  }
+
   const targeted = new Set((targets || []).map(row => row.campaign_id))
   const campaign = (campaigns || []).find(item => (item.all_devices || targeted.has(item.id)) && campaignIsActive(item, clock)) || null
 
