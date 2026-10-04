@@ -317,6 +317,15 @@
         });
         if (result.status === 'claimed') $('#pairing-status').textContent = 'Autorizado. Finalizando vínculo…';
         if (result.status === 'issued' && result.device_token) {
+          // A newly issued token belongs to a new TV identity. Never reuse the previous device manifest/media.
+          state.playlistNonce++;
+          state.manifest = null;
+          state.currentMediaId = null;
+          state.lastSyncAt = null;
+          writeJson(MANIFEST_KEY, null);
+          await caches.delete(MEDIA_CACHE).catch(() => false);
+          state.cacheItems = 0;
+          state.cacheBytes = 0;
           state.deviceToken = result.device_token;
           localStorage.setItem(DEVICE_TOKEN_KEY, result.device_token);
           state.pairing = null;
@@ -395,8 +404,20 @@
   }
 
   function cacheKey(item) {
-    const checksum = encodeURIComponent(String(item.media.checksum || 'v1'));
-    return new Request(`${location.origin}/__vision_media_cache__/${encodeURIComponent(item.media.id)}/${checksum}`);
+    const media = item?.media || {};
+    const revision = media.checksum || media.updated_at || media.source_url || media.url || 'v1';
+    return new Request(`${location.origin}/__vision_media_cache__/${encodeURIComponent(media.id)}/${encodeURIComponent(String(revision))}`);
+  }
+
+  function manifestPlaybackSignature(manifest) {
+    if (!manifest) return '';
+    const items = (manifest.items || []).map(item => ({
+      id:item.id || null, position:item.position ?? null, enabled:item.enabled !== false,
+      duration:item.duration_seconds ?? null, schedule:item.schedule || null,
+      media:{ id:item.media?.id || null, type:item.media?.type || null, checksum:item.media?.checksum || null,
+        updated_at:item.media?.updated_at || null, url:item.media?.url || item.media?.source_url || null }
+    }));
+    return JSON.stringify({ playlist:{id:manifest.playlist?.id || null, shuffle:!!manifest.playlist?.shuffle, repeat_mode:manifest.playlist?.repeat_mode || null}, program:manifest.program || null, items });
   }
 
 
@@ -464,7 +485,7 @@
     if (!state.deviceToken) return;
     try {
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
-      const changed = !state.manifest || state.manifest.version !== manifest.version;
+      const changed = !state.manifest || state.manifest.version !== manifest.version || manifestPlaybackSignature(state.manifest) !== manifestPlaybackSignature(manifest);
       await applyDeviceSettings(manifest?.device?.settings || {});
       applyDisplayOrientation(manifest?.device?.orientation || 'auto');
       await cacheManifestAssets(manifest);
