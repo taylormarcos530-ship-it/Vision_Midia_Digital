@@ -687,12 +687,14 @@
         <button class="online-source-card" type="button" data-online-preset="clock"><strong>Hora certa</strong><span>Relógio em tela cheia, atualizado na própria TV.</span></button>
         <button class="online-source-card" type="button" data-online-preset="soccer"><strong>Futebol brasileiro</strong><span>Brasileirão no ge, em português, com atualização automática.</span></button>
         <button class="online-source-card" type="button" data-online-preset="news_br"><strong>Notícias do Brasil</strong><span>Notícias do g1 em português, com atualização automática.</span></button>
+        <button class="online-source-card" type="button" data-online-preset="cinema_br"><strong>Cinema e séries — CinePOP</strong><span>Manchetes em português, com atualização automática.</span></button>
       </div>
       <label>Nome<input id="online-media-name" type="text" maxlength="120" required placeholder="Ex.: Hora certa" /></label>
       <label>URL<input id="online-media-url" type="url" required placeholder="https://..." /></label>
       <label>Duração na playlist (segundos)<input id="online-media-duration" type="number" min="5" max="3600" value="30" required /></label>
+      <label>Adicionar à playlist<select id="online-media-playlist"><option value="">Somente biblioteca</option></select></label>
       <p class="form-hint">O conteúdo é salvo como mídia online e pode ser vinculado a qualquer playlist sem remover suas mídias atuais.</p>
-      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog="online-media-dialog">Cancelar</button><button class="button primary" type="submit">Adicionar à biblioteca</button></div>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog="online-media-dialog">Cancelar</button><button class="button primary" type="submit">Adicionar conteúdo</button></div>
     </form>
   </dialog>
 

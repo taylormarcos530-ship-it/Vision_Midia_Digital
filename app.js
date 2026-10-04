@@ -3877,8 +3877,8 @@
       $('#online-media-name').value = 'Hora certa';
       $('#online-media-url').value = clockMediaUrl();
       $('#online-media-duration').value = '30';
-    } else if (preset === 'soccer' || preset === 'news_br') {
-      $('#online-media-name').value = preset === 'news_br' ? 'Notícias do Brasil' : 'Futebol brasileiro';
+    } else if (['soccer', 'news_br', 'cinema_br'].includes(preset)) {
+      $('#online-media-name').value = {news_br:'Notícias — G1', soccer:'Futebol brasileiro — ge', cinema_br:'Cinema e séries — CinePOP'}[preset];
       $('#online-media-url').value = newsMediaUrl(preset);
       $('#online-media-duration').value = '30';
     } else {
@@ -3886,7 +3886,12 @@
       $('#online-media-url').value = '';
       $('#online-media-duration').value = '30';
     }
-    dialog.showModal();
+    const playlistSelect = $('#online-media-playlist');
+    if (playlistSelect) {
+      playlistSelect.innerHTML = '<option value="">Somente biblioteca</option>' + state.playlists.map(playlist => `<option value="${escapeHtml(playlist.id)}">${escapeHtml(playlist.name)}</option>`).join('');
+      playlistSelect.value = state.editingPlaylistId || '';
+    }
+    if (!dialog.open) dialog.showModal();
   }
 
   async function handleOnlineMediaSave(event) {
@@ -3894,14 +3899,20 @@
     const name = ($('#online-media-name')?.value || '').trim();
     const rawUrl = ($('#online-media-url')?.value || '').trim();
     const duration = Math.max(5, Math.min(3600, Number($('#online-media-duration')?.value || 30)));
+    const playlistId = $('#online-media-playlist')?.value || '';
+    if (playlistId && !state.playlists.some(playlist => playlist.id === playlistId)) return toast('Playlist indisponível', 'Escolha uma playlist da sua conta.', 'error');
     if (!name || !rawUrl) return toast('Preencha o conteúdo online', 'Informe nome e URL.', 'error');
     let parsed;
     try { parsed = new URL(resolveOnlineMediaUrl(rawUrl)); } catch { return toast('URL inválida', 'Use um endereço HTTP ou HTTPS válido.', 'error'); }
     if (!['http:', 'https:'].includes(parsed.protocol)) return toast('URL inválida', 'Use HTTP ou HTTPS.', 'error');
     const builtIn = ['clock.html', 'news-feed.html'].find(file =>
       parsed.origin === location.origin && parsed.pathname === new URL('./' + file, location.href).pathname);
+    const button = event.target.querySelector('[type="submit"]');
+    if (button?.disabled) return;
+    setBusy(button, true, 'Adicionando...');
+    let savedMedia = false;
     try {
-      await restRequest('media_assets', {
+      const created = await restRequest('media_assets', {
         method: 'POST',
         body: {
           company_id: state.company.id,
@@ -3917,13 +3928,32 @@
           processing_status: 'ready',
           created_by: state.user.id,
         },
-        prefer: 'return=minimal',
+        prefer: 'return=representation',
       });
+      savedMedia = true;
+      if (playlistId) {
+        const media = Array.isArray(created) ? created[0] : created;
+        if (!media?.id) throw new Error('Conteúdo salvo na biblioteca, mas a API não retornou seu identificador.');
+        const items = state.playlistItems.filter(item => item.playlist_id === playlistId);
+        await restRequest('playlist_items', {
+          method: 'POST',
+          body: { company_id: state.company.id, playlist_id: playlistId, media_id: media.id,
+            position: items.length ? Math.max(...items.map(item => Number(item.position || 0))) + 1 : 0,
+            duration_override_seconds: duration, enabled: true },
+          prefer: 'return=minimal',
+        });
+      }
       $('#online-media-dialog')?.close();
-      toast('Conteúdo online adicionado', name);
+      toast(playlistId ? 'Conteúdo adicionado à playlist' : 'Conteúdo online adicionado', name);
       await loadAllData();
     } catch (error) {
-      toast('Falha ao adicionar conteúdo online', error.message, 'error');
+      if (savedMedia) {
+        $('#online-media-dialog')?.close();
+        toast('Conteúdo salvo na biblioteca', 'Não foi possível concluir a operação. Confira a playlist antes de vincular pela biblioteca. ' + error.message, 'error');
+        await loadAllData().catch(() => {});
+      } else toast('Falha ao adicionar conteúdo online', error.message, 'error');
+    } finally {
+      setBusy(button, false);
     }
   }
 

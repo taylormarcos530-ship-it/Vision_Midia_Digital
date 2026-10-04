@@ -1,21 +1,25 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vision Notícias</title><style>*{box-sizing:border-box}body{margin:0;background:#07111f;color:#f7fafc;font-family:Arial,sans-serif;overflow:hidden}.wrap{height:100vh;padding:4vh 5vw;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #29415f;padding-bottom:2vh}.brand{font-size:clamp(20px,3vw,46px);font-weight:800}.badge{font-size:clamp(12px,1.5vw,22px);opacity:.75}.headline{flex:1;display:flex;flex-direction:column;justify-content:center}.headline h1{font-size:clamp(28px,5vw,76px);line-height:1.06;margin:0 0 3vh}.headline p{font-size:clamp(16px,2.2vw,34px);line-height:1.35;color:#c9d7e8;margin:0}.foot{display:flex;justify-content:space-between;font-size:clamp(11px,1.3vw,19px);opacity:.65}.error{margin:auto;font-size:clamp(20px,3vw,42px);text-align:center}</style></head><body><main class="wrap"><header class="top"><div class="brand">VISION • Futebol & Notícias</div><div class="badge" id="source"></div></header><section class="headline" id="content"><h1>Carregando notícias…</h1></section><footer class="foot"><span>Atualização automática</span><span id="counter"></span></footer></main><script>
+<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vision Notícias</title><style>*{box-sizing:border-box}body{margin:0;background:#07111f;color:#f7fafc;font-family:Arial,sans-serif;overflow:hidden}.wrap{height:100vh;padding:4vh 5vw;display:flex;flex-direction:column}.top{display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid #29415f;padding-bottom:2vh}.brand{font-size:clamp(20px,3vw,46px);font-weight:800}.badge{font-size:clamp(12px,1.5vw,22px);opacity:.75}.headline{flex:1;display:flex;flex-direction:column;justify-content:center}.headline h1{font-size:clamp(28px,5vw,76px);line-height:1.06;margin:0 0 3vh}.headline p{font-size:clamp(16px,2.2vw,34px);line-height:1.35;color:#c9d7e8;margin:0}.foot{display:flex;justify-content:space-between;font-size:clamp(11px,1.3vw,19px);opacity:.65}.error{margin:auto;font-size:clamp(20px,3vw,42px);text-align:center}@media (orientation:portrait){.headline h1{font-size:clamp(25px,6vw,58px)}.headline p{font-size:clamp(16px,3.4vw,30px)}.top{gap:12px;flex-wrap:wrap}.brand{font-size:clamp(20px,4vw,38px)}}.headline{min-height:0;overflow:hidden}.headline h1{overflow-wrap:anywhere}.headline p{display:-webkit-box;-webkit-line-clamp:4;-webkit-box-orient:vertical;overflow:hidden}</style></head><body><main class="wrap"><header class="top"><div class="brand">VISION • Futebol & Notícias</div><div class="badge" id="source"></div></header><section class="headline" id="content"><h1>Carregando notícias…</h1></section><footer class="foot"><span>Atualização automática</span><span id="counter"></span></footer></main><script>
 const p=new URLSearchParams(location.search),source=p.get('source')||'soccer';
 let items=[],index=0,timer;
-document.querySelector('.brand').textContent=source==='news_br'?'VISION • Notícias do Brasil':'VISION • Futebol brasileiro';
-document.getElementById('source').textContent=source==='news_br'?'g1 • Brasil':'ge • Brasileirão';
+const labels={news_br:['VISION • Notícias do Brasil','g1 • Brasil'],soccer:['VISION • Futebol brasileiro','ge • Brasileirão'],sports_br:['VISION • Futebol brasileiro','ge • Brasileirão'],cinema_br:['VISION • Cinema e séries','CinePOP']};
+const label=labels[source]||['VISION • Notícias',''];
+document.querySelector('.brand').textContent=label[0];
+document.getElementById('source').textContent=label[1];
 function esc(s){const d=document.createElement('div');d.textContent=s||'';return d.innerHTML}
 function show(){if(!items.length)return;const x=items[index%items.length];document.getElementById('content').innerHTML='<h1>'+esc(x.title)+'</h1><p>'+esc(x.description||'')+'</p>';document.getElementById('counter').textContent=(index%items.length+1)+' / '+items.length;index++}
 function clean(s){return String(s||'').replace(/<!\[CDATA\[|\]\]>/g,'').replace(/<[^>]+>/g,' ').replace(/&amp;/g,'&').replace(/&quot;/g,'"').replace(/&#39;/g,"'").replace(/\s+/g,' ').trim()}
 function tag(block,name){const node=new DOMParser().parseFromString(block,'text/xml').querySelector(name);return clean(node?.textContent||'')}
 async function load(){
  try{
-  const response=await fetch(new URL('./api/news-feed',location.href).href+'?source='+encodeURIComponent(source),{cache:'no-store'});
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),9000);
+  let response;
+  try{response=await fetch(new URL('./api/news-feed',location.href).href+'?source='+encodeURIComponent(source),{cache:'no-store',signal:controller.signal})}finally{clearTimeout(timeout)}
   const data=await response.json();
   if(!response.ok||!data.ok)throw new Error(data.error||'Fonte indisponível');
   items=Array.isArray(data.items)?data.items:[];
   if(!items.length)throw new Error('Sem notícias');
   index=0;show();clearInterval(timer);timer=setInterval(show,10000);
- }catch(e){document.getElementById('content').innerHTML='<div class="error">Notícias online indisponíveis.<br>O Player continuará a programação normal.</div>'}
+ }catch(e){if(!items.length)document.getElementById('content').innerHTML='<div class="error">Notícias online indisponíveis.<br>O Player continuará a programação normal.</div>'}
 }
 load();setInterval(load,300000);
 </script></body></html>
