@@ -527,3 +527,48 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
 
 /* Timed trial access v39 */
 .trial-access-box{display:grid;gap:12px;border-color:rgba(79,124,255,.28);background:linear-gradient(180deg,rgba(46,83,160,.10),rgba(12,22,38,.72))}.trial-access-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}.trial-access-head>div{min-width:0}.trial-access-head strong,.trial-access-head small{display:block}.trial-access-head small{margin-top:4px;color:#8798b1;font-size:9px;line-height:1.45}.trial-quick-actions{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}.trial-quick-actions .button{min-height:38px}.trial-custom-line{display:grid;grid-template-columns:minmax(180px,1fr) auto;gap:10px;align-items:end}.trial-custom-line label{margin:0}.trial-custom-line .button{min-height:42px;white-space:nowrap}@media(max-width:720px){.trial-access-head{display:grid}.trial-quick-actions{grid-template-columns:repeat(2,minmax(0,1fr))}.trial-custom-line{grid-template-columns:1fr}.trial-custom-line .button{width:100%}}
+
+
+/* MOBILE_SAAS_EMBED_FIT_V1 — keep embedded SaaS pages inside the phone viewport. */
+body.master-embedded{max-width:100%;overflow-x:hidden}
+body.master-embedded .master-shell,
+body.master-embedded .master-main,
+body.master-embedded .master-content,
+body.master-embedded .view-section,
+body.master-embedded .panel,
+body.master-embedded .client-list,
+body.master-embedded .client-card,
+body.master-embedded .plan-grid,
+body.master-embedded .plan-card,
+body.master-embedded .dashboard-grid,
+body.master-embedded .metrics{
+  min-width:0;
+  max-width:100%;
+}
+body.master-embedded .table-scroll{
+  width:100%;
+  max-width:100%;
+  overflow-x:auto;
+  overscroll-behavior-inline:contain;
+  -webkit-overflow-scrolling:touch;
+}
+@media(max-width:720px){
+  body.master-embedded .master-content{width:100%;max-width:100%;padding:12px 10px 24px;overflow-x:hidden}
+  body.master-embedded .hero,
+  body.master-embedded .panel-head,
+  body.master-embedded .section-head{min-width:0;max-width:100%}
+  body.master-embedded .hero{width:100%;overflow:hidden}
+  body.master-embedded .metrics{grid-template-columns:1fr 1fr}
+  body.master-embedded .dashboard-grid,
+  body.master-embedded .plan-grid,
+  body.master-embedded .toolbar{grid-template-columns:1fr}
+  body.master-embedded .client-top{min-width:0}
+  body.master-embedded .client-title{min-width:0}
+  body.master-embedded .client-title>div{min-width:0}
+  body.master-embedded .client-title strong,
+  body.master-embedded .client-title small{overflow-wrap:anywhere}
+}
+@media(max-width:460px){
+  body.master-embedded .metrics,
+  body.master-embedded .client-usage{grid-template-columns:1fr}
+}
