@@ -2314,7 +2314,7 @@
           if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
           const element = await loadStablePreviewElement(media, url);
           if (!preview.isConnected) continue;
-          const old = preview.querySelector(':scope > img, :scope > video');
+          const old = Array.from(preview.children).find(node => node.matches?.('img, video'));
           if (old) old.replaceWith(element);
           else preview.insertBefore(element, preview.firstChild);
           preview.querySelector('.media-preview-placeholder')?.remove();
@@ -4119,7 +4119,7 @@
     const button = $('#playlist-save');
     setBusy(button, true, 'Criando...');
     try {
-      await restRequest('playlists', {
+      const created = await restRequest('playlists', {
         method: 'POST',
         body: {
           company_id: state.company.id,
@@ -4129,8 +4129,11 @@
           shuffle: false,
           repeat_mode: 'loop',
         },
-        prefer: 'return=minimal',
+        prefer: 'return=representation',
       });
+      if (created?.[0]?.id) state.playlists = [created[0], ...state.playlists.filter(item => item.id !== created[0].id)];
+      state.mediaRenderSignature = '';
+      state.playlistEditorRenderSignature = '';
       closeDialog('playlist-dialog');
       $('#playlist-form').reset();
       toast('Playlist criada');
