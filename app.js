@@ -563,7 +563,7 @@
     accessGateTimer = setInterval(refreshGateSoon, 10_000);
     setInterval(() => {
       if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
-    }, 30_000);
+    }, 10_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -740,7 +740,7 @@
     if (device.status === 'disabled') return 'disabled';
     if (device.access_status === 'pending') return 'pending';
     if (!device.last_seen_at) return device.paired_at ? 'offline' : (device.status || 'pending');
-    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 90_000;
+    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 25_000;
     return stale ? 'offline' : 'online';
   }
 
