@@ -675,6 +675,10 @@
     return {dateKey:`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,previousDateKey:`${previous.getUTCFullYear()}-${String(previous.getUTCMonth()+1).padStart(2,'0')}-${String(previous.getUTCDate()).padStart(2,'0')}`,weekday:LOCAL_WEEKDAY_INDEX[parts.weekday]??calendar.getUTCDay(),previousWeekday:previous.getUTCDay(),seconds:Number(parts.hour)*3600+Number(parts.minute)*60+Number(parts.second)};
   }
   function timeSeconds(value){if(!value)return null;const [h='0',m='0',sec='0']=String(value).split(':');const n=Number(h)*3600+Number(m)*60+Number(sec);return Number.isFinite(n)?n:null}
+  function itemAvailableForConnectivity(item) {
+    return item?.media?.type !== 'url' || navigator.onLine !== false;
+  }
+
   function itemScheduleActive(item, timeZone) {
     const schedule=item?.schedule;
     if(!schedule?.enabled)return true;
@@ -691,7 +695,7 @@
     if (!manifest?.items?.length) return '';
     const timeZone = manifest.program?.timezone || 'America/Sao_Paulo';
     return manifest.items
-      .filter(item => itemScheduleActive(item, timeZone))
+      .filter(item => itemScheduleActive(item, timeZone) && itemAvailableForConnectivity(item))
       .map(item => item.id)
       .join('|');
   }
@@ -801,7 +805,9 @@
           continue;
         }
 
-        const activeItems = (manifest.items || []).filter(item => itemScheduleActive(item, manifest.program?.timezone));
+        const activeItems = (manifest.items || []).filter(item =>
+          itemScheduleActive(item, manifest.program?.timezone) && itemAvailableForConnectivity(item)
+        );
         if (!activeItems.length) {
           clearElement($('#media-stage'));
           showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está dentro da programação atual. Revise data, dias da semana e horário no painel.');
@@ -941,14 +947,22 @@
         $('#repair-button').disabled = false;
       }
     });
+    const handleConnectivityPlaybackChange = () => {
+      if (!state.deviceToken) return;
+      state.playlistNonce++;
+      state.scheduleSignature = activeScheduleSignature();
+      ensurePlaybackLoop();
+    };
     const resumeSync = () => {
       if (!state.deviceToken) return;
+      handleConnectivityPlaybackChange();
       heartbeat().catch(() => {});
       syncManifest().catch(() => {});
       flushPlaybackQueue().catch(() => {});
       flushDeviceEventQueue().catch(() => {});
     };
     window.addEventListener('online', resumeSync);
+    window.addEventListener('offline', handleConnectivityPlaybackChange);
     window.addEventListener('focus', resumeSync);
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'visible') resumeSync();
