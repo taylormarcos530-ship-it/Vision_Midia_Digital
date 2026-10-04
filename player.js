@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.4.12-recovery';
+  const APP_VERSION = 'vision-player-web-1.4.13-recovery';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
