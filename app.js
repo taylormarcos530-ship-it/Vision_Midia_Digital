@@ -1959,6 +1959,13 @@
     }
   }
 
+  function createPlayerSetupCode() {
+    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const bytes = new Uint8Array(10);
+    crypto.getRandomValues(bytes);
+    return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
+  }
+
   function renderPlayerBranding() {
     const b = state.playerBranding;
     const title = b?.title || state.company?.name || 'Vision Player';
@@ -2001,11 +2008,13 @@
         const encodedPath = newPath.split('/').map(encodeURIComponent).join('/');
         await storageRequest(`/object/${CONFIG.storageBucket}/${encodedPath}`, { body: upload, contentType: upload.type || 'image/webp', extraHeaders: { 'x-upsert': 'false' } });
       }
+      const setupCode = state.playerBranding?.setup_code || createPlayerSetupCode();
       const payload = {
         company_id: state.company.id,
         title: $('#branding-title').value.trim() || null,
         message: $('#branding-message').value.trim() || null,
         splash_path: newPath || oldPath,
+        setup_code: setupCode,
         updated_by: state.user.id,
       };
       let rows;
