@@ -749,8 +749,14 @@
       state.deviceScreenshots = screenshots || [];
       state.playerBranding = null;
       if (state.isPlatformAdmin) {
-        const globalBrandingRows = await restRequest('platform_player_branding', { query: 'select=id,splash_path,title,message,updated_at,updated_by&id=eq.1&limit=1' });
-        state.playerBranding = globalBrandingRows?.[0] || null;
+        // Branding is Master-only, but a branding/RLS failure must never abort the
+        // operational data refresh (especially the TV list after pairing).
+        try {
+          const globalBrandingRows = await restRequest('platform_player_branding', { query: 'select=id,splash_path,title,message,updated_at,updated_by&id=eq.1&limit=1' });
+          state.playerBranding = globalBrandingRows?.[0] || null;
+        } catch (brandingError) {
+          console.warn('Player branding unavailable; keeping operational data visible.', brandingError);
+        }
       }
       await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
