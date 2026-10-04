@@ -620,10 +620,10 @@ Deno.serve(async (req) => {
       let program = resolved.program
       const fallbackUsable = Boolean(fallback?.items?.length && !fallback?.essentialUnavailable)
       let fallbackPayload = fallbackUsable ? fallback : null
-      if ((!primary || !primary.items.length || primary.essentialUnavailable) && fallbackUsable) {
+      if (resolved.playlistId && (!primary || !primary.items.length || primary.essentialUnavailable) && fallbackUsable) {
         const fallbackReason = primary?.essentialUnavailable
           ? 'essential_media_unavailable'
-          : (resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist')
+          : 'primary_unavailable'
         primary = fallback
         fallbackPayload = null
         program = {
