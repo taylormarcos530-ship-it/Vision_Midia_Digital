@@ -936,13 +936,64 @@
         if (videoResult === 'changed') video.pause();
         completed = videoResult === 'ended' && !video.error;
       } else if (item.media.type === 'url') {
+        if (!navigator.onLine) {
+          completed = false;
+          queueDeviceEvent('online_content_skipped', 'info', `Conteúdo online ignorado sem internet: ${item.media?.name || 'URL'}.`, {
+            media_id: item.media?.id || null,
+            media_name: item.media?.name || null,
+          }, 5 * 60_000);
+          return false;
+        }
+
+        const rawUrl = String(item.media.url || '').trim();
+        let parsedUrl;
+        try { parsedUrl = new URL(rawUrl, location.href); }
+        catch { throw new Error('URL inválida.'); }
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('A URL precisa usar HTTP ou HTTPS.');
+
         const iframe = document.createElement('iframe');
-        iframe.src = item.media.url;
         iframe.referrerPolicy = 'no-referrer';
-        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups');
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
+        iframe.setAttribute('allow', 'autoplay; fullscreen');
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = '0';
+
+        let loaded = false;
+        const loadSignal = new Promise(resolve => {
+          iframe.addEventListener('load', () => { loaded = true; resolve('loaded'); }, { once:true });
+          iframe.addEventListener('error', () => resolve('error'), { once:true });
+        });
+        iframe.src = parsedUrl.href;
         swapStageElement(stage, iframe, null);
-        const urlWait = await waitForChangeOrTimeout(nonce, Math.max(5, Number(item.duration_seconds || 15)) * 1000);
-        completed = urlWait !== 'changed';
+
+        const initial = await Promise.race([
+          loadSignal,
+          waitForChangeOrTimeout(nonce, 8000),
+        ]);
+        if (nonce !== state.playlistNonce) return false;
+        if (!navigator.onLine) {
+          replaceNodeChildren(stage);
+          completed = false;
+          return false;
+        }
+        if (initial === 'error') throw new Error('Falha ao abrir o conteúdo online.');
+
+        const durationMs = Math.max(5, Number(item.duration_seconds || 15)) * 1000;
+        const elapsedMs = Math.min(8000, Date.now() - startedAt.getTime());
+        const urlWait = await Promise.race([
+          waitForChangeOrTimeout(nonce, Math.max(1, durationMs - elapsedMs)),
+          new Promise(resolve => {
+            const offline = () => resolve('offline');
+            window.addEventListener('offline', offline, { once:true });
+          }),
+        ]);
+        if (urlWait === 'offline') {
+          replaceNodeChildren(stage);
+          completed = false;
+          return false;
+        }
+        completed = urlWait !== 'changed' && loaded;
       } else {
         throw new Error('Tipo de mídia não suportado.');
       }
