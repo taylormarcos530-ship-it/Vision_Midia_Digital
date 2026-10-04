@@ -3759,6 +3759,27 @@
     }
   }
 
+  function updateMediaUploadCheck(file, meta) {
+    const box = $('#media-upload-check');
+    if (!box) return;
+    if (!file || !file.type.startsWith('image/') || !meta?.width || !meta?.height) {
+      box.classList.add('hidden');
+      box.textContent = '';
+      return;
+    }
+    const width = Number(meta.width), height = Number(meta.height);
+    const ratio = width / height;
+    const landscapeDelta = Math.abs(ratio - (16 / 9)) / (16 / 9);
+    const portraitDelta = Math.abs(ratio - (9 / 16)) / (9 / 16);
+    const landscape = landscapeDelta <= 0.025;
+    const portrait = portraitDelta <= 0.025;
+    const orientation = width >= height ? 'Horizontal' : 'Vertical';
+    const ideal = landscape || portrait;
+    const target = landscape ? '1920 × 1080 px (16:9)' : portrait ? '1080 × 1920 px (9:16)' : (width >= height ? '1920 × 1080 px (16:9)' : '1080 × 1920 px (9:16)');
+    box.className = `media-upload-check ${ideal ? 'is-ideal' : 'has-warning'}`;
+    box.innerHTML = `<strong>${ideal ? '✓ Proporção ideal' : '⚠ Proporção diferente da TV'}</strong><span>Imagem selecionada: ${width} × ${height} px • ${orientation}</span><small>${ideal ? 'A proporção está adequada para preencher a TV nessa orientação.' : `Para evitar faixas pretas ou cortes, crie a arte em ${target}.`}</small>`;
+  }
+
   async function handleMediaUpload(file) {
     if (!file) return;
     if (!['image/', 'video/'].some(prefix => file.type.startsWith(prefix))) {
@@ -3772,6 +3793,16 @@
 
     const progress = $('#media-progress');
     const progressText = $('#media-progress-text');
+    if (file.type.startsWith('image/')) {
+      try {
+        const selectedMeta = await getMediaMetadata(file);
+        updateMediaUploadCheck(file, selectedMeta);
+      } catch {
+        updateMediaUploadCheck(null, null);
+      }
+    } else {
+      updateMediaUploadCheck(null, null);
+    }
     let uploadedPath = null;
     let uploadFile = file;
     let uploadName = file.name;
