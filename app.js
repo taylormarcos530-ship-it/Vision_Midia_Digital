@@ -1784,7 +1784,7 @@
         if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
         const element = await loadStablePreviewElement(media, url);
         if (!preview.isConnected) continue;
-        const old = preview.querySelector(':scope > img, :scope > video');
+        const old = preview.querySelector(':scope > img, :scope > video, :scope > iframe');
         if (old) old.replaceWith(element);
         else preview.insertBefore(element, preview.firstChild);
         preview.querySelector('.media-preview-placeholder')?.remove();
@@ -1823,11 +1823,11 @@
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
       const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
-      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : media.media_type === 'url' ? 'Conteúdo dinâmico' : 'Vídeo';
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
-          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : media.media_type === 'url' ? '☁' : '▧'}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
