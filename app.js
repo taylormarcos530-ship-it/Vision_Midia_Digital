@@ -4748,7 +4748,7 @@
     $('#media-file-input').addEventListener('change', event => handleMediaUpload(event.target.files?.[0]));
     $('#add-online-media-button')?.addEventListener('click', () => openOnlineMediaDialog());
     $('#online-media-form')?.addEventListener('submit', handleOnlineMediaSave);
-    $('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
+    $$('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
 
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
