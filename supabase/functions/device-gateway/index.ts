@@ -236,7 +236,9 @@ async function resolveProgram(admin, device) {
 
   return {
     playlistId: null,
-    fallbackPlaylistId,
+    // A newly paired TV with no primary programming must stay idle.
+    // Emergency fallback is only valid when a campaign/direct/group playlist exists and fails.
+    fallbackPlaylistId: null,
     assignmentUpdatedAt: assignmentVersion,
     program: {
       source: 'none',
