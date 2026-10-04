@@ -249,13 +249,7 @@
     warning?.classList.add('hidden');
     content?.classList.remove('hidden');
     const session = await validateSession(storedSession);
-    if (!session) {
-      saveSession(null);
-      content?.classList.add('hidden');
-      warning?.classList.remove('hidden');
-      return;
-    }
-    saveSession(session);
+    if (session) saveSession(session);
     await setupApkButton();
     setupPanelInstall();
     $('#downloads-switch-account')?.addEventListener('click', switchAccount);
@@ -269,7 +263,7 @@
     });
     $('#panel-back')?.addEventListener('click', () => actionFeedback('Voltando ao painel...', 'pending'));
 
-    if (await detectMaster(session)) $('#master-back')?.classList.remove('hidden');
+    if (session && await detectMaster(session)) $('#master-back')?.classList.remove('hidden');
 
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
