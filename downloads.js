@@ -237,16 +237,25 @@
   async function boot() {
     const warning = $('#auth-warning');
     const content = $('#downloads-content');
-    const session = await validateSession(readSession());
-    if (!session) {
+    const storedSession = readSession();
+    if (!storedSession) {
       warning?.classList.remove('hidden');
       content?.classList.add('hidden');
       return;
     }
 
-    saveSession(session);
+    // Render immediately from the local authenticated session so a slow or
+    // temporarily unavailable auth check cannot leave the downloads page blank.
     warning?.classList.add('hidden');
     content?.classList.remove('hidden');
+    const session = await validateSession(storedSession);
+    if (!session) {
+      saveSession(null);
+      content?.classList.add('hidden');
+      warning?.classList.remove('hidden');
+      return;
+    }
+    saveSession(session);
     await setupApkButton();
     setupPanelInstall();
     $('#downloads-switch-account')?.addEventListener('click', switchAccount);
