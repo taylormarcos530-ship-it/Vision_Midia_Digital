@@ -34,7 +34,8 @@
   async function load() {
     const controller = new AbortController(), timeout = setTimeout(() => controller.abort(), 9000);
     try {
-      const url = new URL('./api/news-feed', location.href);
+      const apiBase = location.hostname === 'appassets.androidplatform.net' ? window.VISION_CONFIG?.onlineContentBaseUrl : location.href;
+      const url = new URL('./api/news-feed', apiBase);
       url.searchParams.set('source', source);
       url.searchParams.set('v', '2');
       const response = await fetch(url, {cache:'no-store',signal:controller.signal});

@@ -9,6 +9,10 @@ on:
       - 'player.css'
       - 'player.js'
       - 'config.js'
+      - 'clock.html'
+      - 'news-feed.html'
+      - 'news-feed.css'
+      - 'news-feed.js'
       - 'icon.svg'
       - 'player.webmanifest'
       - 'sw.js'
@@ -53,7 +57,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
-          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
 
       - name: Validate web player JavaScript
         run: node --check player.js

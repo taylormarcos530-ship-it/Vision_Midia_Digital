@@ -11,6 +11,10 @@ on:
       - 'player.css'
       - 'player.js'
       - 'config.js'
+      - 'clock.html'
+      - 'news-feed.html'
+      - 'news-feed.css'
+      - 'news-feed.js'
       - 'icon.svg'
       - 'player.webmanifest'
       - 'sw.js'
@@ -72,7 +76,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
-          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
 
       - name: Validate player JavaScript
         run: node --check player.js
@@ -96,13 +100,16 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib, json, os
-          files = ['player.html','player.css','player.js','config.js','icon.svg','player.webmanifest','sw.js']
+          import hashlib, json, os, re
+          files = ['player.html', 'player.css', 'player.js', 'config.js', 'icon.svg', 'player.webmanifest', 'sw.js', 'clock.html', 'news-feed.html', 'news-feed.css', 'news-feed.js']
           payload = ''.join(f"{name}\n{Path(name).read_text()}\n" for name in files)
           data = {
               'source_sha256': hashlib.sha256(payload.encode()).hexdigest(),
               'git_sha': os.environ.get('GITHUB_SHA', ''),
               'files': files,
+              'apk_version': re.search(r"versionName '([^']+)'", Path('android-player/app/build.gradle').read_text()).group(1),
+              'version_code': int(re.search(r'versionCode (\d+)', Path('android-player/app/build.gradle').read_text()).group(1)),
+              'apk_sha256': hashlib.sha256(Path('/tmp/vision-player-preview/Vision-Player-preview.apk').read_bytes()).hexdigest(),
           }
           Path('/tmp/vision-player-preview/Vision-Player-preview.source.json').write_text(json.dumps(data, indent=2) + '\n')
           PY

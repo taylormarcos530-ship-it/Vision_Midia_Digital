@@ -69,7 +69,7 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
-          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js android-player/app/src/main/assets/
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
 
       - name: Validate player JavaScript
         run: node --check player.js
@@ -114,7 +114,7 @@ jobs:
           python3 - <<'PY'
           from pathlib import Path
           import hashlib, json, os
-          files = ['player.html','player.css','player.js','config.js','icon.svg','player.webmanifest','sw.js']
+          files = ['player.html', 'player.css', 'player.js', 'config.js', 'icon.svg', 'player.webmanifest', 'sw.js', 'clock.html', 'news-feed.html', 'news-feed.css', 'news-feed.js']
           payload = ''.join(f"{name}\n{Path(name).read_text()}\n" for name in files)
           data = {
               'source_sha256': hashlib.sha256(payload.encode()).hexdigest(),

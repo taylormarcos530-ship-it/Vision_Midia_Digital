@@ -153,18 +153,22 @@
         throw new Error('Metadados da build incompletos.');
       }
 
+      if (manifest.apk_sha256 && String(manifest.apk_sha256).toLowerCase() !== checksumMatch[1].toLowerCase()) {
+        throw new Error('Checksum diferente dos metadados da build.');
+      }
+
       const contentLength = Number(apkResponse.headers.get('content-length') || 0);
       if (contentLength > 0 && contentLength < 100000) {
         throw new Error('Arquivo APK inválido ou incompleto.');
       }
 
-      button.href = url;
+      button.href = `${url}${url.includes('?') ? '&' : '?'}v=${checksumMatch[1]}`;
       button.classList.remove('disabled');
       button.removeAttribute('aria-disabled');
-      button.textContent = 'Baixar APK para TV Box';
+      button.textContent = `Baixar APK ${manifest.apk_version || 'preview'}`;
       button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
       if (note) {
-        note.textContent = `APK compilado e validado • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Instale no TV Box e faça o pareamento pelo código exibido.`;
+        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Instale no TV Box e faça o pareamento pelo código exibido.`;
       }
     } catch (error) {
       // The permanent APK path is the source of truth for download availability.

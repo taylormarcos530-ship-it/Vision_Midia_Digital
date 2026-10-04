@@ -21,8 +21,8 @@
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
-  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.2';
-  const EXPECTED_APK_VERSION = '1.5.1-preview';
+  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.3';
+  const EXPECTED_APK_VERSION = '1.5.3-preview';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -112,6 +112,7 @@
     companyMembers: [],
     profiles: [],
     notifications: [],
+    expiryCompanies: [],
     notificationUnreadCount: 0,
     notificationFilter: 'all',
     selectedNotificationIds: new Set(),
@@ -793,10 +794,21 @@
     });
   }
 
+  function currentDueNotices() {
+    const companies = state.isPlatformAdmin ? state.expiryCompanies || [] : [{ ...state.company, subscription: state.subscription }];
+    return companies.map(company => {
+      const sub = company.subscription;
+      const dueValue = sub?.status === 'trialing' ? sub.trial_ends_at : sub?.current_period_end;
+      const dueTime = new Date(dueValue || '').getTime();
+      if (!dueValue || !Number.isFinite(dueTime) || !['active','trialing','past_due'].includes(sub?.status) || dueTime - Date.now() > 3 * 86400000) return null;
+      return { company, subscription: sub, dueValue, expired: dueTime < Date.now() };
+    }).filter(Boolean);
+  }
+
   function updateInboxBadge() {
     const badge = $('#inbox-unread-badge');
     if (!badge) return;
-    const count = Number(state.notificationUnreadCount || 0);
+    const count = Number(state.notificationUnreadCount || 0) + currentDueNotices().length;
     badge.textContent = count > 99 ? '99+' : String(count);
     badge.classList.toggle('hidden', count < 1);
   }
@@ -808,14 +820,11 @@
     if (!list || !empty) return;
 
     const items = visibleInboxItems();
-    let dueNotice = '';
-    const sub = state.subscription;
-    const dueValue = sub?.status === 'trialing' ? sub.trial_ends_at : sub?.current_period_end;
-    const dueTime = new Date(dueValue || '').getTime();
-    if (dueValue && Number.isFinite(dueTime) && ['active','trialing','past_due'].includes(sub?.status) && dueTime - Date.now() <= 3 * 86400000) {
-      const expired = dueTime < Date.now();
-      dueNotice = `<article class="inbox-message-card unread"><div class="inbox-message-copy"><strong>${expired ? 'Assinatura vencida' : 'Vencimento próximo'}</strong><p class="inbox-message-body">Seu ${sub.status === 'trialing' ? 'teste' : 'plano'} ${expired ? 'venceu' : 'vence'} em ${escapeHtml(formatAccessDate(dueValue))}. Entre em contato com o suporte para renovar.</p><small>Este aviso acompanha o vencimento atual da sua conta.</small></div></article>`;
-    }
+    const dueNotice = state.notificationFilter === 'read' ? '' : currentDueNotices().map(info => {
+      const { company, subscription: sub, dueValue, expired } = info;
+      const owner = state.isPlatformAdmin ? company.name + ': ' : 'Sua conta: ';
+      return `<article class="inbox-message-card unread"><div class="inbox-message-copy"><strong>${escapeHtml(owner)}${expired ? 'assinatura vencida' : 'vencimento próximo'}</strong><p class="inbox-message-body">O ${sub.status === 'trialing' ? 'teste' : 'plano'} ${expired ? 'venceu' : 'vence'} em ${escapeHtml(formatAccessDate(dueValue))}. Entre em contato com o suporte para renovar.</p><small>Aviso do vencimento cadastrado, atualizado automaticamente.</small></div></article>`;
+    }).join('');
     const validIds = new Set((state.notifications || []).map(item => item.id));
     state.selectedNotificationIds = new Set(
       [...state.selectedNotificationIds].filter(id => validIds.has(id))
@@ -873,6 +882,14 @@
       return [];
     }
     try {
+      if (state.isPlatformAdmin) {
+        const dashboard = await functionRequest('master-admin', { authenticated: true, body: { action: 'dashboard' } });
+        state.expiryCompanies = Array.isArray(dashboard?.companies) ? dashboard.companies : [];
+      } else {
+        state.expiryCompanies = [];
+        const rows = await restRequest('company_subscriptions', { query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1` });
+        state.subscription = rows?.[0] || null;
+      }
       const result = await functionRequest('notification-inbox', {
         authenticated: true,
         body: { action: 'list', company_id: state.company.id },
@@ -4624,6 +4641,7 @@
     if (brandingForm) { brandingForm.reset(); delete brandingForm.dataset.dirty; }
     localStorage.removeItem(COMPANY_KEY);
     state.company = null;
+    state.expiryCompanies = [];
     state.devices = [];
     state.media = [];
     state.playlists = [];
@@ -4640,6 +4658,12 @@
     $$('.auth-tab').forEach(btn => btn.classList.toggle('active', btn.dataset.authTab === tab));
     $('#login-form').classList.toggle('hidden', tab !== 'login');
     $('#signup-form').classList.toggle('hidden', tab !== 'signup');
+  }
+
+  function dismissSidebarFromOutside(event) {
+    const sidebar = $('#sidebar');
+    if (!sidebar?.classList.contains('open') || sidebar.contains(event.target) || $('#menu-button')?.contains(event.target)) return;
+    sidebar.classList.remove('open');
   }
 
   function bindEvents() {
@@ -4682,6 +4706,7 @@
       catch (error) { toast('Falha ao atualizar', error.message, 'error'); }
     });
     $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
+    document.addEventListener('pointerdown', dismissSidebarFromOutside);
     $$('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
     document.addEventListener('click', event => {
       const button = event.target.closest('[data-go-view]');

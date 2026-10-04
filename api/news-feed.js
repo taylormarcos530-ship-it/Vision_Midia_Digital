@@ -18,6 +18,7 @@ function imageUrl(block) {
   return '';
 }
 export default async function handler(req,res) {
+  res.setHeader('Access-Control-Allow-Origin', '*');
   const source=String(req.query?.source||'soccer'), url=SOURCES[source];
   if(!url) return res.status(400).json({ok:false,error:'Fonte desconhecida'});
   try {
