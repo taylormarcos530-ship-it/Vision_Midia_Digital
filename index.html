@@ -163,6 +163,7 @@
         <button class="nav-item" data-view="playlists"><span>▶</span> Playlists</button>
         <button class="nav-item hidden" data-view="campaigns"><span>◷</span> Programação avançada</button>
         <button class="nav-item" data-view="reports"><span>▤</span> Relatórios</button>
+        <button class="nav-item inbox-nav-item" data-view="inbox"><span>✉</span> Mensagens <span id="inbox-unread-badge" class="inbox-unread-badge hidden">0</span></button>
         <a class="nav-item nav-link-item" href="./downloads.html"><span>⇩</span> Aplicativos / Downloads</a>
         <div id="saas-admin-nav" class="saas-admin-nav hidden" aria-label="Administração SaaS">
           <span class="nav-section-label">ADMINISTRAÇÃO SAAS</span>
@@ -546,6 +547,39 @@
               <div class="panel-header"><div><span class="eyebrow">AUDITORIA</span><h3>Últimos eventos de reprodução</h3></div><small>Até 250 eventos na tela; o CSV exporta todo o período.</small></div>
               <div class="table-scroll"><table class="report-table report-events-table"><thead><tr><th>Data/hora</th><th>TV</th><th>Campanha</th><th>Mídia</th><th>Duração</th><th>Status</th></tr></thead><tbody id="report-events-body"></tbody></table></div>
             </article>
+          </div>
+        </section>
+
+        <section id="view-inbox" class="view-section premium-view hidden">
+          <div class="section-toolbar module-hero module-hero-inbox">
+            <div class="module-heading">
+              <span class="module-icon">✉</span>
+              <div>
+                <span class="eyebrow">CAIXA DE ENTRADA</span>
+                <h2>Mensagens</h2>
+                <p>Consulte avisos recebidos, marque como lidos ou não lidos e exclua mensagens da sua própria caixa.</p>
+              </div>
+            </div>
+            <button id="inbox-refresh" class="button ghost" type="button">↻ Atualizar</button>
+          </div>
+
+          <div class="panel inbox-toolbar">
+            <label class="inbox-select-all"><input id="inbox-select-all" type="checkbox" /> Selecionar todas</label>
+            <label>Mostrar
+              <select id="inbox-filter">
+                <option value="all">Todas</option>
+                <option value="unread">Não lidas</option>
+                <option value="read">Lidas</option>
+              </select>
+            </label>
+            <button id="inbox-delete-selected" class="button danger" type="button" disabled>Excluir selecionadas</button>
+          </div>
+
+          <div id="inbox-list" class="inbox-list"></div>
+          <div id="inbox-empty" class="empty-panel hidden">
+            <div class="empty-icon">✉</div>
+            <h3>Nenhuma mensagem</h3>
+            <p>Quando o Master enviar um aviso, uma cópia ficará guardada aqui para você consultar depois.</p>
           </div>
         </section>
 
