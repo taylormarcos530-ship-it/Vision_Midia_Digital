@@ -685,7 +685,8 @@
     state.subscription = rows?.[0] || null;
     state.companyRole = memberRows?.[0]?.status === 'active' ? memberRows[0].role : null;
     try {
-      state.isPlatformAdmin = Boolean(await restRequest('rpc/current_user_is_platform_admin', { method: 'POST', body: {} }));
+      const adminResult = await restRequest('rpc/current_user_is_platform_admin', { method: 'POST', body: {} });
+      state.isPlatformAdmin = adminResult === true || adminResult === 'true' || adminResult?.value === true;
     } catch { state.isPlatformAdmin = false; }
     const reason = accessReason(state.subscription);
     if (reason) {
@@ -749,6 +750,8 @@
       }
       await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
+      // Keep this card deterministic even if another renderer is skipped.
+      renderDevicePlanUsage();
       updateConnectionStatus(true);
     } catch (error) {
       updateConnectionStatus(false);
