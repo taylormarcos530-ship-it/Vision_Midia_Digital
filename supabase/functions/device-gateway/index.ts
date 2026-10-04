@@ -391,6 +391,29 @@ Deno.serve(async (req) => {
       return json({ok:true})
     }
 
+    if (action === 'command_result') {
+      const commandId = String(body?.command_id || '')
+      const status = String(body?.status || '')
+      if (!commandId || !['completed','failed'].includes(status)) return json({ error:'invalid_command_result' }, 400)
+      const errorMessage = status === 'failed' ? String(body?.error_message || 'Falha no comando remoto').slice(0,500) : null
+      const { data: command, error: commandError } = await admin.from('device_commands')
+        .select('id,command_type,status')
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .maybeSingle()
+      if (commandError) throw commandError
+      if (!command || command.command_type === 'screenshot') return json({ error:'invalid_remote_command' }, 404)
+      const { error } = await admin.from('device_commands')
+        .update({ status, completed_at:new Date().toISOString(), error_message:errorMessage })
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .in('status', ['pending','sent'])
+      if (error) throw error
+      return json({ ok:true, command_id:commandId, status })
+    }
+
     if (action === 'manifest') {
       const resolved = await resolveProgram(admin, device)
 
