@@ -18,6 +18,8 @@
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
+  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.0';
+  const EXPECTED_APK_VERSION = '1.4.0-preview';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -59,11 +61,24 @@
     $('#auth-visual-subtitle').textContent = config.subtitle;
 
     if (config.imageUrl) {
-      image.src = config.imageUrl;
-      image.classList.remove('hidden');
-      panel.dataset.hasImage = 'true';
+      const nextSrc = String(config.imageUrl);
+      if (image.dataset.visionSrc === nextSrc && image.getAttribute('src')) {
+        image.classList.remove('hidden');
+        panel.dataset.hasImage = 'true';
+      } else {
+        const preload = new Image();
+        preload.onload = () => {
+          if (!image.isConnected) return;
+          image.src = nextSrc;
+          image.dataset.visionSrc = nextSrc;
+          image.classList.remove('hidden');
+          panel.dataset.hasImage = 'true';
+        };
+        preload.src = nextSrc;
+      }
     } else {
       image.removeAttribute('src');
+      delete image.dataset.visionSrc;
       image.classList.add('hidden');
       panel.dataset.hasImage = 'false';
     }
@@ -84,6 +99,8 @@
     playlists: [],
     playlistItems: [],
     deviceAssignments: [],
+    deviceGroups: [],
+    deviceGroupMembers: [],
     campaigns: [],
     campaignDevices: [],
     deviceEvents: [],
@@ -105,6 +122,11 @@
     autoCaptureRequested: new Set(),
     mediaPreviewUrls: new Map(),
     mediaRenderSignature: '',
+    playlistRenderSignature: '',
+    playlistEditorRenderSignature: '',
+    playlistItemRenderLimit: 60,
+    playlistMediaRenderLimit: 60,
+    playlistMediaQuery: '',
   };
 
   const $ = (selector, root = document) => root.querySelector(selector);
@@ -365,7 +387,7 @@
         const headers = { apikey: CONFIG.supabasePublishableKey, 'Content-Type': 'application/json' };
         const [plansResponse, configResponse] = await Promise.all([
           fetch(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }),
-          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
+          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle,web_push_public_key&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
         ]);
         if (!plansResponse.ok || !configResponse.ok) throw primaryError;
         const plans = await plansResponse.json();
@@ -481,11 +503,54 @@
     } catch {}
   }
 
+  function pushApplicationServerKey(value) {
+    const normalized = String(value || '').replace(/-/g, '+').replace(/_/g, '/');
+    const padding = '='.repeat((4 - (normalized.length % 4)) % 4);
+    const raw = atob(normalized + padding);
+    return Uint8Array.from(raw, char => char.charCodeAt(0));
+  }
+
+  async function ensurePersistentPushSubscription() {
+    if (!state.user?.id || !state.company?.id) throw new Error('Entre em uma conta vinculada antes de ativar as notificações.');
+    if (!('serviceWorker' in navigator) || !('PushManager' in window)) throw new Error('Este navegador não oferece Web Push persistente.');
+    if (!('Notification' in window) || Notification.permission !== 'granted') throw new Error('A permissão de notificações ainda não foi concedida.');
+
+    const publicKey = String(state.publicConfig?.config?.web_push_public_key || '').trim();
+    if (!publicKey) throw new Error('O Web Push ainda não foi configurado no servidor.');
+
+    const registration = await navigator.serviceWorker.ready;
+    let subscription = await registration.pushManager.getSubscription();
+    if (!subscription) {
+      subscription = await registration.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: pushApplicationServerKey(publicKey),
+      });
+    }
+
+    const json = subscription.toJSON();
+    if (!json?.endpoint || !json?.keys?.p256dh || !json?.keys?.auth) throw new Error('O navegador não retornou uma inscrição Web Push válida.');
+
+    await functionRequest('web-push', {
+      authenticated: true,
+      body: {
+        action: 'subscribe',
+        company_id: state.company.id,
+        subscription: json,
+      },
+    });
+    return subscription;
+  }
+
   async function enableAccessNotifications() {
     if (!('Notification' in window)) return toast('Notificações indisponíveis', 'Este navegador não oferece suporte.', 'error');
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
-    toast('Notificações ativadas', 'Você será avisado quando o acesso for liberado ou quando houver mudança importante na assinatura.');
+    try {
+      await ensurePersistentPushSubscription();
+      toast('Notificações ativadas', 'O Web Push ficou registrado neste aparelho e pode avisar mesmo com o app totalmente fechado.');
+    } catch (error) {
+      toast('Notificação local ativada', error.message || 'Não foi possível registrar o Web Push persistente.', 'error', 6500);
+    }
     const reason = accessReason(); if (reason) notifyAccessState(reason);
   }
 
@@ -503,7 +568,7 @@
       }
       const companyId = encodeURIComponent(state.company.id);
       const [companies, subscriptions] = await Promise.all([
-        restRequest('companies', { query: `select=id,name,status,timezone,owner_user_id,settings&id=eq.${companyId}&limit=1` }),
+        restRequest('companies', { query: `select=id,name,status,timezone,owner_user_id,settings,fallback_playlist_id&id=eq.${companyId}&limit=1` }),
         restRequest('company_subscriptions', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
       ]);
       if (companies?.[0]) state.company = { ...state.company, ...companies[0] };
@@ -563,7 +628,7 @@
     accessGateTimer = setInterval(refreshGateSoon, 10_000);
     setInterval(() => {
       if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
-    }, 3_000);
+    }, 30_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -589,7 +654,7 @@
 
   async function enterAuthenticatedApp() {
     state.companies = await restRequest('companies', {
-      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings&order=created_at.asc',
+      query: 'select=id,name,slug,status,timezone,owner_user_id,created_at,settings,fallback_playlist_id&order=created_at.asc',
     }) || [];
 
     if (!state.companies.length) {
@@ -613,11 +678,17 @@
     if (reason) {
       showScreen('access');
       renderAccessScreen(reason);
+      if ('Notification' in window && Notification.permission === 'granted') {
+        ensurePersistentPushSubscription().catch(() => {});
+      }
       return;
     }
     showScreen('app');
     renderIdentity();
     await loadAllData();
+    if ('Notification' in window && Notification.permission === 'granted') {
+      ensurePersistentPushSubscription().catch(() => {});
+    }
     const restoreSaasArea = readLocalValue(ACTIVE_AREA_KEY) === 'saas';
     setView(state.activeView, { persist: !restoreSaasArea });
   }
@@ -626,16 +697,18 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlist_items', { query: `select=*&company_id=eq.${companyId}&order=position.asc` }),
         restRequest('device_playlist_assignments', { query: `select=*&company_id=eq.${companyId}` }),
+        restRequest('device_groups', { query: `select=*&company_id=eq.${companyId}&order=name.asc` }),
+        restRequest('device_group_members', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('campaigns', { query: `select=*&company_id=eq.${companyId}&order=priority.desc,created_at.desc` }),
         restRequest('campaign_devices', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('device_events', { query: `select=id,client_event_id,device_id,severity,event_code,message,details,occurred_at&company_id=eq.${companyId}&order=occurred_at.desc&limit=100` }),
-        restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
+        restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,delivered_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
       ]);
@@ -644,18 +717,17 @@
       state.playlists = playlists || [];
       state.playlistItems = playlistItems || [];
       state.deviceAssignments = deviceAssignments || [];
+      state.deviceGroups = deviceGroups || [];
+      state.deviceGroupMembers = deviceGroupMembers || [];
       state.campaigns = campaigns || [];
       state.campaignDevices = campaignDevices || [];
       state.deviceEvents = deviceEvents || [];
       state.deviceCommands = deviceCommands || [];
       state.companyMembers = companyMembers || [];
       state.profiles = profiles || [];
-      const [screenshots, brandingRows] = await Promise.all([
-        restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` }),
-        restRequest('company_player_branding', { query: `select=*&company_id=eq.${companyId}&limit=1` }),
-      ]);
+      const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
-      state.playerBranding = brandingRows?.[0] || null;
+      state.playerBranding = null;
       renderAll();
       updateConnectionStatus(true);
     } catch (error) {
@@ -675,7 +747,6 @@
   function renderAll() {
     renderDashboard();
     renderDevices();
-    renderPlayerBranding();
     renderMonitoring();
     renderMedia();
     renderPlaylists();
@@ -740,7 +811,7 @@
     if (device.status === 'disabled') return 'disabled';
     if (device.access_status === 'pending') return 'pending';
     if (!device.last_seen_at) return device.paired_at ? 'offline' : (device.status || 'pending');
-    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 12_000;
+    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 90_000;
     return stale ? 'offline' : 'online';
   }
 
@@ -804,21 +875,24 @@
 
   function devicePlaybackHealth(device) {
     const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
-    if (!assignment?.playlist_id) {
+    const group = deviceGroupFor(device.id);
+    const playlistId = assignment?.playlist_id || group?.playlist_id || null;
+    if (!playlistId) {
       return { level:'warning', playlistName:'Nenhuma', stateLabel:'Sem playlist', playlistId:null };
     }
-    const playlist = state.playlists.find(row => row.id === assignment.playlist_id);
-    const items = state.playlistItems.filter(row => row.playlist_id === assignment.playlist_id);
+    const playlist = state.playlists.find(row => row.id === playlistId);
+    const items = state.playlistItems.filter(row => row.playlist_id === playlistId);
     const enabledItems = items.filter(row => row.enabled);
     const activeItems = enabledItems.filter(playlistItemActiveNow);
+    const sourceSuffix = !assignment?.playlist_id && group?.playlist_id ? ' • via grupo' : '';
 
     if (!enabledItems.length) {
-      return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:'Sem mídia ativa', playlistId:assignment.playlist_id };
+      return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:`Sem mídia ativa${sourceSuffix}`, playlistId };
     }
     if (!activeItems.length) {
-      return { level:'warning', playlistName:playlist?.name || 'Playlist', stateLabel:'Fora da programação agora', playlistId:assignment.playlist_id };
+      return { level:'warning', playlistName:playlist?.name || 'Playlist', stateLabel:`Fora da programação agora${sourceSuffix}`, playlistId };
     }
-    return { level:'success', playlistName:playlist?.name || 'Playlist', stateLabel:'Pronta para exibir', playlistId:assignment.playlist_id };
+    return { level:'success', playlistName:playlist?.name || 'Playlist', stateLabel:`Pronta para exibir${sourceSuffix}`, playlistId };
   }
 
   function formatLastSeen(value) {
@@ -837,8 +911,147 @@
   }
 
 
+  function deviceGroupMembership(deviceId) {
+    return state.deviceGroupMembers.find(row => row.device_id === deviceId) || null;
+  }
+
+  function deviceGroupFor(deviceId) {
+    const membership = deviceGroupMembership(deviceId);
+    return membership ? state.deviceGroups.find(row => row.id === membership.group_id) || null : null;
+  }
+
+  function latestDeviceCommand(deviceId) {
+    return state.deviceCommands.find(row => row.device_id === deviceId) || null;
+  }
+
   function remoteCommandLabel(type) {
     return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
+  }
+
+  function remoteCommandStatusLabel(status) {
+    return ({ pending:'Pendente', sent:'Recebido', completed:'Concluído', failed:'Falhou' })[status] || status || '—';
+  }
+
+  function reportedOrientationLabel(value) {
+    const raw = String(value || '').toLowerCase();
+    if (!raw) return '—';
+    if (raw.includes('portrait')) return 'Vertical';
+    if (raw.includes('landscape')) return 'Horizontal';
+    return raw;
+  }
+
+  function semverTuple(value) {
+    const match = String(value || '').match(/(\d+)\.(\d+)\.(\d+)/);
+    return match ? match.slice(1).map(Number) : null;
+  }
+
+  function versionIsOlder(actual, expected) {
+    const a = semverTuple(actual), e = semverTuple(expected);
+    if (!a || !e) return false;
+    for (let i = 0; i < 3; i++) {
+      if (a[i] < e[i]) return true;
+      if (a[i] > e[i]) return false;
+    }
+    return false;
+  }
+
+  function recentDeviceEventCount(deviceId, matcher, withinMs = 30 * 60 * 1000) {
+    const cutoff = Date.now() - withinMs;
+    return state.deviceEvents.filter(event => {
+      if (event.device_id !== deviceId || new Date(event.occurred_at).getTime() < cutoff) return false;
+      return typeof matcher === 'function' ? matcher(event) : event.event_code === matcher;
+    }).length;
+  }
+
+  function deviceDiagnostics(device) {
+    const alerts = [];
+    const status = effectiveDeviceStatus(device);
+    if (status === 'offline') alerts.push({ level:'error', label:'TV offline' });
+    if (deviceSyncIsStale(device)) alerts.push({ level:'warning', label:'Sincronização atrasada' });
+    if (device.storage_free_mb != null && Number(device.storage_free_mb) < 256) alerts.push({ level:Number(device.storage_free_mb) < 100 ? 'error' : 'warning', label:'Pouco armazenamento' });
+    const playerVersion = device.player_version || device.app_version || '';
+    if (playerVersion && versionIsOlder(playerVersion, EXPECTED_PLAYER_VERSION)) alerts.push({ level:'warning', label:'Player desatualizado' });
+    if (device.apk_version && versionIsOlder(device.apk_version, EXPECTED_APK_VERSION)) alerts.push({ level:'warning', label:'APK desatualizado' });
+    if (recentDeviceEventCount(device.id, 'playback_error') >= 3) alerts.push({ level:'error', label:'Erro repetido de mídia' });
+    if (recentDeviceEventCount(device.id, 'watchdog_restart') >= 2) alerts.push({ level:'error', label:'Watchdog reiniciando' });
+    if (recentDeviceEventCount(device.id, event => /cache/i.test(event.event_code || '') && ['error','critical'].includes(event.severity)) >= 2) alerts.push({ level:'warning', label:'Falha repetida de cache' });
+    return alerts;
+  }
+
+  function renderDeviceGroups() {
+    const grid = $('#device-groups-grid');
+    const empty = $('#device-groups-empty');
+    const fallback = $('#company-fallback-playlist');
+    if (!grid || !empty || !fallback) return;
+    const canManage = ['owner','admin','operator'].includes(state.companyRole);
+    const addGroup = $('#add-device-group');
+    if (addGroup) addGroup.disabled = !canManage;
+    fallback.innerHTML = '<option value="">Sem fallback da empresa</option>' + state.playlists.map(playlist =>
+      `<option value="${playlist.id}" ${state.company?.fallback_playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
+    ).join('');
+    fallback.disabled = !['owner','admin'].includes(state.companyRole);
+    empty.classList.toggle('hidden', state.deviceGroups.length > 0);
+    grid.classList.toggle('hidden', state.deviceGroups.length === 0);
+    grid.innerHTML = state.deviceGroups.map(group => {
+      const members = state.deviceGroupMembers.filter(row => row.group_id === group.id);
+      const playlist = state.playlists.find(row => row.id === group.playlist_id);
+      const names = members.map(member => state.devices.find(device => device.id === member.device_id)?.name).filter(Boolean);
+      return `<article class="device-group-card">
+        <div><strong>${escapeHtml(group.name)}</strong><small>${escapeHtml(playlist?.name || 'Sem playlist de grupo')} • ${members.length} TV(s)</small></div>
+        <p>${names.length ? escapeHtml(names.join(' • ')) : 'Nenhuma TV neste grupo.'}</p>
+        ${canManage ? `<div class="device-group-actions"><button class="small-icon-button" type="button" data-edit-device-group="${group.id}">Editar</button><button class="small-icon-button danger-inline" type="button" data-delete-device-group="${group.id}">Excluir</button></div>` : ''}
+      </article>`;
+    }).join('');
+  }
+
+  async function saveCompanyFallback(playlistId) {
+    if (!['owner','admin'].includes(state.companyRole)) return toast('Sem permissão', 'Somente proprietário ou administrador pode alterar o fallback da empresa.', 'error');
+    try {
+      await restRequest('rpc/set_company_fallback_playlist', { method:'POST', body:{ p_company_id:state.company.id, p_playlist_id:playlistId || null } });
+      state.company.fallback_playlist_id = playlistId || null;
+      state.companies = state.companies.map(company => company.id === state.company.id ? { ...company, fallback_playlist_id:playlistId || null } : company);
+      toast('Fallback atualizado', playlistId ? 'Playlist de emergência da empresa definida.' : 'Fallback da empresa removido.');
+      renderDeviceGroups();
+    } catch (error) { toast('Erro ao salvar fallback', error.message, 'error'); renderDeviceGroups(); }
+  }
+
+  function openDeviceGroupDialog(groupId = null) {
+    const group = groupId ? state.deviceGroups.find(row => row.id === groupId) : null;
+    $('#device-group-id').value = group?.id || '';
+    $('#device-group-name').value = group?.name || '';
+    $('#device-group-playlist').innerHTML = '<option value="">Sem playlist</option>' + state.playlists.map(playlist =>
+      `<option value="${playlist.id}" ${group?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
+    ).join('');
+    $('#device-group-dialog-title').textContent = group ? 'Editar grupo de TVs' : 'Novo grupo de TVs';
+    openDialog('device-group-dialog');
+  }
+
+  async function saveDeviceGroup(event) {
+    event.preventDefault();
+    const button = $('#device-group-save'), id = $('#device-group-id').value, name = $('#device-group-name').value.trim();
+    if (!name) return;
+    setBusy(button, true, 'Salvando...');
+    try {
+      const body = { company_id:state.company.id, name, playlist_id:$('#device-group-playlist').value || null, updated_at:new Date().toISOString() };
+      if (id) await restRequest('device_groups', { method:'PATCH', query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body, prefer:'return=minimal' });
+      else await restRequest('device_groups', { method:'POST', body:{ ...body, created_by:state.user.id }, prefer:'return=minimal' });
+      closeDialog('device-group-dialog'); toast('Grupo salvo', id ? 'Grupo atualizado.' : 'Grupo criado.'); await loadAllData();
+    } catch (error) { toast('Erro ao salvar grupo', error.message, 'error'); }
+    finally { setBusy(button, false); }
+  }
+
+  async function deleteDeviceGroup(groupId) {
+    const group = state.deviceGroups.find(row => row.id === groupId);
+    if (!group || !confirm(`Excluir o grupo “${group.name}”? As TVs permanecerão cadastradas.`)) return;
+    try { await restRequest('device_groups', { method:'DELETE', query:`id=eq.${encodeURIComponent(groupId)}&company_id=eq.${encodeURIComponent(state.company.id)}` }); toast('Grupo excluído'); await loadAllData(); }
+    catch (error) { toast('Erro ao excluir grupo', error.message, 'error'); }
+  }
+
+  async function setDeviceGroup(deviceId, groupId) {
+    try {
+      await restRequest('rpc/set_device_group', { method:'POST', body:{ p_company_id:state.company.id, p_device_id:deviceId, p_group_id:groupId || null } });
+      toast('Grupo atualizado'); await loadAllData();
+    } catch (error) { toast('Erro ao alterar grupo', error.message, 'error'); await loadAllData().catch(() => {}); }
   }
 
   async function requestDeviceMaintenanceCommand(deviceId, commandType, button = null) {
@@ -853,21 +1066,6 @@
       await loadAllData().catch(() => {});
       return true;
     } catch (error) { toast('Falha no comando remoto', error.message, 'error'); return false; }
-    finally { setBusy(button, false); }
-  }
-
-  async function requestDeviceRestart(deviceId, button = null) {
-    const device = state.devices.find(item => item.id === deviceId);
-    if (!device || !['owner','admin','operator'].includes(state.companyRole)) return false;
-    if (!confirm(`Reiniciar o Vision Player da TV “${device.name}”? A reprodução volta automaticamente depois do reinício.`)) return false;
-    setBusy(button, true, 'Solicitando...');
-    try {
-      const result = await functionRequest('device-control', { body:{ action:'restart_player', company_id:state.company.id, device_id:deviceId }, authenticated:true });
-      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
-      toast('Reinício solicitado', `${device.name}: comando enviado ao Player.`);
-      await loadAllData().catch(() => {});
-      return true;
-    } catch (error) { toast('Não foi possível reiniciar', error.message, 'error'); return false; }
     finally { setBusy(button, false); }
   }
 
@@ -994,6 +1192,7 @@
 
   function renderDevices() {
     renderDevicePlanUsage();
+    renderDeviceGroups();
     const grid = $('#devices-grid');
     const empty = $('#devices-empty');
     const has = state.devices.length > 0;
@@ -1007,6 +1206,12 @@
       const shot = latestScreenshotForDevice(device.id);
       const captureUi = captureUiForDevice(device, shot);
       const playbackHealth = devicePlaybackHealth(device);
+      const group = deviceGroupFor(device.id);
+      const latestCommand = latestDeviceCommand(device.id);
+      const groupOptions = state.deviceGroups.map(item => `<option value="${item.id}" ${group?.id === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('');
+      const fallbackName = state.playlists.find(item => item.id === (device.fallback_playlist_id || state.company?.fallback_playlist_id))?.name || 'Não definido';
+      const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
+      const storageLabel = device.storage_free_mb == null ? '—' : formatBytes(Number(device.storage_free_mb) * 1024 * 1024);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
       const capturePending = state.deviceCaptureStates.get(device.id)?.status === 'pending';
       return `
@@ -1067,13 +1272,29 @@
           <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
         </div>
 
-        <div class="device-orientation-quick" aria-label="Orientação da TV">
-          <span>Tela</span>
-          <button type="button" class="small-icon-button ${device.orientation === 'landscape' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="landscape">▭ Horizontal</button>
-          <button type="button" class="small-icon-button ${device.orientation === 'portrait' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="portrait">▯ Vertical</button>
-          <button type="button" class="small-icon-button ${!device.orientation || device.orientation === 'auto' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="auto">↻ Automática</button>
-          <button type="button" class="small-icon-button" data-edit-device="${device.id}">⚙ Ajustar</button>
-        </div>
+        <details class="device-maintenance-panel">
+          <summary>Manutenção e diagnóstico</summary>
+          <div class="device-maintenance-grid">
+            <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
+            <div><span>APK</span><strong>${escapeHtml(device.apk_version || '—')}</strong></div>
+            <div><span>Último heartbeat</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
+            <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
+            <div><span>Espaço livre</span><strong>${escapeHtml(storageLabel)}</strong></div>
+            <div><span>Resolução</span><strong>${escapeHtml(resolution)}</strong></div>
+            <div><span>Orientação configurada</span><strong>${escapeHtml(orientationLabel(device.orientation))}</strong></div>
+            <div><span>Orientação reportada</span><strong>${escapeHtml(reportedOrientationLabel(device.reported_orientation))}</strong></div>
+            <div><span>Fallback</span><strong>${escapeHtml(fallbackName)}</strong></div>
+            <div class="device-maintenance-command"><span>Último comando</span><strong>${latestCommand ? `${escapeHtml(remoteCommandLabel(latestCommand.command_type))} • ${escapeHtml(remoteCommandStatusLabel(latestCommand.status))}` : 'Nenhum'}</strong>${latestCommand?.error_message ? `<small>${escapeHtml(latestCommand.error_message)}</small>` : ''}</div>
+          </div>
+        </details>
+
+        <label class="device-assignment">Grupo
+          <select data-device-group="${device.id}" ${state.deviceGroups.length && ['owner','admin','operator'].includes(state.companyRole) ? '' : 'disabled'}>
+            <option value="">${state.deviceGroups.length ? 'Sem grupo' : 'Crie um grupo primeiro'}</option>
+            ${groupOptions}
+          </select>
+          <small>${group?.playlist_id && assignment?.playlist_id ? 'A playlist padrão desta TV tem prioridade sobre a playlist do grupo.' : 'Use grupos para aplicar programação padrão a várias TVs.'}</small>
+        </label>
 
         <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
@@ -1175,17 +1396,6 @@
     }
   }
 
-  async function setQuickDeviceOrientation(deviceId, orientation) {
-    const device = state.devices.find(item => item.id === deviceId);
-    if (!device || !['auto','landscape','portrait'].includes(orientation)) return;
-    try {
-      await restRequest('devices', { method:'PATCH', query:`id=eq.${encodeURIComponent(deviceId)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body:{ orientation }, prefer:'return=minimal' });
-      device.orientation = orientation;
-      renderDevices();
-      toast('Orientação atualizada', `${device.name}: ${orientationLabel(orientation)}.`);
-    } catch (error) { toast('Não foi possível alterar a orientação', error.message, 'error'); }
-  }
-
   async function requestDeviceScreenshot(deviceId, { quiet = false, automatic = false } = {}) {
     const device = state.devices.find(item => item.id === deviceId);
     if (!device) return false;
@@ -1204,9 +1414,9 @@
       if (!command?.id) throw new Error('O servidor não confirmou o pedido de captura.');
       if (!quiet) toast('Captura solicitada', `${device.name}: aguardando o Player responder.`);
 
-      const deadline = Date.now() + 15000;
+      const deadline = Date.now() + 25000;
       while (Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 900));
+        await new Promise(resolve => setTimeout(resolve, 1800));
         const result = await restRequest('device_commands', { query: `select=id,status,error_message&company_id=eq.${encodeURIComponent(state.company.id)}&id=eq.${encodeURIComponent(command.id)}&limit=1` });
         const row = result?.[0];
         if (row?.status === 'completed') {
@@ -1217,13 +1427,43 @@
         }
         if (row?.status === 'failed') throw new Error(row.error_message || 'O Player não conseguiu capturar a tela.');
       }
-      throw new Error('A TV não respondeu ao pedido de captura em até 15 segundos.');
+      throw new Error('A TV não respondeu ao pedido de captura em até 25 segundos.');
     } catch (error) {
       const message = friendlyScreenshotError(error);
       state.deviceCaptureStates.set(deviceId, { status: 'error', message, automatic });
       renderDevices();
       if (!quiet) toast('Não foi possível capturar', message, 'error', 7500);
       return false;
+    }
+  }
+
+  async function requestDeviceRestart(deviceId, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return false;
+    if (!['owner','admin','operator'].includes(state.companyRole)) {
+      toast('Sem permissão', 'Seu usuário não pode reiniciar Players.', 'error');
+      return false;
+    }
+    if (!confirm(`Reiniciar o Vision Player da TV “${device.name}”? A reprodução volta automaticamente depois do reinício.`)) return false;
+    setBusy(button, true, 'Solicitando...');
+    try {
+      const result = await functionRequest('device-control', {
+        body: {
+          action: 'restart_player',
+          company_id: state.company.id,
+          device_id: deviceId,
+        },
+        authenticated: true,
+      });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast('Reinício solicitado', `${device.name}: o Player receberá o comando na próxima consulta.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) {
+      toast('Não foi possível reiniciar', error.message, 'error', 6500);
+      return false;
+    } finally {
+      setBusy(button, false);
     }
   }
 
@@ -1345,7 +1585,7 @@
   }
 
   function commandEventLabel(command) {
-    const label = ({ screenshot:'Captura de tela' })[command.command_type] || command.command_type || 'Comando';
+    const label = remoteCommandLabel(command.command_type);
     if (command.status === 'completed') return { severity:'info', message:`${label} concluída.`, code:`command_${command.command_type}_completed` };
     if (command.status === 'failed') return { severity:'error', message:command.error_message || `${label} falhou.`, code:`command_${command.command_type}_failed` };
     return { severity:'info', message:`${label} solicitada.`, code:`command_${command.command_type}_requested` };
@@ -1403,6 +1643,7 @@
         const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
         const storageBytes = device.storage_free_mb == null ? null : Number(device.storage_free_mb) * 1024 * 1024;
         const queueTotal = Number(device.playback_queue_size || 0) + Number(device.event_queue_size || 0);
+        const diagnostics = deviceDiagnostics(device);
         return `
           <article class="monitor-device-card ${activeIssue ? 'has-issue' : ''}">
             <div class="monitor-device-head">
@@ -1416,12 +1657,15 @@
               <span class="health-chip ${syncStale ? 'warning' : 'ok'}">${syncStale ? 'Sincronização atrasada' : 'Sincronização normal'}</span>
               ${activeIssue ? '<span class="health-chip error">Falha ativa</span>' : '<span class="health-chip ok">Sem falha ativa</span>'}
               ${queueTotal ? `<span class="health-chip warning">${queueTotal} pendência(s) offline</span>` : ''}
+              ${diagnostics.map(alert => `<span class="health-chip ${alert.level}">${escapeHtml(alert.label)}</span>`).join('')}
             </div>
             <div class="monitor-data-grid">
               <div><span>Última conexão</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
               <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
-              <div><span>Versão</span><strong>${escapeHtml(device.app_version || '—')}</strong></div>
+              <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
+              <div><span>APK</span><strong>${escapeHtml(device.apk_version || '—')}</strong></div>
               <div><span>Resolução</span><strong>${escapeHtml(resolution)}</strong></div>
+              <div><span>Orientação</span><strong>${escapeHtml(orientationLabel(device.orientation))} / reportada: ${escapeHtml(reportedOrientationLabel(device.reported_orientation))}</strong></div>
               <div><span>Cache local</span><strong>${Number(device.cache_items || 0)} item(ns) • ${escapeHtml(formatBytes(Number(device.cache_bytes || 0)))}</strong></div>
               <div><span>Espaço livre estimado</span><strong>${escapeHtml(storageBytes == null ? '—' : formatBytes(storageBytes))}</strong></div>
               <div><span>Campanha atual</span><strong>${escapeHtml(campaignName)}</strong></div>
@@ -1493,34 +1737,55 @@
     }).join('');
   }
 
+  async function loadStablePreviewElement(media, url) {
+    if (media.media_type === 'image') {
+      const image = new Image();
+      image.loading = 'lazy';
+      image.decoding = 'async';
+      image.alt = media.name || 'Imagem';
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('Tempo excedido ao carregar a miniatura.')), 12000);
+        image.onload = () => { clearTimeout(timeout); resolve(); };
+        image.onerror = () => { clearTimeout(timeout); reject(new Error('Miniatura indisponível.')); };
+        image.src = url;
+      });
+      return image;
+    }
+    const video = document.createElement('video');
+    video.muted = true;
+    video.preload = 'metadata';
+    video.playsInline = true;
+    await new Promise((resolve, reject) => {
+      const timeout = setTimeout(() => reject(new Error('Tempo excedido ao carregar o vídeo.')), 12000);
+      video.onloadedmetadata = () => { clearTimeout(timeout); resolve(); };
+      video.onerror = () => { clearTimeout(timeout); reject(new Error('Prévia do vídeo indisponível.')); };
+      video.src = url;
+    });
+    try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {}
+    return video;
+  }
+
   async function hydrateMediaPreviews() {
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
-      const preview = $([`[data-media-preview="${CSS.escape(media.id)}"]`].join(''));
-      if (!preview || preview.dataset.loadedPath === media.storage_path) continue;
+      const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
+      if (!preview || preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
+      preview.dataset.loadingPath = media.storage_path;
       try {
         const url = await signedMediaUrlCached(media);
         if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
-        let element;
-        if (media.media_type === 'image') {
-          element = new Image();
-          element.loading = 'lazy';
-          element.decoding = 'async';
-          element.alt = media.name || 'Imagem';
-          element.src = url;
-          try { await element.decode(); } catch {}
-        } else {
-          element = document.createElement('video');
-          element.muted = true;
-          element.preload = 'metadata';
-          element.playsInline = true;
-          element.src = url;
-        }
+        const element = await loadStablePreviewElement(media, url);
         if (!preview.isConnected) continue;
-        const placeholder = preview.querySelector('.media-preview-placeholder');
-        preview.insertBefore(element, placeholder || preview.firstChild);
-        placeholder?.remove();
+        const old = preview.querySelector(':scope > img, :scope > video');
+        if (old) old.replaceWith(element);
+        else preview.insertBefore(element, preview.firstChild);
+        preview.querySelector('.media-preview-placeholder')?.remove();
         preview.dataset.loadedPath = media.storage_path;
-      } catch { /* mantém placeholder sem piscar */ }
+        delete preview.dataset.previewError;
+      } catch {
+        if (preview.isConnected) preview.dataset.previewError = '1';
+      } finally {
+        if (preview.isConnected && preview.dataset.loadingPath === media.storage_path) delete preview.dataset.loadingPath;
+      }
     }
   }
 
@@ -1547,13 +1812,13 @@
     grid.innerHTML = state.media.map(media => {
       const linkedItems = state.playlistItems.filter(item => item.media_id === media.id);
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
-      const dimensions = media.width && media.height ? `${media.width}×${media.height}` : media.media_type === 'url' ? 'Tela dinâmica' : 'Resolução não detectada';
+      const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
-      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : media.media_type === 'video' ? 'Vídeo' : 'Conteúdo dinâmico';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
-          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : media.media_type === 'url' ? '◉' : '▧'}</span>
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
@@ -1611,30 +1876,22 @@
     for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
       const media = mediaById[mediaId];
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        if (!url) continue;
-        const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
-        targets.forEach(target => {
-          if (target.dataset.loaded === '1') return;
-          target.dataset.loaded = '1';
-          if (media.media_type === 'image') {
-            const img = new Image();
-            img.loading = 'lazy';
-            img.alt = media.name || 'Mídia da playlist';
-            img.src = url;
-            target.replaceChildren(img);
-          } else {
-            const video = document.createElement('video');
-            video.muted = true;
-            video.playsInline = true;
-            video.preload = 'metadata';
-            video.setAttribute('aria-label', media.name || 'Vídeo da playlist');
-            video.src = url;
-            target.replaceChildren(video);
-          }
-        });
-      } catch { /* mantém placeholder */ }
+      const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
+      for (const target of targets) {
+        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        target.dataset.loadingPath = media.storage_path;
+        try {
+          const url = await signedMediaUrlCached(media);
+          const element = await loadStablePreviewElement(media, url);
+          if (!target.isConnected) continue;
+          target.replaceChildren(element);
+          target.dataset.loadedPath = media.storage_path;
+        } catch {
+          // Mantém o placeholder atual e permite nova tentativa numa próxima atualização.
+        } finally {
+          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
+        }
+      }
     }
   }
 
@@ -1692,6 +1949,21 @@
       grid.innerHTML = '<div class="playlist-filter-empty"><strong>Nenhuma playlist encontrada</strong><span>Ajuste a busca ou o filtro para ver outras playlists.</span></div>';
       return;
     }
+
+    const stablePreviewIds = rows.flatMap(row => row.previewMedia.map(media => media.id));
+    const playlistSignature = [
+      query, statusFilter, sortMode,
+      rows.map(row => [
+        row.playlist.id, row.playlist.name, row.playlist.description, row.updatedAt,
+        row.items.map(item => [item.id,item.media_id,item.position,item.enabled,item.schedule_enabled,item.updated_at].join(':')).join(','),
+        row.previewMedia.map(media => [media.id,media.storage_path,media.updated_at].join(':')).join(',')
+      ].join('|')).join('||')
+    ].join('__');
+    if (playlistSignature === state.playlistRenderSignature && grid.children.length === rows.length) {
+      hydratePlaylistCardPreviews(stablePreviewIds);
+      return;
+    }
+    state.playlistRenderSignature = playlistSignature;
 
     const previewIds = [];
     grid.innerHTML = rows.map(({ playlist, items, stateInfo, schedule, duration, tvCount, previewMedia }) => {
@@ -1765,14 +2037,54 @@
     const validIds = new Set(items.map(item => item.id));
     state.selectedPlaylistItemIds = new Set([...state.selectedPlaylistItemIds].filter(id => validIds.has(id)));
     const mediaById = Object.fromEntries(state.media.map(m => [m.id, m]));
+    const itemLimit = Math.max(60, Number(state.playlistItemRenderLimit || 60));
+    const mediaLimitForSignature = Math.max(60, Number(state.playlistMediaRenderLimit || 60));
+    const queryForSignature = String(state.playlistMediaQuery || '').trim().toLowerCase();
+    const editorSignature = [
+      playlist.id,
+      playlist.name,
+      itemLimit,
+      mediaLimitForSignature,
+      queryForSignature,
+      [...state.selectedPlaylistItemIds].sort().join(','),
+      items.map(item => [
+        item.id,item.media_id,item.position,item.duration_override_seconds,item.enabled,item.is_essential,item.schedule_enabled,
+        item.start_date,item.end_date,item.start_time,item.end_time,
+        Array.isArray(item.weekdays) ? item.weekdays.join('.') : '',item.updated_at
+      ].join(':')).join('|'),
+      state.media.map(media => [
+        media.id,media.name,media.media_type,media.storage_path,media.updated_at,media.width,media.height,media.size_bytes
+      ].join(':')).join('|')
+    ].join('__');
+    if (
+      editorSignature === state.playlistEditorRenderSignature &&
+      $('#playlist-items-list')?.children.length >= 0 &&
+      $('#playlist-media-picker')
+    ) {
+      syncPlaylistBulkUi();
+      hydratePlaylistPreviews();
+      return;
+    }
+    state.playlistEditorRenderSignature = editorSignature;
 
+
+    const visibleItems = items.slice(0, itemLimit);
     const list = $('#playlist-items-list');
     $('#playlist-items-empty').classList.toggle('hidden', items.length > 0);
-    list.innerHTML = items.map((item, index) => {
+    if ($('#playlist-items-count')) $('#playlist-items-count').textContent = items.length
+      ? `${Math.min(visibleItems.length, items.length)} de ${items.length} mídias`
+      : '0 mídias';
+    const moreItems = $('#playlist-items-more');
+    if (moreItems) {
+      moreItems.classList.toggle('hidden', visibleItems.length >= items.length);
+      moreItems.textContent = visibleItems.length < items.length
+        ? `Carregar mais (${items.length - visibleItems.length} restantes)`
+        : 'Todas carregadas';
+    }
+
+    list.innerHTML = visibleItems.map((item, index) => {
       const media = mediaById[item.media_id];
       const isImage = media?.media_type === 'image';
-      const isDynamic = media?.media_type === 'url';
-      const hasTimedDuration = isImage || isDynamic;
       const seconds = Math.max(1, Math.round(Number(item.duration_override_seconds || media?.duration_seconds || 10)));
       const checked = state.selectedPlaylistItemIds.has(item.id);
       return `
@@ -1780,16 +2092,36 @@
           <input class="playlist-select-box" type="checkbox" data-select-playlist-item="${item.id}" ${checked ? 'checked' : ''} aria-label="Selecionar ${escapeHtml(media?.name || 'mídia')}" />
           <span class="drag-handle" title="Arrastar para ordenar">⋮⋮</span>
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
-          <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span></div></div>
-          ${hasTimedDuration ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
-          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+          <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span>${item.is_essential ? '<span class="schedule-chip active" title="Se esta mídia não puder ser carregada, o Player pode ativar a playlist de emergência.">Essencial</span>' : ''}</div></div>
+          ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como essencial para fallback'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
 
     const picker = $('#playlist-media-picker');
-    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
     const included = new Map(items.map((item,index) => [item.media_id,index + 1]));
-    picker.innerHTML = state.media.map(media => { const order=included.get(media.id); return `<div class="picker-row ${order?'already-selected':''}"><div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type==='video'?'▶':'▧'}</span></div><div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small><span class="playlist-selection-state ${order?'selected':''}">${order?`Já adicionada • ordem ${order}`:'Ainda não selecionada'}</span></div><button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order?'disabled':''}>${order?'Adicionada':'+ Adicionar'}</button></div>`; }).join('');
+    const query = queryForSignature;
+    const filteredMedia = state.media.filter(media => !query || String(media.name || '').toLowerCase().includes(query));
+    const mediaLimit = mediaLimitForSignature;
+    const visibleMedia = filteredMedia.slice(0, mediaLimit);
+    $('#playlist-media-empty').classList.toggle('hidden', state.media.length > 0);
+    if ($('#playlist-media-count')) $('#playlist-media-count').textContent = query
+      ? `${filteredMedia.length} resultado${filteredMedia.length === 1 ? '' : 's'}`
+      : `${state.media.length} disponíveis`;
+    const moreMedia = $('#playlist-media-more');
+    if (moreMedia) {
+      moreMedia.classList.toggle('hidden', visibleMedia.length >= filteredMedia.length);
+      moreMedia.textContent = visibleMedia.length < filteredMedia.length
+        ? `Carregar mais (${filteredMedia.length - visibleMedia.length} restantes)`
+        : 'Todas carregadas';
+    }
+
+    picker.innerHTML = !filteredMedia.length && state.media.length
+      ? '<div class="mini-empty playlist-search-empty">Nenhuma mídia encontrada com essa busca.</div>'
+      : visibleMedia.map(media => {
+          const order=included.get(media.id);
+          return `<div class="picker-row ${order?'already-selected':''}"><div class="playlist-thumb" data-playlist-media-preview="${media.id}"><span>${media.media_type==='video'?'▶':'▧'}</span></div><div class="grow"><strong>${escapeHtml(media.name)}</strong><small>${escapeHtml(media.media_type)} • ${escapeHtml(formatBytes(media.size_bytes))}</small><span class="playlist-selection-state ${order?'selected':''}">${order?`Já adicionada • ordem ${order}`:'Ainda não selecionada'}</span></div><button class="small-icon-button picker-add-button" data-add-media-to-playlist="${media.id}" ${order?'disabled':''}>${order?'Adicionada':'+ Adicionar'}</button></div>`;
+        }).join('');
 
     const replace = $('#playlist-bulk-replace-media');
     if (replace) replace.innerHTML = '<option value="">Substituir por...</option>' + state.media.map(media => `<option value="${media.id}">${escapeHtml(media.name)}</option>`).join('');
@@ -1802,19 +2134,21 @@
     for (const media of state.media.filter(item => visibleIds.has(item.id))) {
       const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
       if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
-      try {
-        const url = await getSignedMediaUrl(media.storage_path);
-        targets.forEach(target => {
-          if (target.dataset.loaded === '1') return;
-          target.dataset.loaded = '1';
-          if (media.media_type === 'image') {
-            const img = document.createElement('img'); img.alt = media.name; img.loading = 'lazy'; img.src = url; target.prepend(img);
-          } else {
-            const video = document.createElement('video'); video.muted = true; video.playsInline = true; video.preload = 'metadata'; video.src = url; target.prepend(video);
-            video.addEventListener('loadedmetadata', () => { try { video.currentTime = Math.min(.1, Math.max(0, (video.duration || 1) / 10)); } catch {} }, { once:true });
-          }
-        });
-      } catch { /* keep placeholder */ }
+      for (const target of targets) {
+        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        target.dataset.loadingPath = media.storage_path;
+        try {
+          const url = await signedMediaUrlCached(media);
+          const element = await loadStablePreviewElement(media, url);
+          if (!target.isConnected) continue;
+          target.replaceChildren(element);
+          target.dataset.loadedPath = media.storage_path;
+        } catch {
+          // Mantém o placeholder e tenta novamente quando a tela for atualizada.
+        } finally {
+          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
+        }
+      }
     }
   }
 
@@ -2639,6 +2973,7 @@
       name: $('#device-name').value.trim(),
       platform: $('#device-platform').value,
       orientation: $('#device-orientation').value,
+      fallback_playlist_id: $('#device-fallback-playlist').value || null,
       settings: {
         ...currentSettings,
         audio_enabled: $('#device-audio-enabled').checked,
@@ -2682,6 +3017,8 @@
     $('#device-name').value = device.name;
     $('#device-platform').value = device.platform;
     $('#device-orientation').value = device.orientation;
+    $('#device-fallback-playlist').innerHTML = '<option value="">Usar fallback da empresa</option>' + state.playlists.map(playlist => `<option value="${playlist.id}">${escapeHtml(playlist.name)}</option>`).join('');
+    $('#device-fallback-playlist').value = device.fallback_playlist_id || '';
     const settings = device.settings && typeof device.settings === 'object' ? device.settings : {};
     $('#device-audio-enabled').checked = settings.audio_enabled !== false;
     $('#device-autostart-enabled').checked = settings.autostart_enabled !== false;
@@ -2923,7 +3260,7 @@
           playlist_id:playlistId,
           media_id:mediaId,
           position:nextPosition,
-          duration_override_seconds:['image','url'].includes(media.media_type) ? Number(media.duration_seconds || 10) : null,
+          duration_override_seconds:media.media_type === 'image' ? 10 : null,
           enabled:true,
         },
         prefer:'return=minimal',
@@ -3018,54 +3355,6 @@
     }
   }
 
-
-  function syncDynamicContentForm() {
-    const type = $('#dynamic-content-type')?.value || 'clock';
-    $('#dynamic-city-field')?.classList.toggle('hidden', type === 'news');
-    $('#dynamic-category-field')?.classList.toggle('hidden', type !== 'news');
-  }
-
-  async function handleCreateDynamicContent(event) {
-    event.preventDefault();
-    const button = $('#dynamic-content-save');
-    const type = $('#dynamic-content-type').value;
-    const city = ($('#dynamic-content-city').value || 'Anápolis').trim();
-    const category = $('#dynamic-content-category').value || 'geral';
-    const duration = Math.max(5, Math.min(300, Number($('#dynamic-content-duration').value || 15)));
-    const labels = { clock:'Relógio e data', weather:'Clima', news:'Notícias' };
-    const params = new URLSearchParams({ type });
-    if (type !== 'news') params.set('city', city || 'Anápolis');
-    if (type === 'news') params.set('category', category);
-    const sourceUrl = new URL('./widget.html', location.href);
-    sourceUrl.search = params.toString();
-    setBusy(button, true, 'Criando...');
-    try {
-      await restRequest('media_assets', {
-        method:'POST',
-        body:{
-          company_id:state.company.id,
-          name:type === 'weather' ? `Clima • ${city || 'Anápolis'}` : type === 'news' ? `Notícias • ${category}` : 'Relógio e data',
-          media_type:'url',
-          mime_type:'text/html',
-          storage_path:null,
-          source_url:sourceUrl.href,
-          duration_seconds:duration,
-          size_bytes:0,
-          width:null,
-          height:null,
-          processing_status:'ready',
-          created_by:state.user.id,
-        },
-        prefer:'return=minimal',
-      });
-      closeDialog('dynamic-content-dialog');
-      toast('Conteúdo dinâmico criado', `${labels[type]} já está disponível para adicionar à playlist.`);
-      await loadAllData();
-    } catch (error) {
-      toast('Não foi possível criar o conteúdo', error.message, 'error', 6500);
-    } finally { setBusy(button, false); }
-  }
-
   async function handleCreatePlaylist(event) {
     event.preventDefault();
     const button = $('#playlist-save');
@@ -3107,6 +3396,11 @@
   function openPlaylistEditor(id) {
     state.editingPlaylistId = id;
     state.selectedPlaylistItemIds = new Set();
+    state.playlistItemRenderLimit = 60;
+    state.playlistMediaRenderLimit = 60;
+    state.playlistMediaQuery = '';
+    state.playlistEditorRenderSignature = '';
+    if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
     renderPlaylistEditor();
     openDialog('playlist-items-dialog');
   }
@@ -3122,7 +3416,7 @@
           playlist_id: state.editingPlaylistId,
           media_id: mediaId,
           position: nextPosition,
-          duration_override_seconds: ['image','url'].includes(state.media.find(m => m.id === mediaId)?.media_type) ? Number(state.media.find(m => m.id === mediaId)?.duration_seconds || 10) : null,
+          duration_override_seconds: state.media.find(m => m.id === mediaId)?.media_type === 'image' ? 10 : null,
           enabled: true,
         },
         prefer: 'return=minimal',
@@ -3145,7 +3439,7 @@
       });
       const local = state.playlistItems.find(item => item.id === itemId);
       if (local) local.duration_override_seconds = Math.round(seconds);
-      toast('Tempo atualizado', `O conteúdo ficará ${Math.round(seconds)} segundo(s) na tela.`);
+      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
       renderPlaylistEditor();
     } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
   }
@@ -3333,6 +3627,21 @@
     await setSelectedPlaylistEnabled(!item.enabled);
   }
 
+  async function togglePlaylistItemEssential(itemId) {
+    const item = state.playlistItems.find(row => row.id === itemId);
+    if (!item) return;
+    try {
+      await restRequest('playlist_items', {
+        method:'PATCH',
+        query:`id=eq.${encodeURIComponent(itemId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
+        body:{ is_essential:!item.is_essential },
+        prefer:'return=minimal',
+      });
+      await loadAllData();
+      toast(!item.is_essential ? 'Mídia essencial' : 'Mídia comum', !item.is_essential ? 'A indisponibilidade desta mídia pode acionar o fallback.' : 'Esta mídia deixou de acionar o fallback sozinha.');
+    } catch (error) { toast('Erro ao atualizar mídia essencial', error.message, 'error'); }
+  }
+
   async function replaceSelectedPlaylistMedia() {
     const mediaId = $('#playlist-bulk-replace-media')?.value || '';
     const ids = [...state.selectedPlaylistItemIds];
@@ -3465,6 +3774,7 @@
     });
     $('#access-logout').addEventListener('click', logout);
     $('#access-notifications').addEventListener('click', enableAccessNotifications);
+    $('#app-notifications')?.addEventListener('click', enableAccessNotifications);
     $('#switch-account-button').addEventListener('click', logout);
     $('#logout-button').addEventListener('click', logout);
     $('#refresh-button').addEventListener('click', async () => {
@@ -3477,6 +3787,9 @@
     $$('[data-action="quick-device"]').forEach(btn => btn.addEventListener('click', () => { setView('devices'); openPairDeviceDialog(); }));
 
     $('#add-device-button').addEventListener('click', openPairDeviceDialog);
+    $('#add-device-group')?.addEventListener('click', () => openDeviceGroupDialog());
+    $('#device-group-form')?.addEventListener('submit', saveDeviceGroup);
+    $('#company-fallback-playlist')?.addEventListener('change', event => saveCompanyFallback(event.target.value));
     $('#monitor-refresh').addEventListener('click', async () => {
       const button = $('#monitor-refresh');
       setBusy(button, true, 'Atualizando...');
@@ -3490,17 +3803,27 @@
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
-    $('#add-dynamic-content-button')?.addEventListener('click', () => { syncDynamicContentForm(); openDialog('dynamic-content-dialog'); });
-    $('#dynamic-content-type')?.addEventListener('change', syncDynamicContentForm);
-    $('#dynamic-content-form')?.addEventListener('submit', handleCreateDynamicContent);
     $('[data-open-playlist-create]')?.addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-search')?.addEventListener('input', renderPlaylists);
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
     $('#playlist-sort')?.addEventListener('change', renderPlaylists);
+    $('#playlist-media-search')?.addEventListener('input', event => {
+      state.playlistMediaQuery = event.target.value || '';
+      state.playlistMediaRenderLimit = 60;
+      renderPlaylistEditor();
+    });
+    $('#playlist-items-more')?.addEventListener('click', () => {
+      state.playlistItemRenderLimit = Number(state.playlistItemRenderLimit || 60) + 60;
+      renderPlaylistEditor();
+    });
+    $('#playlist-media-more')?.addEventListener('click', () => {
+      state.playlistMediaRenderLimit = Number(state.playlistMediaRenderLimit || 60) + 60;
+      renderPlaylistEditor();
+    });
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
-    $('#player-branding-form').addEventListener('submit', savePlayerBranding);
-    $('#branding-copy-url').addEventListener('click', async () => { const value=$('#branding-player-url').value; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url').select();document.execCommand('copy');toast('Link copiado')} });
-    $('#branding-open-player').addEventListener('click', () => window.open($('#branding-player-url').value || './player.html','_blank','noopener'));
+    $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
+    $('#branding-copy-url')?.addEventListener('click', async () => { const value=$('#branding-player-url')?.value || ''; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url')?.select();document.execCommand('copy');toast('Link copiado')} });
+    $('#branding-open-player')?.addEventListener('click', () => window.open($('#branding-player-url')?.value || './player.html','_blank','noopener'));
     $('#playlist-schedule-form').addEventListener('submit', applyPlaylistSchedule);
     $('#playlist-schedule-clear').addEventListener('click', clearPlaylistSchedule);
     $('#playlist-schedule-enabled').addEventListener('change', () => { playlistScheduleStatus(); syncPlaylistScheduleFormVisibility(); });
@@ -3530,19 +3853,26 @@
 
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
+    document.addEventListener('change', event => {
+      const groupSelect = event.target.closest?.('[data-device-group]');
+      if (groupSelect) setDeviceGroup(groupSelect.dataset.deviceGroup, groupSelect.value);
+    });
+
     document.addEventListener('click', event => {
       const authorizeDevice = event.target.closest('[data-authorize-device]');
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
       const viewDevice = event.target.closest('[data-view-device]');
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
+      const captureDevice = event.target.closest('[data-capture-device]');
+      if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
       const restartDevice = event.target.closest('[data-restart-device]');
       if (restartDevice) return requestDeviceRestart(restartDevice.dataset.restartDevice, restartDevice);
       const maintenanceButton = event.target.closest('[data-maintenance-command][data-maintenance-device]');
       if (maintenanceButton) return requestDeviceMaintenanceCommand(maintenanceButton.dataset.maintenanceDevice, maintenanceButton.dataset.maintenanceCommand, maintenanceButton);
-      const quickOrientation = event.target.closest('[data-quick-orientation]');
-      if (quickOrientation) return setQuickDeviceOrientation(quickOrientation.dataset.quickOrientation, quickOrientation.dataset.orientation);
-      const captureDevice = event.target.closest('[data-capture-device]');
-      if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
+      const editGroup = event.target.closest('[data-edit-device-group]');
+      if (editGroup) return openDeviceGroupDialog(editGroup.dataset.editDeviceGroup);
+      const deleteGroup = event.target.closest('[data-delete-device-group]');
+      if (deleteGroup) return deleteDeviceGroup(deleteGroup.dataset.deleteDeviceGroup);
       const replaceDevice = event.target.closest('[data-replace-device]');
       if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
@@ -3577,6 +3907,8 @@
       if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
       const editItemSchedule = event.target.closest('[data-edit-item-schedule]');
       if (editItemSchedule) { state.selectedPlaylistItemIds = new Set([editItemSchedule.dataset.editItemSchedule]); renderPlaylistEditor(); return openPlaylistScheduleDialog([editItemSchedule.dataset.editItemSchedule]); }
+      const toggleEssential = event.target.closest('[data-toggle-item-essential]');
+      if (toggleEssential) return togglePlaylistItemEssential(toggleEssential.dataset.toggleItemEssential);
       const toggleItem = event.target.closest('[data-toggle-item-enabled]');
       if (toggleItem) return togglePlaylistItemEnabled(toggleItem.dataset.toggleItemEnabled);
       const removeItem = event.target.closest('[data-remove-item]');
@@ -3622,7 +3954,15 @@
     document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
     $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; });
-    $('#playlist-items-dialog').addEventListener('close', () => { state.editingPlaylistId = null; state.selectedPlaylistItemIds = new Set(); });
+    $('#playlist-items-dialog').addEventListener('close', () => {
+      state.editingPlaylistId = null;
+      state.selectedPlaylistItemIds = new Set();
+      state.playlistItemRenderLimit = 60;
+      state.playlistMediaRenderLimit = 60;
+      state.playlistMediaQuery = '';
+      state.playlistEditorRenderSignature = '';
+      if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
+    });
   }
 
   bootstrap().catch(error => {
