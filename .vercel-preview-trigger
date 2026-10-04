@@ -1,0 +1,3 @@
+Vision Mídia Digital recovery preview
+Branch: fix/recover-pre-vercel-orientation-fit
+Purpose: validate isolated recovery blocks without production promotion.
