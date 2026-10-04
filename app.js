@@ -1738,6 +1738,14 @@
   }
 
   async function loadStablePreviewElement(media, url) {
+    if (media.media_type === 'url') {
+      const frame = document.createElement('iframe');
+      frame.src = media.source_url || url;
+      frame.title = media.name || 'Conteúdo dinâmico';
+      frame.loading = 'lazy';
+      frame.setAttribute('sandbox','allow-scripts allow-same-origin');
+      return frame;
+    }
     if (media.media_type === 'image') {
       const image = new Image();
       image.loading = 'lazy';
@@ -1767,15 +1775,15 @@
 
   async function hydrateMediaPreviews() {
     const renderSignature = state.mediaRenderSignature;
-    for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
+    for (const media of state.media.filter(item => (item.storage_path || item.source_url) && ['image','video','url'].includes(item.media_type))) {
       const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
       if (!preview || preview.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || preview.dataset.loadingPath === media.storage_path) continue;
       preview.dataset.loadingPath = media.storage_path;
       try {
-        const url = await signedMediaUrlCached(media);
-        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path || state.mediaRenderSignature !== renderSignature) continue;
+        const url = media.media_type === 'url' ? media.source_url : await signedMediaUrlCached(media);
+        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
         const element = await loadStablePreviewElement(media, url);
-        if (!preview.isConnected || state.mediaRenderSignature !== renderSignature) continue;
+        if (!preview.isConnected) continue;
         const old = preview.querySelector(':scope > img, :scope > video');
         if (old) old.replaceWith(element);
         else preview.insertBefore(element, preview.firstChild);
@@ -1877,15 +1885,15 @@
     const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
     for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
       const media = mediaById[mediaId];
-      if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
+      if (!(media?.storage_path || media?.source_url) || !['image','video','url'].includes(media.media_type)) continue;
       const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
       for (const target of targets) {
         if (target.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || target.dataset.loadingPath === media.storage_path) continue;
         target.dataset.loadingPath = media.storage_path;
         try {
-          const url = await signedMediaUrlCached(media);
+          const url = media.media_type === 'url' ? media.source_url : await signedMediaUrlCached(media);
           const element = await loadStablePreviewElement(media, url);
-          if (!target.isConnected || state.playlistRenderSignature !== renderSignature) continue;
+          if (!target.isConnected) continue;
           target.replaceChildren(element);
           target.dataset.loadedPath = `${media.storage_path}:${media.updated_at || ''}`;
         } catch {
@@ -2140,7 +2148,7 @@
         if (target.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || target.dataset.loadingPath === media.storage_path) continue;
         target.dataset.loadingPath = media.storage_path;
         try {
-          const url = await signedMediaUrlCached(media);
+          const url = media.media_type === 'url' ? media.source_url : await signedMediaUrlCached(media);
           const element = await loadStablePreviewElement(media, url);
           if (!target.isConnected) continue;
           target.replaceChildren(element);
@@ -3357,6 +3365,39 @@
     }
   }
 
+  function syncDynamicContentForm() {
+    const type = $('#dynamic-content-type')?.value || 'clock';
+    $('#dynamic-city-field')?.classList.toggle('hidden', type === 'news');
+    $('#dynamic-category-field')?.classList.toggle('hidden', type !== 'news');
+  }
+
+  async function handleCreateDynamicContent(event) {
+    event.preventDefault();
+    const button = $('#dynamic-content-save');
+    const type = $('#dynamic-content-type').value;
+    const city = ($('#dynamic-content-city').value || 'Anápolis').trim();
+    const category = $('#dynamic-content-category').value || 'geral';
+    const duration = Math.max(5, Math.min(300, Number($('#dynamic-content-duration').value || 15)));
+    const params = new URLSearchParams({ type });
+    if (type !== 'news') params.set('city', city || 'Anápolis');
+    if (type === 'news') params.set('category', category);
+    const sourceUrl = new URL('./widget.html', location.href);
+    sourceUrl.search = params.toString();
+    setBusy(button, true, 'Criando...');
+    try {
+      await restRequest('media_assets', { method:'POST', body:{
+        company_id:state.company.id,
+        name:type === 'weather' ? `Clima • ${city || 'Anápolis'}` : type === 'news' ? `Notícias • ${category}` : 'Relógio e data',
+        media_type:'url', mime_type:'text/html', storage_path:null, source_url:sourceUrl.href,
+        duration_seconds:duration, size_bytes:0, width:null, height:null, processing_status:'ready', created_by:state.user.id
+      }, prefer:'return=minimal' });
+      closeDialog('dynamic-content-dialog');
+      toast('Conteúdo dinâmico criado');
+      await loadAllData();
+    } catch (error) { toast('Não foi possível criar o conteúdo', error.message, 'error', 6500); }
+    finally { setBusy(button, false); }
+  }
+
   async function handleCreatePlaylist(event) {
     event.preventDefault();
     const button = $('#playlist-save');
@@ -3805,6 +3846,9 @@
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
+    $('#add-dynamic-content-button')?.addEventListener('click', () => { syncDynamicContentForm(); openDialog('dynamic-content-dialog'); });
+    $('#dynamic-content-type')?.addEventListener('change', syncDynamicContentForm);
+    $('#dynamic-content-form')?.addEventListener('submit', handleCreateDynamicContent);
     $('[data-open-playlist-create]')?.addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-search')?.addEventListener('input', renderPlaylists);
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
