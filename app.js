@@ -4410,8 +4410,8 @@
       catch (error) { toast('Falha ao atualizar', error.message, 'error'); }
     });
     $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
-    $('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
-    $('[data-go-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.goView)));
+    $$('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
+    $$('[data-go-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.goView)));
     $('#inbox-refresh')?.addEventListener('click', async () => {
       const button = $('#inbox-refresh');
       setBusy(button, true, 'Atualizando...');
