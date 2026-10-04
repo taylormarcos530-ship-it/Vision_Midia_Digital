@@ -2274,3 +2274,17 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   .inbox-message-actions{grid-column:1/-1;justify-content:stretch}
   .inbox-message-actions .button{flex:1}
 }
+
+/* Compact device health list */
+.monitor-device-tools{display:grid;grid-template-columns:minmax(0,1fr) minmax(150px,220px);gap:10px;margin:0 0 12px}
+.monitor-device-tools label{display:grid;gap:5px;color:var(--muted);font-size:9px}
+.monitor-device-tools input,.monitor-device-tools select{min-height:38px;padding:8px 10px}
+.monitor-device-card{position:relative;padding-right:88px}
+.monitor-device-toggle{position:absolute;right:14px;top:14px;border:1px solid #31445f;background:#15243a;color:#dce8ff;border-radius:9px;padding:7px 9px;font-size:9px;font-weight:800;cursor:pointer}
+.monitor-device-card .monitor-device-details{display:none}
+.monitor-device-card.expanded .monitor-device-details{display:grid}
+@media(max-width:560px){
+ .monitor-device-tools{grid-template-columns:1fr}
+ .monitor-device-card{padding:12px;padding-right:78px}
+ .monitor-device-toggle{right:10px;top:10px}
+}
