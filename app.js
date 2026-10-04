@@ -2120,12 +2120,23 @@
 
     const grid = $('#monitor-devices-grid');
     const empty = $('#monitor-devices-empty');
-    const hasDevices = state.devices.length > 0;
+    const search = String($('#monitor-device-search')?.value || '').trim().toLowerCase();
+    const deviceFilter = $('#monitor-device-filter')?.value || 'all';
+    const visibleDevices = state.devices.filter(device => {
+      const status = effectiveDeviceStatus(device);
+      if (search && !String(device.name || '').toLowerCase().includes(search)) return false;
+      if (deviceFilter === 'online' && status !== 'online') return false;
+      if (deviceFilter === 'offline' && status !== 'offline') return false;
+      if (deviceFilter === 'issue' && !deviceHasActiveIssue(device)) return false;
+      if (deviceFilter === 'stale' && !deviceSyncIsStale(device)) return false;
+      return true;
+    });
+    const hasDevices = visibleDevices.length > 0;
     empty.classList.toggle('hidden', hasDevices);
     grid.classList.toggle('hidden', !hasDevices);
 
     if (hasDevices) {
-      grid.innerHTML = state.devices.map(device => {
+      grid.innerHTML = visibleDevices.map(device => {
         const status = effectiveDeviceStatus(device);
         const activeIssue = deviceHasActiveIssue(device);
         const syncStale = deviceSyncIsStale(device);
@@ -2142,6 +2153,7 @@
         const likelyCause = deviceLikelyCause(device);
         return `
           <article class="monitor-device-card ${activeIssue ? 'has-issue' : ''}">
+            <button class="monitor-device-toggle" type="button" data-monitor-device-toggle="${escapeHtml(device.id)}" aria-expanded="false">Detalhes</button>
             <div class="monitor-device-head">
               <div>
                 <strong>${escapeHtml(device.name)}</strong>
@@ -2155,7 +2167,7 @@
               ${queueTotal ? `<span class="health-chip warning">${queueTotal} pendência(s) offline</span>` : ''}
               ${diagnostics.map(alert => `<span class="health-chip ${alert.level}">${escapeHtml(alert.label)}</span>`).join('')}
             </div>
-            <div class="monitor-data-grid">
+            <div class="monitor-data-grid monitor-device-details">
               <div><span>Última conexão</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
               <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
               <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
@@ -2172,7 +2184,7 @@
               <div><span>Data/hora</span><strong class="monitor-wrap-value">${escapeHtml(clockHealth)}</strong></div>
               <div class="monitor-diagnostic-cell"><span>Diagnóstico</span><strong class="monitor-wrap-value">${escapeHtml(likelyCause)}</strong></div>
             </div>
-            ${activeIssue ? `<div class="monitor-last-error"><strong>Última falha:</strong> ${escapeHtml(device.last_error_message || device.last_error_code || 'Erro do player')}<small>${escapeHtml(formatMonitorDateTime(device.last_error_at))}</small></div>` : ''}
+            ${activeIssue ? `<div class="monitor-last-error monitor-device-details"><strong>Última falha:</strong> ${escapeHtml(device.last_error_message || device.last_error_code || 'Erro do player')}<small>${escapeHtml(formatMonitorDateTime(device.last_error_at))}</small></div>` : ''}
           </article>`;
       }).join('');
     } else {
@@ -4487,6 +4499,16 @@
       finally { setBusy(button, false); }
     });
     $('#monitor-severity-filter').addEventListener('change', renderMonitoring);
+    $('#monitor-device-search')?.addEventListener('input', renderMonitoring);
+    $('#monitor-device-filter')?.addEventListener('change', renderMonitoring);
+    $('#monitor-devices-grid')?.addEventListener('click', event => {
+      const button = event.target.closest('[data-monitor-device-toggle]');
+      if (!button) return;
+      const card = button.closest('.monitor-device-card');
+      const expanded = card?.classList.toggle('expanded') || false;
+      button.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+      button.textContent = expanded ? 'Ocultar' : 'Detalhes';
+    });
     $('#pair-device-form').addEventListener('submit', handlePairDevice);
     $('#view-tv-refresh').addEventListener('click', refreshTvViewer);
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
