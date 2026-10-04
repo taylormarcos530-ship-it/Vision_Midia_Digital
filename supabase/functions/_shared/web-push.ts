@@ -9,8 +9,24 @@ export type VisionPushPayload = {
   tag?: string
 }
 
+async function persistCompanyNotificationBestEffort(admin: any, companyId: string, payload: VisionPushPayload) {
+  try {
+    const title = String(payload.title || 'Vision Mídia Digital').slice(0, 120)
+    const message = String(payload.body || '').slice(0, 500)
+    if (!title || !message) return
+    const { error } = await admin
+      .from('company_notifications')
+      .insert({ company_id: companyId, title, message })
+    if (error) console.warn('notification inbox save failed', companyId, error.message || error)
+  } catch (error: any) {
+    console.warn('notification inbox save failed', companyId, error?.message || error)
+  }
+}
+
 export async function sendCompanyPush(admin: any, companyId: string, payload: VisionPushPayload) {
   if (!companyId) return { sent: 0, failed: 0, skipped: 'company_required' }
+
+  await persistCompanyNotificationBestEffort(admin, companyId, payload)
 
   const { data: cfg, error: cfgError } = await admin
     .from('web_push_config')
