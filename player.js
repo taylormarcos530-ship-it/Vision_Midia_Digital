@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.1';
+  const APP_VERSION = 'vision-player-web-1.5.2';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -520,6 +520,13 @@
       }
     } catch { /* telemetry is optional */ }
 
+    const nativeNetwork = nativeNetworkDiagnostics();
+    const networkConnected = nativeNetwork?.connected == null ? navigator.onLine : Boolean(nativeNetwork.connected);
+    const networkValidated = nativeNetwork?.validated == null ? null : Boolean(nativeNetwork.validated);
+    const networkTransport = String(nativeNetwork?.transport || (navigator.onLine ? 'unknown' : 'offline')).slice(0, 40);
+    const clientTimeMs = Date.now();
+    const timezoneOffsetMinutes = new Date(clientTimeMs).getTimezoneOffset();
+
     await monitorGateway({
       action: 'heartbeat',
       app_version: APP_VERSION,
@@ -537,7 +544,24 @@
       cache_bytes: state.cacheBytes,
       playback_queue_size: playbackQueue().length,
       event_queue_size: deviceEventQueue().length,
-      details: { standalone: matchMedia('(display-mode: standalone)').matches, language: navigator.language, player_version: APP_VERSION, apk_version: nativeAppVersion() },
+      client_time_ms: clientTimeMs,
+      timezone_offset_minutes: timezoneOffsetMinutes,
+      timezone_name: browserTimeZoneName(),
+      network_connected: networkConnected,
+      network_validated: networkValidated,
+      network_transport: networkTransport,
+      details: {
+        standalone: matchMedia('(display-mode: standalone)').matches,
+        language: navigator.language,
+        player_version: APP_VERSION,
+        apk_version: nativeAppVersion(),
+        client_time_ms: clientTimeMs,
+        timezone_offset_minutes: timezoneOffsetMinutes,
+        timezone_name: browserTimeZoneName(),
+        network_connected: networkConnected,
+        network_validated: networkValidated,
+        network_transport: networkTransport,
+      },
     });
   }
 
@@ -596,6 +620,20 @@
 
   function nativeAppVersion() {
     try { return String(window.VisionAndroid?.getAppVersion?.() || '').slice(0, 80) || null; }
+    catch { return null; }
+  }
+
+  function nativeNetworkDiagnostics() {
+    try {
+      const raw = window.VisionAndroid?.getNetworkDiagnostics?.();
+      if (!raw) return null;
+      const data = JSON.parse(String(raw));
+      return data && typeof data === 'object' ? data : null;
+    } catch { return null; }
+  }
+
+  function browserTimeZoneName() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; }
     catch { return null; }
   }
 
