@@ -2288,3 +2288,19 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
  .monitor-device-card{padding:12px;padding-right:78px}
  .monitor-device-toggle{right:10px;top:10px}
 }
+
+
+/* TV artwork sizing guide */
+.media-size-guide{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:10px 0 14px}
+.media-size-guide>div,.media-upload-check{border:1px solid var(--line);border-radius:12px;background:var(--surface-2);padding:12px 14px}
+.media-size-guide strong,.media-size-guide span,.media-size-guide small,.media-upload-check strong,.media-upload-check span,.media-upload-check small{display:block}
+.media-size-guide strong{font-size:12px;color:var(--text)}
+.media-size-guide span{font-size:18px;font-weight:900;margin:4px 0;color:#dce7ff}
+.media-size-guide small,.media-upload-check small{font-size:11px;line-height:1.45;color:var(--muted)}
+.media-upload-check{display:grid;gap:4px;margin:0 0 14px}
+.media-upload-check.is-ideal{border-color:rgba(37,208,167,.4)}
+.media-upload-check.is-ideal strong{color:#72e0bf}
+.media-upload-check.has-warning{border-color:rgba(242,191,74,.45)}
+.media-upload-check.has-warning strong{color:#f3c96f}
+.media-upload-check span{font-size:12px;color:#dce5f3}
+@media(max-width:650px){.media-size-guide{grid-template-columns:1fr}.media-size-guide span{font-size:16px}}
