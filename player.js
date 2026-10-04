@@ -780,9 +780,9 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 30_000);
+    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 10_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
-    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 2_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
     pollDeviceCommands().catch(() => {});
   }
