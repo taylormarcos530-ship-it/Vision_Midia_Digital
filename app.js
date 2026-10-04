@@ -1977,8 +1977,7 @@
 
   function renderPlayerBranding() {
     const panel = $('#player-branding-panel');
-    if (panel) panel.classList.toggle('hidden', !state.isPlatformAdmin);
-    if (!state.isPlatformAdmin) return;
+    if (panel) panel.classList.remove('hidden');
     const b = state.playerBranding;
     const title = b?.title || 'Vision Player';
     const message = b?.message || 'Instale o Player e vincule a TV pelo código.';
@@ -1996,7 +1995,7 @@
 
   async function hydratePlayerBrandingPreview() {
     const preview = $('#player-branding-preview');
-    if (!state.isPlatformAdmin || !preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
+    if (!preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
     try {
       const url = await getSignedMediaUrl(state.playerBranding.splash_path);
       preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${url}")`;
