@@ -8,12 +8,10 @@ function clean(s){return String(s||'').replace(/<!\[CDATA\[|\]\]>/g,'').replace(
 function tag(block,name){const node=new DOMParser().parseFromString(block,'text/xml').querySelector(name);return clean(node?.textContent||'')}
 async function load(){
  try{
-  const feeds=source==='sports_br'?['https://www.mg.superesportes.com.br/rss/noticias/futebol/futebol-nacional/rss.xml','https://www.espn.com/espn/rss/soccer/news']:['https://www.espn.com/espn/rss/soccer/news'];
-  let xml='';
-  for(const feed of feeds){try{const r=await fetch('https://api.allorigins.win/raw?url='+encodeURIComponent(feed),{cache:'no-store'});if(r.ok){xml=await r.text();if(xml)break}}catch{}}
-  if(!xml)throw new Error('Fonte indisponível');
-  const doc=new DOMParser().parseFromString(xml,'text/xml');
-  items=[...doc.querySelectorAll('item')].slice(0,12).map(node=>({title:clean(node.querySelector('title')?.textContent),description:clean(node.querySelector('description')?.textContent)})).filter(x=>x.title);
+  const response=await fetch(new URL('./api/news-feed',location.href).href+'?source='+encodeURIComponent(source),{cache:'no-store'});
+  const data=await response.json();
+  if(!response.ok||!data.ok)throw new Error(data.error||'Fonte indisponível');
+  items=Array.isArray(data.items)?data.items:[];
   if(!items.length)throw new Error('Sem notícias');
   index=0;show();clearInterval(timer);timer=setInterval(show,10000);
  }catch(e){document.getElementById('content').innerHTML='<div class="error">Notícias online indisponíveis.<br>O Player continuará a programação normal.</div>'}

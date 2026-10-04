@@ -180,6 +180,9 @@ async function resolveProgram(admin, device) {
     group: group?.updated_at || null,
   }
 
+  // An active campaign targeted to all TVs or to this TV may override the
+  // normal playlist. This is intentional even when there is no direct
+  // playlist assignment; the ADM reports the effective campaign separately.
   if (campaign) {
     return {
       playlistId: campaign.playlist_id,

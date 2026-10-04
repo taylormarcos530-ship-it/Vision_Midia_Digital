@@ -1055,10 +1055,48 @@
     return days.includes(weekday);
   }
 
+  function campaignActiveNow(campaign) {
+    if (!campaign?.is_active) return false;
+    const clock = appLocalClock(state.company?.timezone);
+    const start = scheduleTimeSeconds(campaign.start_time);
+    const end = scheduleTimeSeconds(campaign.end_time);
+    let dateKey = clock.dateKey;
+    let weekday = clock.weekday;
+
+    if (start != null && end != null) {
+      if (start < end) {
+        if (clock.seconds < start || clock.seconds >= end) return false;
+      } else if (clock.seconds >= start) {
+        // Same calendar day.
+      } else if (clock.seconds < end) {
+        dateKey = clock.previousDateKey;
+        weekday = clock.previousWeekday;
+      } else return false;
+    }
+
+    if (campaign.start_date && dateKey < campaign.start_date) return false;
+    if (campaign.end_date && dateKey > campaign.end_date) return false;
+    const days = Array.isArray(campaign.weekdays) ? campaign.weekdays.map(Number) : [0,1,2,3,4,5,6];
+    return days.includes(weekday);
+  }
+
+  function campaignForDevice(device) {
+    const reported = device?.current_campaign_id
+      ? state.campaigns.find(campaign => campaign.id === device.current_campaign_id)
+      : null;
+    if (reported) return reported;
+    const targeted = new Set(state.campaignDevices
+      .filter(row => row.device_id === device?.id)
+      .map(row => row.campaign_id));
+    return state.campaigns.find(campaign =>
+      campaignActiveNow(campaign) && (campaign.all_devices || targeted.has(campaign.id))) || null;
+  }
+
   function devicePlaybackHealth(device) {
     const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
     const group = deviceGroupFor(device.id);
-    const playlistId = assignment?.playlist_id || group?.playlist_id || null;
+    const campaign = campaignForDevice(device);
+    const playlistId = campaign?.playlist_id || assignment?.playlist_id || group?.playlist_id || null;
     if (!playlistId) {
       return { level:'warning', playlistName:'Nenhuma', stateLabel:'Sem playlist', playlistId:null };
     }
@@ -1066,7 +1104,9 @@
     const items = state.playlistItems.filter(row => row.playlist_id === playlistId);
     const enabledItems = items.filter(row => row.enabled);
     const activeItems = enabledItems.filter(playlistItemActiveNow);
-    const sourceSuffix = !assignment?.playlist_id && group?.playlist_id ? ' • via grupo' : '';
+    const sourceSuffix = campaign
+      ? ` • campanha: ${campaign.name || 'ativa'}`
+      : (!assignment?.playlist_id && group?.playlist_id ? ' • via grupo' : '');
 
     if (!enabledItems.length) {
       return { level:'error', playlistName:playlist?.name || 'Playlist', stateLabel:`Sem mídia ativa${sourceSuffix}`, playlistId };
@@ -2164,8 +2204,10 @@
         const status = effectiveDeviceStatus(device);
         const activeIssue = deviceHasActiveIssue(device);
         const syncStale = deviceSyncIsStale(device);
-        const campaignName = monitorEntityName(state.campaigns, device.current_campaign_id, device.current_campaign_id ? 'Campanha removida' : 'Conteúdo padrão');
-        const playlistName = monitorEntityName(state.playlists, device.current_playlist_id, device.current_playlist_id ? 'Playlist removida' : '—');
+        const activeCampaign = campaignForDevice(device);
+        const campaignName = activeCampaign?.name || (device.current_campaign_id ? 'Campanha removida' : 'Conteúdo padrão');
+        const effectivePlaylistId = activeCampaign?.playlist_id || device.current_playlist_id;
+        const playlistName = monitorEntityName(state.playlists, effectivePlaylistId, effectivePlaylistId ? 'Playlist removida' : '—');
         const mediaName = monitorEntityName(state.media, device.current_media_id, device.current_media_id ? 'Mídia removida' : '—');
         const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
         const storageBytes = device.storage_free_mb == null ? null : Number(device.storage_free_mb) * 1024 * 1024;
@@ -3795,6 +3837,20 @@
     box.innerHTML = `<strong>${ideal ? '✓ Proporção ideal' : '⚠ Proporção diferente da TV'}</strong><span>Imagem selecionada: ${width} × ${height} px • ${orientation}</span><small>${ideal ? 'A proporção está adequada para preencher a TV nessa orientação.' : `Para evitar faixas pretas ou cortes, crie a arte em ${target}.`}</small>`;
   }
 
+  function resolveOnlineMediaUrl(rawUrl) {
+    const url = new URL(rawUrl, location.href);
+    const legacyVisionHost = /^(?:visionmidiadigital|vision-midia-digital)(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(url.hostname)
+      || /^(?:[a-z0-9-]+--)?visionmidiadigitalgo\.netlify\.app$/i.test(url.hostname);
+    const file = url.pathname.split('/').pop();
+    if (url.origin === location.origin || legacyVisionHost) {
+      if (file === 'clock.html' || (file === 'widget.html' && url.searchParams.get('type') === 'clock')) {
+        return new URL('./clock.html', location.href).href;
+      }
+      if (file === 'news-feed.html') return new URL('./news-feed.html' + url.search, location.href).href;
+    }
+    return url.href;
+  }
+
   function clockMediaUrl() {
     return new URL('./clock.html', location.href).href;
   }
@@ -3831,8 +3887,10 @@
     const duration = Math.max(5, Math.min(3600, Number($('#online-media-duration')?.value || 30)));
     if (!name || !rawUrl) return toast('Preencha o conteúdo online', 'Informe nome e URL.', 'error');
     let parsed;
-    try { parsed = new URL(rawUrl, location.href); } catch { return toast('URL inválida', 'Use um endereço HTTP ou HTTPS válido.', 'error'); }
+    try { parsed = new URL(resolveOnlineMediaUrl(rawUrl)); } catch { return toast('URL inválida', 'Use um endereço HTTP ou HTTPS válido.', 'error'); }
     if (!['http:', 'https:'].includes(parsed.protocol)) return toast('URL inválida', 'Use HTTP ou HTTPS.', 'error');
+    const builtIn = ['clock.html', 'news-feed.html'].find(file =>
+      parsed.origin === location.origin && parsed.pathname === new URL('./' + file, location.href).pathname);
     try {
       await restRequest('media_assets', {
         method: 'POST',
@@ -3842,7 +3900,7 @@
           media_type: 'url',
           mime_type: 'text/html',
           storage_path: null,
-          source_url: parsed.href,
+          source_url: builtIn ? './' + builtIn + parsed.search : parsed.href,
           duration_seconds: duration,
           size_bytes: 0,
           width: null,
@@ -3970,7 +4028,7 @@
     if (!media) return;
     try {
       if (media.media_type === 'url' && media.source_url) {
-        window.open(media.source_url, '_blank', 'noopener,noreferrer');
+        window.open(resolveOnlineMediaUrl(media.source_url), '_blank', 'noopener,noreferrer');
         return;
       }
       const url = await getSignedMediaUrl(media.storage_path);

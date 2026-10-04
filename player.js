@@ -850,6 +850,20 @@
     if (previousUrl && previousUrl !== objectUrl) URL.revokeObjectURL(previousUrl);
   }
 
+  function resolveOnlineMediaUrl(rawUrl) {
+    const url = new URL(rawUrl, location.href);
+    const legacyVisionHost = /^(?:visionmidiadigital|vision-midia-digital)(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(url.hostname)
+      || /^(?:[a-z0-9-]+--)?visionmidiadigitalgo\.netlify\.app$/i.test(url.hostname);
+    const file = url.pathname.split('/').pop();
+    if (url.origin === location.origin || legacyVisionHost) {
+      if (file === 'clock.html' || (file === 'widget.html' && url.searchParams.get('type') === 'clock')) {
+        return new URL('./clock.html', location.href).href;
+      }
+      if (file === 'news-feed.html') return new URL('./news-feed.html' + url.search, location.href).href;
+    }
+    return url.href;
+  }
+
   async function playItem(item, playlist, program, nonce) {
     const startedAt = new Date();
     let completed = false;
@@ -954,7 +968,7 @@
 
         const rawUrl = String(item.media.url || '').trim();
         let parsedUrl;
-        try { parsedUrl = new URL(rawUrl, location.href); }
+        try { parsedUrl = new URL(resolveOnlineMediaUrl(rawUrl)); }
         catch { throw new Error('URL inválida.'); }
         if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('A URL precisa usar HTTP ou HTTPS.');
 
@@ -1182,7 +1196,7 @@
       while (state.deviceToken) {
         const manifest = state.manifest;
         const nonce = state.playlistNonce;
-        const fallback = manifest?.fallback || null;
+        const fallback = manifest?.playlist ? manifest.fallback : null;
         const fallbackActive = (fallback?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
         const fallbackLocked = Boolean(
           manifest?.version &&
