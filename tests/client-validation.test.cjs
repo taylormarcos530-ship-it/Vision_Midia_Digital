@@ -30,3 +30,10 @@ test('storage shows tenant library bytes and honors overrides, full and missing 
  state.subscription.limit_overrides.storage_limit_mb=0;assert.equal(c.currentStoragePlanUsage().limit,0);
  state.subscription={plan_id:'missing'};assert.equal(c.currentStoragePlanUsage().remaining,null);
 });
+test('unlink deletes only the selected tenant playlist association and preserves library media',async()=>{
+ const calls=[];const state={company:{id:'tenant'},playlists:[{id:'p1'}],playlistItems:[{media_id:'m1',playlist_id:'p1'}],media:[{id:'m1'}]};
+ const c=vm.createContext({state,encodeURIComponent,restRequest:async(t,o)=>calls.push({t,...o}),loadAllData:async()=>{},toast(){}});
+ vm.runInContext(fn('unlinkMediaFromPlaylist'),c);
+ await c.unlinkMediaFromPlaylist('m1','unknown');assert.equal(calls.length,0);
+ await c.unlinkMediaFromPlaylist('m1','p1');assert.equal(calls.length,1);assert.equal(calls[0].t,'playlist_items');assert.equal(calls[0].method,'DELETE');assert.equal(calls[0].query,'company_id=eq.tenant&playlist_id=eq.p1&media_id=eq.m1');assert.equal(state.media.length,1);
+});

@@ -2362,8 +2362,69 @@
     const linked = new Set(state.playlistItems.filter(item => item.media_id === mediaId).map(item => item.playlist_id));
     return '<option value="">Escolha a playlist…</option>' + state.playlists.map(playlist => {
       const already = linked.has(playlist.id);
-      return `<option value="${playlist.id}" ${already ? 'disabled' : ''}>${escapeHtml(playlist.name)}${already ? ' • já vinculada' : ''}</option>`;
+      return `<option value="${playlist.id}" ${playlist.id === [...linked][0] ? 'selected' : ''}>${escapeHtml(playlist.name)}${already ? ' • já vinculada' : ''}</option>`;
     }).join('');
+  }
+
+  function updateMediaPlaylistAction(mediaId) {
+    const select = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`);
+    const button = document.querySelector(`[data-link-media-playlist="${CSS.escape(mediaId)}"]`);
+    if (!button) return;
+    const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === select?.value);
+    button.textContent = linked ? 'Desvincular' : '+ Vincular';
+    button.disabled = !select?.value;
+  }
+
+  async function unlinkMediaFromPlaylist(mediaId, playlistId) {
+    if (!state.company?.id || !state.playlists.some(row => row.id === playlistId)) return;
+    if (!state.playlistItems.some(row => row.media_id === mediaId && row.playlist_id === playlistId)) return;
+    try {
+      await restRequest('playlist_items', { method:'DELETE', query:`company_id=eq.${encodeURIComponent(state.company.id)}&playlist_id=eq.${encodeURIComponent(playlistId)}&media_id=eq.${encodeURIComponent(mediaId)}`, prefer:'return=minimal' });
+      state.mediaRenderSignature = '';
+      await loadAllData();
+      toast('Mídia desvinculada', 'O arquivo continua disponível na biblioteca.');
+    } catch (error) { toast('Não foi possível desvincular', error.message, 'error'); }
+  }
+
+  const onlinePreviewFeeds = new Map();
+  async function hydrateOnlineContentPreviews() {
+    await Promise.all(state.media.filter(media => media.media_type === 'url').map(async media => {
+      const targets = $$(`[data-media-preview="${CSS.escape(media.id)}"], [data-playlist-card-preview="${CSS.escape(media.id)}"], [data-playlist-media-preview="${CSS.escape(media.id)}"]`).filter(el => el.dataset.onlinePreview !== media.source_url);
+      if (!targets.length) return;
+      let url;
+      try { url = new URL(resolveOnlineMediaUrl(media.source_url)); } catch { return; }
+      if (url.origin !== location.origin) return;
+      const clock = url.pathname.endsWith('/clock.html');
+      const source = url.searchParams.get('source');
+      if (!clock && (!url.pathname.endsWith('/news-feed.html') || !['soccer','sports_br','news_br','cinema_br'].includes(source))) return;
+      for (const target of targets) {
+        target.dataset.onlinePreview = media.source_url;
+        const tile = document.createElement('div');
+        tile.className = `online-content-thumbnail ${clock ? 'clock-thumbnail' : 'news-thumbnail'}`;
+        const title = document.createElement('strong');
+        title.textContent = clock ? new Intl.DateTimeFormat('pt-BR', {hour:'2-digit',minute:'2-digit',timeZone:state.company?.timezone || 'America/Sao_Paulo'}).format(new Date()) : ({soccer:'Futebol',sports_br:'Esportes',news_br:'Notícias',cinema_br:'Cinema'})[source];
+        const caption = document.createElement('small');
+        caption.textContent = clock ? 'Relógio e data' : 'Atualização automática';
+        tile.append(title,caption);
+        target.replaceChildren(tile);
+      }
+      if (clock) return;
+      try {
+        const cached = onlinePreviewFeeds.get(source);
+        if (!cached || cached.expires < Date.now()) onlinePreviewFeeds.set(source,{expires:Date.now()+60000,promise:fetch(`./api/news-feed?source=${encodeURIComponent(source)}`,{signal:AbortSignal.timeout(8000)}).then(async response => {if(!response.ok) throw Error('Feed unavailable');return response.json()})});
+        const feed = await onlinePreviewFeeds.get(source).promise;
+        const photo = feed.items?.find(item => item.image_url);
+        if (!photo) return;
+        const imageUrl = new URL(photo.image_url);
+        if (imageUrl.protocol !== 'https:' || !/(?:^|\.)(?:glbimg\.com|globo\.com|cinepop\.com\.br)$/.test(imageUrl.hostname)) return;
+        await Promise.all(targets.map(async target => {
+          const image = await loadStablePreviewElement({media_type:'image',name:photo.title},imageUrl.href);
+          if (!target.isConnected || target.dataset.onlinePreview !== media.source_url) return;
+          const tile = target.querySelector('.online-content-thumbnail');
+          if (tile) tile.prepend(image);
+        }));
+      } catch { onlinePreviewFeeds.delete(source); }
+    }));
   }
 
   async function loadStablePreviewElement(media, url) {
@@ -2396,6 +2457,7 @@
   }
 
   async function hydrateMediaPreviews() {
+    hydrateOnlineContentPreviews().catch(() => {});
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
       const targets = $$(`[data-media-preview="${CSS.escape(media.id)}"]`);
       if (!targets.length) continue;
@@ -2480,6 +2542,7 @@
       </article>`;
     }).join('');
 
+    state.media.forEach(media => updateMediaPlaylistAction(media.id));
     hydrateMediaPreviews();
   }
 
@@ -2510,6 +2573,7 @@
   }
 
   async function hydratePlaylistCardPreviews(mediaIds) {
+    hydrateOnlineContentPreviews().catch(() => {});
     const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
     for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
       const media = mediaById[mediaId];
@@ -2768,6 +2832,7 @@
   }
 
   async function hydratePlaylistPreviews() {
+    hydrateOnlineContentPreviews().catch(() => {});
     const visibleIds = new Set($$('[data-playlist-media-preview]').map(el => el.dataset.playlistMediaPreview).filter(Boolean));
     for (const media of state.media.filter(item => visibleIds.has(item.id))) {
       const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
@@ -4866,6 +4931,8 @@
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
     document.addEventListener('change', event => {
+      const mediaPlaylist = event.target.closest?.('[data-media-playlist-select]');
+      if (mediaPlaylist) return updateMediaPlaylistAction(mediaPlaylist.dataset.mediaPlaylistSelect);
       const groupSelect = event.target.closest?.('[data-device-group]');
       if (groupSelect) setDeviceGroup(groupSelect.dataset.deviceGroup, groupSelect.value);
     });
@@ -4909,7 +4976,8 @@
       if (linkMediaButton) {
         const mediaId = linkMediaButton.dataset.linkMediaPlaylist;
         const playlistId = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`)?.value || '';
-        return linkMediaToPlaylist(mediaId, playlistId);
+        const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === playlistId);
+        return linked ? unlinkMediaFromPlaylist(mediaId, playlistId) : linkMediaToPlaylist(mediaId, playlistId);
       }
       const deleteMediaButton = event.target.closest('[data-delete-media]');
       if (deleteMediaButton) return deleteMedia(deleteMediaButton.dataset.deleteMedia);

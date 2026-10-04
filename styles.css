@@ -2343,3 +2343,9 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 #device-plan-usage .plan-storage-usage progress { min-width:0; max-width:100%; }
 #device-plan-usage .plan-usage-numbers { flex-wrap:wrap; white-space:normal; }
 .inbox-message-check input, #inbox-select-all { width:20px; height:20px; min-height:0; padding:0; accent-color:var(--primary); }
+
+.online-content-thumbnail { width:100%; height:100%; min-height:64px; position:relative; overflow:hidden; display:flex; flex-direction:column; justify-content:center; align-items:center; gap:5px; background:linear-gradient(145deg,#203864,#0b172b); color:white; }
+.online-content-thumbnail strong { position:relative; z-index:1; font-size:clamp(12px,2vw,24px); padding:0 6px; }
+.online-content-thumbnail small { position:relative; z-index:1; font-size:10px; padding:0 6px; }
+.online-content-thumbnail img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; opacity:.58; }
+.clock-thumbnail strong { font-variant-numeric:tabular-nums; }
