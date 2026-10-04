@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/preserve-current-view-refresh
+      - fix/recover-pre-vercel-orientation-fit
     paths:
       - 'android-player/**'
       - 'player.html'
