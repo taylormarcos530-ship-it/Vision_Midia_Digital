@@ -969,6 +969,24 @@
     updateChecklist('#check-media', state.media.length > 0, '3');
     updateChecklist('#check-playlist', state.playlists.length > 0, '4');
     updateChecklist('#check-campaign', state.campaigns.length > 0, '5');
+
+    const actions = [];
+    const unassignedDevices = state.devices.filter(device => {
+      const assignment = state.deviceAssignments.find(row => row.device_id === device.id);
+      const group = deviceGroupFor(device.id);
+      return !assignment?.playlist_id && !group?.playlist_id;
+    });
+    const emptyPlaylists = state.playlists.filter(playlist => !state.playlistItems.some(item => item.playlist_id === playlist.id));
+    const offlineDevices = state.devices.filter(device => effectiveDeviceStatus(device) === 'offline');
+    if (!state.devices.length) actions.push({ icon:'▣', title:'Pareie sua primeira TV', detail:'Abra o Vision Player e use o código exibido na tela.', view:'devices', label:'Parear TV' });
+    if (!state.media.length) actions.push({ icon:'▧', title:'Envie sua primeira mídia', detail:'Adicione uma imagem ou vídeo à biblioteca.', view:'media', label:'Abrir biblioteca' });
+    if (!state.playlists.length) actions.push({ icon:'▶', title:'Crie uma playlist', detail:'A TV só começa a exibir depois que houver conteúdo organizado.', view:'playlists', label:'Criar playlist' });
+    else if (emptyPlaylists.length) actions.push({ icon:'!', title:'Playlist sem mídia', detail:`${emptyPlaylists.length} playlist(s) ainda não têm conteúdo para exibir.`, view:'playlists', label:'Ajustar playlist' });
+    if (unassignedDevices.length) actions.push({ icon:'↗', title:'Atribua conteúdo às TVs', detail:`${unassignedDevices.length} TV(s) estão aguardando uma playlist direta ou de grupo.`, view:'devices', label:'Configurar TVs' });
+    if (offlineDevices.length) actions.push({ icon:'◌', title:'Verifique as TVs offline', detail:`${offlineDevices.length} TV(s) não respondem neste momento.`, view:'monitoring', label:'Ver diagnóstico' });
+    if (!actions.length) actions.push({ icon:'✓', title:'Operação em dia', detail:'Suas TVs, mídias e playlists estão configuradas. Acompanhe a saúde no monitoramento.', view:'monitoring', label:'Abrir monitoramento', positive:true });
+    const actionList = $('#dashboard-action-list');
+    if (actionList) actionList.innerHTML = actions.slice(0, 4).map(action => `<div class="dashboard-action-item ${action.positive ? 'positive' : ''}"><span class="dashboard-action-icon">${action.icon}</span><div><strong>${escapeHtml(action.title)}</strong><small>${escapeHtml(action.detail)}</small></div><button type="button" class="small-button" data-go-view="${escapeHtml(action.view)}">${escapeHtml(action.label)}</button></div>`).join('');
   }
 
   function updateChecklist(selector, done, pendingText) {
