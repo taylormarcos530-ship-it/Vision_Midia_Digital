@@ -104,8 +104,8 @@ test('Netlify adapter preserves original feed response and rejects failed upstre
   const originalFetch = global.fetch;
   try {
     global.fetch = async url => {
-      assert.equal(url, 'https://www.espn.com/espn/rss/soccer/news');
-      return new Response('<rss><channel><item><title>Futebol &amp; notícias</title><description><![CDATA[<p>Resultado</p>]]></description></item></channel></rss>');
+      assert.equal(url, 'https://ge.globo.com/rss/ge/futebol/brasileirao-serie-a/');
+      return new Response('<rss><channel><language>pt-BR</language><item><title>Futebol &amp; notícias</title><description><![CDATA[<p>Resultado</p>]]></description></item></channel></rss>');
     };
     const response = await handler(new Request('https://preview.example/api/news-feed?source=soccer'));
     assert.equal(response.status, 200);
@@ -113,6 +113,13 @@ test('Netlify adapter preserves original feed response and rejects failed upstre
     assert.equal(data.items[0].title, 'Futebol & notícias');
     assert.equal(data.items[0].description, 'Resultado');
     assert.match(response.headers.get('cache-control'), /s-maxage=300/);
+    global.fetch = async url => {
+      assert.equal(url, 'https://g1.globo.com/rss/g1/brasil/');
+      return new Response('<rss><channel><language>pt-BR</language><item><title>Brasil</title></item></channel></rss>');
+    };
+    assert.equal((await handler(new Request('https://preview.example/api/news-feed?source=news_br'))).status, 200);
+    global.fetch = async () => new Response('<rss><channel><language>en-US</language><item><title>Foreign</title></item></channel></rss>');
+    assert.equal((await handler(new Request('https://preview.example/api/news-feed'))).status, 502);
     global.fetch = async () => new Response('Unavailable', { status: 502 });
     assert.equal((await handler(new Request('https://preview.example/api/news-feed'))).status, 502);
   } finally { global.fetch = originalFetch; }

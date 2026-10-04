@@ -3877,9 +3877,9 @@
       $('#online-media-name').value = 'Hora certa';
       $('#online-media-url').value = clockMediaUrl();
       $('#online-media-duration').value = '30';
-    } else if (preset === 'soccer') {
-      $('#online-media-name').value = 'Futebol & notícias';
-      $('#online-media-url').value = newsMediaUrl('soccer');
+    } else if (preset === 'soccer' || preset === 'news_br') {
+      $('#online-media-name').value = preset === 'news_br' ? 'Notícias do Brasil' : 'Futebol brasileiro';
+      $('#online-media-url').value = newsMediaUrl(preset);
       $('#online-media-duration').value = '30';
     } else {
       $('#online-media-name').value = '';
