@@ -110,7 +110,7 @@
     state.lastEventTimes[fingerprint] = now;
     const queue = deviceEventQueue();
     queue.push({
-      client_event_id: crypto.randomUUID(),
+      client_event_id: newClientId(),
       severity: ['info', 'warning', 'error', 'critical'].includes(severity) ? severity : 'info',
       event_code: code,
       message: text,
@@ -575,7 +575,7 @@
       return;
     }
 
-    const version = manifest.version || crypto.randomUUID();
+    const version = manifest.version || newClientId();
     if (state.cachePrefetchVersion === version) return;
     state.cachePrefetchVersion = version;
 
@@ -779,7 +779,7 @@
       const endedAt = new Date();
       if (state.deviceToken) {
         queuePlayback({
-          client_event_id: crypto.randomUUID(),
+          client_event_id: newClientId(),
           campaign_id: program?.campaign_id || null,
           playlist_id: playlist?.id || null,
           media_id: item.media?.id || null,
