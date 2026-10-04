@@ -341,13 +341,9 @@
 
           <article class="panel device-groups-panel">
             <div class="panel-header">
-              <div><span class="eyebrow">PROGRAMAÇÃO EM ESCALA</span><h3>Grupos de TVs e emergência</h3><small>A playlist específica da TV tem prioridade sobre o grupo. O fallback só entra quando a programação principal não pode ser reproduzida.</small></div>
+              <div><span class="eyebrow">PROGRAMAÇÃO EM ESCALA</span><h3>Grupos de TVs</h3><small>A playlist específica da TV tem prioridade sobre o grupo. TV sem playlist fica aguardando programação.</small></div>
               <button id="add-device-group" class="button ghost" type="button">+ Novo grupo</button>
             </div>
-            <label class="company-fallback-control">Playlist de emergência da empresa
-              <select id="company-fallback-playlist"><option value="">Sem fallback da empresa</option></select>
-              <small>Pode ser substituída por um fallback específico na configuração de cada TV.</small>
-            </label>
             <div id="device-groups-grid" class="device-groups-grid"></div>
             <div id="device-groups-empty" class="mini-empty">Nenhum grupo criado. Exemplos: Recepção, Caixas, Totens, Filial 02.</div>
           </article>
@@ -770,10 +766,6 @@
           <small>Define a orientação do Vision Player inteiro nesta TV.</small>
         </label>
       </div>
-      <label>Playlist de emergência desta TV
-        <select id="device-fallback-playlist"><option value="">Usar fallback da empresa</option></select>
-        <small>Opcional. Se definida, tem prioridade sobre o fallback geral da empresa e nunca aponta de volta para a playlist principal.</small>
-      </label>
       <div class="device-settings-box">
         <strong>Comportamento do Vision Player</strong>
         <label class="switch-line"><input id="device-audio-enabled" type="checkbox" checked /> Áudio da TV ativado</label>

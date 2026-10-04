@@ -742,7 +742,7 @@
   async function cacheManifestAssets(manifest) {
     const cache = await caches.open(MEDIA_CACHE);
     const seen = new Set();
-    const candidates = [...(manifest.items || []), ...(manifest.fallback?.items || [])].filter(item => {
+    const candidates = [...(manifest.items || [])].filter(item => {
       if (!item?.media || !['image','video'].includes(item.media.type) || seen.has(item.media.id)) return false;
       seen.add(item.media.id);
       return true;
@@ -1196,42 +1196,14 @@
       while (state.deviceToken) {
         const manifest = state.manifest;
         const nonce = state.playlistNonce;
-        const fallback = manifest?.playlist ? manifest.fallback : null;
-        const fallbackActive = (fallback?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
-        const fallbackLocked = Boolean(
-          manifest?.version &&
-          state.runtimeFallbackVersion === manifest.version &&
-          fallback?.playlist &&
-          fallbackActive.length
-        );
-
-        let playlist = fallbackLocked ? fallback.playlist : manifest?.playlist;
-        let items = fallbackLocked ? fallbackActive : (manifest?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
-        let program = fallbackLocked
-          ? { ...(manifest?.program || {}), source:'fallback', fallback_reason:'runtime_failure' }
-          : manifest?.program;
-        let usingFallback = fallbackLocked;
-
-        // Fallback is a recovery path for an assigned primary playlist only.
-        // A newly paired/unassigned TV must stay idle and must never inherit or
-        // start the company's emergency/default playlist just because it exists.
-        if (playlist && !items.length && fallback?.playlist && fallbackActive.length) {
-          playlist = fallback.playlist;
-          items = fallbackActive;
-          usingFallback = true;
-          if (manifest?.version) state.runtimeFallbackVersion = manifest.version;
-          program = { ...(manifest?.program || {}), source:'fallback', fallback_reason:'no_active_primary_media' };
-          queueDeviceEvent('fallback_activated','warning','Playlist de emergência ativada.',{
-            primary_playlist_id:manifest?.playlist?.id||null,
-            fallback_playlist_id:fallback.playlist.id,
-            reason:'no_active_primary_media',
-          },60000);
-        }
+        const playlist = manifest?.playlist;
+        const items = (manifest?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
+        const program = manifest?.program;
 
         if (!playlist || !items.length) {
           if (manifest?.playlist) {
             replaceNodeChildren($('#media-stage'));
-            showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está disponível agora e não há fallback utilizável.');
+            showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está disponível agora.');
           } else {
             showIdle('Vision Player conectado', 'Aguardando uma playlist com mídias ser atribuída a esta TV.');
           }
@@ -1251,16 +1223,6 @@
             if (await playItem(item, playlist, program, nonce)) completedCount++;
           }
           if (nonce !== state.playlistNonce) continue;
-        }
-
-        if (!usingFallback && completedCount === 0 && fallback?.playlist && fallbackActive.length) {
-          if (manifest?.version) state.runtimeFallbackVersion = manifest.version;
-          queueDeviceEvent('fallback_activated','warning','Playlist de emergência ativada após falha da programação principal.',{
-            primary_playlist_id:manifest?.playlist?.id||null,
-            fallback_playlist_id:fallback.playlist.id,
-            reason:'primary_playback_failed',
-          },60000);
-          continue;
         }
 
         if (playlist.repeat_mode === 'none') {

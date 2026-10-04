@@ -1081,6 +1081,9 @@
   }
 
   function campaignForDevice(device) {
+    const assignment = state.deviceAssignments.find(row => row.device_id === device?.id);
+    const group = deviceGroupFor(device?.id);
+    if (!assignment?.playlist_id && !group?.playlist_id) return null;
     const reported = device?.current_campaign_id
       ? state.campaigns.find(campaign => campaign.id === device.current_campaign_id)
       : null;
@@ -1098,7 +1101,7 @@
     const campaign = campaignForDevice(device);
     const playlistId = campaign?.playlist_id || assignment?.playlist_id || group?.playlist_id || null;
     if (!playlistId) {
-      return { level:'warning', playlistName:'Nenhuma', stateLabel:'Sem playlist', playlistId:null };
+      return { level:'warning', playlistName:'Nenhuma', stateLabel:'Aguardando playlist', playlistId:null };
     }
     const playlist = state.playlists.find(row => row.id === playlistId);
     const items = state.playlistItems.filter(row => row.playlist_id === playlistId);
@@ -1297,15 +1300,10 @@
   function renderDeviceGroups() {
     const grid = $('#device-groups-grid');
     const empty = $('#device-groups-empty');
-    const fallback = $('#company-fallback-playlist');
-    if (!grid || !empty || !fallback) return;
+    if (!grid || !empty) return;
     const canManage = ['owner','admin','operator'].includes(state.companyRole);
     const addGroup = $('#add-device-group');
     if (addGroup) addGroup.disabled = !canManage;
-    fallback.innerHTML = '<option value="">Sem fallback da empresa</option>' + state.playlists.map(playlist =>
-      `<option value="${playlist.id}" ${state.company?.fallback_playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`
-    ).join('');
-    fallback.disabled = !['owner','admin'].includes(state.companyRole);
     empty.classList.toggle('hidden', state.deviceGroups.length > 0);
     grid.classList.toggle('hidden', state.deviceGroups.length === 0);
     grid.innerHTML = state.deviceGroups.map(group => {
@@ -1318,17 +1316,6 @@
         ${canManage ? `<div class="device-group-actions"><button class="small-icon-button" type="button" data-edit-device-group="${group.id}">Editar</button><button class="small-icon-button danger-inline" type="button" data-delete-device-group="${group.id}">Excluir</button></div>` : ''}
       </article>`;
     }).join('');
-  }
-
-  async function saveCompanyFallback(playlistId) {
-    if (!['owner','admin'].includes(state.companyRole)) return toast('Sem permissão', 'Somente proprietário ou administrador pode alterar o fallback da empresa.', 'error');
-    try {
-      await restRequest('rpc/set_company_fallback_playlist', { method:'POST', body:{ p_company_id:state.company.id, p_playlist_id:playlistId || null } });
-      state.company.fallback_playlist_id = playlistId || null;
-      state.companies = state.companies.map(company => company.id === state.company.id ? { ...company, fallback_playlist_id:playlistId || null } : company);
-      toast('Fallback atualizado', playlistId ? 'Playlist de emergência da empresa definida.' : 'Fallback da empresa removido.');
-      renderDeviceGroups();
-    } catch (error) { toast('Erro ao salvar fallback', error.message, 'error'); renderDeviceGroups(); }
   }
 
   function openDeviceGroupDialog(groupId = null) {
@@ -1541,7 +1528,6 @@
       const group = deviceGroupFor(device.id);
       const latestCommand = latestDeviceCommand(device.id);
       const groupOptions = state.deviceGroups.map(item => `<option value="${item.id}" ${group?.id === item.id ? 'selected' : ''}>${escapeHtml(item.name)}</option>`).join('');
-      const fallbackName = state.playlists.find(item => item.id === (device.fallback_playlist_id || state.company?.fallback_playlist_id))?.name || 'Não definido';
       const resolution = device.screen_width && device.screen_height ? `${device.screen_width}×${device.screen_height}` : '—';
       const storageLabel = device.storage_free_mb == null ? '—' : formatBytes(Number(device.storage_free_mb) * 1024 * 1024);
       const options = state.playlists.map(playlist => `<option value="${playlist.id}" ${assignment?.playlist_id === playlist.id ? 'selected' : ''}>${escapeHtml(playlist.name)}</option>`).join('');
@@ -1625,7 +1611,6 @@
             <div><span>Resolução</span><strong>${escapeHtml(resolution)}</strong></div>
             <div><span>Orientação configurada</span><strong>${escapeHtml(orientationLabel(device.orientation))}</strong></div>
             <div><span>Orientação reportada</span><strong>${escapeHtml(reportedOrientationLabel(device.reported_orientation))}</strong></div>
-            <div><span>Fallback</span><strong>${escapeHtml(fallbackName)}</strong></div>
             <div class="device-maintenance-command"><span>Último comando</span><strong>${latestCommand ? `${escapeHtml(remoteCommandLabel(latestCommand.command_type))} • ${escapeHtml(remoteCommandStatusLabel(latestCommand.status))}` : 'Nenhum'}</strong>${latestCommand?.error_message ? `<small>${escapeHtml(latestCommand.error_message)}</small>` : ''}</div>
           </div>
         </details>
@@ -2680,7 +2665,7 @@
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
           <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span>${item.is_essential ? '<span class="schedule-chip active" title="Se esta mídia não puder ser carregada, o Player pode ativar a playlist de emergência.">Essencial</span>' : ''}</div></div>
           ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
-          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como essencial para fallback'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como mídia essencial'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
 
@@ -3672,7 +3657,7 @@
       name: $('#device-name').value.trim(),
       platform: $('#device-platform').value,
       orientation: $('#device-orientation').value,
-      fallback_playlist_id: $('#device-fallback-playlist').value || null,
+      fallback_playlist_id: null,
       settings: {
         ...currentSettings,
         audio_enabled: $('#device-audio-enabled').checked,
@@ -3717,8 +3702,6 @@
     $('#device-name').value = device.name;
     $('#device-platform').value = device.platform;
     $('#device-orientation').value = device.orientation;
-    $('#device-fallback-playlist').innerHTML = '<option value="">Usar fallback da empresa</option>' + state.playlists.map(playlist => `<option value="${playlist.id}">${escapeHtml(playlist.name)}</option>`).join('');
-    $('#device-fallback-playlist').value = device.fallback_playlist_id || '';
     const settings = device.settings && typeof device.settings === 'object' ? device.settings : {};
     $('#device-audio-enabled').checked = settings.audio_enabled !== false;
     $('#device-autostart-enabled').checked = settings.autostart_enabled !== false;
@@ -4458,7 +4441,7 @@
         prefer:'return=minimal',
       });
       await loadAllData();
-      toast(!item.is_essential ? 'Mídia essencial' : 'Mídia comum', !item.is_essential ? 'A indisponibilidade desta mídia pode acionar o fallback.' : 'Esta mídia deixou de acionar o fallback sozinha.');
+      toast(!item.is_essential ? 'Mídia essencial' : 'Mídia comum', !item.is_essential ? 'Esta mídia foi marcada como essencial.' : 'Esta mídia deixou de ser essencial.');
     } catch (error) { toast('Erro ao atualizar mídia essencial', error.message, 'error'); }
   }
 
@@ -4671,7 +4654,6 @@
     $('#add-device-button').addEventListener('click', openPairDeviceDialog);
     $('#add-device-group')?.addEventListener('click', () => openDeviceGroupDialog());
     $('#device-group-form')?.addEventListener('submit', saveDeviceGroup);
-    $('#company-fallback-playlist')?.addEventListener('change', event => saveCompanyFallback(event.target.value));
     $('#monitor-refresh').addEventListener('click', async () => {
       const button = $('#monitor-refresh');
       setBusy(button, true, 'Atualizando...');

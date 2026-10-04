@@ -35,18 +35,18 @@ const base = () => ({
   companies: [{ id: 'company', timezone: 'America/Sao_Paulo', fallback_playlist_id: 'emergency' }],
   campaigns: [{ id: 'campaign', company_id: 'company', playlist_id: 'campaign-playlist', is_active: true, all_devices: true, weekdays: [0,1,2,3,4,5,6] }],
 });
-test('unassigned TV still receives an active global campaign', async () => {
+test('unassigned TV stays idle even with an active global campaign', async () => {
   const result = await gatewayContext().resolveProgram(database(base()), { id: 'tv', company_id: 'company' });
-  assert.equal(result.playlistId, 'campaign-playlist');
-  assert.equal(result.fallbackPlaylistId, 'emergency');
-  assert.equal(result.program.source, 'campaign');
+  assert.equal(result.playlistId, null);
+  assert.equal(result.fallbackPlaylistId, null);
+  assert.equal(result.program.source, 'none');
 });
 test('assigned TV preserves its active campaign', async () => {
   const rows = base();
   rows.device_playlist_assignments = [{ device_id: 'tv', playlist_id: 'primary' }];
   const result = await gatewayContext().resolveProgram(database(rows), { id: 'tv', company_id: 'company' });
   assert.equal(result.playlistId, 'campaign-playlist');
-  assert.equal(result.fallbackPlaylistId, 'emergency');
+  assert.equal(result.fallbackPlaylistId, null);
 });
 test('direct playlist and emergency candidate remain when campaign is inactive', async () => {
   const rows = base(); rows.campaigns[0].is_active = false;
@@ -54,7 +54,7 @@ test('direct playlist and emergency candidate remain when campaign is inactive',
   const result = await gatewayContext().resolveProgram(database(rows), { id: 'tv', company_id: 'company' });
   assert.equal(result.playlistId, 'primary');
   assert.equal(result.program.source, 'default');
-  assert.equal(result.fallbackPlaylistId, 'emergency');
+  assert.equal(result.fallbackPlaylistId, null);
 });
 test('group assignment preserves campaign scheduling', async () => {
   const rows = base();
