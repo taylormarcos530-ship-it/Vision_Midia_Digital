@@ -426,9 +426,12 @@
               <span class="module-icon">▧</span>
               <div><span class="eyebrow">BIBLIOTECA</span><h2>Mídias</h2><p>Organize os ativos visuais da empresa com upload privado, otimização automática e uso direto nas playlists.</p></div>
             </div>
-            <label class="button primary upload-button">+ Enviar mídia
-              <input id="media-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden />
-            </label>
+            <div class="media-source-actions">
+              <button id="add-online-media-button" class="button ghost" type="button">+ Conteúdo online</button>
+              <label class="button primary upload-button">+ Enviar mídia
+                <input id="media-file-input" type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" hidden />
+              </label>
+            </div>
           </div>
           <div class="module-context-row">
             <span>🔒 Storage privado</span><span>⚡ Imagens otimizadas</span><span>▰ Imagem e vídeo</span>
@@ -676,6 +679,21 @@
   </dialog>
 
 
+
+  <dialog id="online-media-dialog" class="dialog">
+    <form id="online-media-form" method="dialog" class="dialog-card">
+      <div class="dialog-header"><div><span class="eyebrow">CONTEÚDO ONLINE</span><h3>Adicionar ao vivo</h3></div><button type="button" class="icon-button" data-close-dialog="online-media-dialog">×</button></div>
+      <div class="online-source-grid">
+        <button class="online-source-card" type="button" data-online-preset="clock"><strong>Hora certa</strong><span>Relógio em tela cheia, atualizado na própria TV.</span></button>
+        <button class="online-source-card" type="button" data-online-preset="soccer"><strong>Futebol & notícias</strong><span>Notícias de futebol com atualização automática.</span></button>
+      </div>
+      <label>Nome<input id="online-media-name" type="text" maxlength="120" required placeholder="Ex.: Hora certa" /></label>
+      <label>URL<input id="online-media-url" type="url" required placeholder="https://..." /></label>
+      <label>Duração na playlist (segundos)<input id="online-media-duration" type="number" min="5" max="3600" value="30" required /></label>
+      <p class="form-hint">O conteúdo é salvo como mídia online e pode ser vinculado a qualquer playlist sem remover suas mídias atuais.</p>
+      <div class="dialog-actions"><button type="button" class="button ghost" data-close-dialog="online-media-dialog">Cancelar</button><button class="button primary" type="submit">Adicionar à biblioteca</button></div>
+    </form>
+  </dialog>
 
   <dialog id="view-tv-dialog" class="app-dialog large-dialog">
     <div class="dialog-body tv-viewer-dialog-body">
