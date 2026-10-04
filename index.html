@@ -293,26 +293,30 @@
             </div>
             <div class="branding-actions"><button class="button ghost" type="button" data-go-view="monitoring">◉ Saúde do Player</button><button id="add-device-button" class="button primary">+ Parear TV</button></div>
           </div>
+
+
+          <div id="device-plan-usage" class="plan-usage-banner">
+            <div><strong>Plano atual</strong><span>Carregando limite de TVs…</span></div>
+          </div>
+
+          <details class="device-setup-guide"><summary>Como conectar uma TV</summary>
           <div class="module-guide">
             <div><strong>1</strong><span><b>Instale o Player</b><small>Android, TV Box ou navegador.</small></span></div>
             <div><strong>2</strong><span><b>Pareie a tela</b><small>Use o código exibido na TV.</small></span></div>
             <div><strong>3</strong><span><b>Atribua conteúdo</b><small>Escolha a playlist padrão.</small></span></div>
           </div>
-
-          <div id="device-plan-usage" class="plan-usage-banner">
-            <div><strong>Plano atual</strong><span>Carregando limite de TVs…</span></div>
-          </div>
+          </details>
 
           <div class="module-context-row player-managed-note">
             <span>🔒 Identidade do Player gerenciada pelo Master</span>
             <span>O título, a mensagem e a capa são aplicados automaticamente ao Vision Player desta empresa.</span>
           </div>
 
-          <article id="player-branding-panel" class="panel player-branding-panel">
-            <div class="panel-header">
+          <details id="player-branding-panel" class="panel player-branding-panel">
+            <summary class="panel-header">
               <div><span class="eyebrow">PLAYER / TV BOX</span><h3>Tela de instalação e vinculação</h3></div>
               <small>Configuração global exclusiva do Master</small>
-            </div>
+            </summary>
             <div class="branding-layout">
               <div id="player-branding-preview" class="branding-preview">
                 <div class="branding-preview-placeholder">V</div>
@@ -341,7 +345,7 @@
                 <p class="form-hint">Esta capa, título e mensagem são definidos pelo Master e usados por todos os clientes. O código de 6 dígitos de cada TV continua sendo gerado normalmente.</p>
               </form>
             </div>
-          </article>
+          </details>
 
 
           <article class="panel device-groups-panel">

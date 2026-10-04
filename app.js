@@ -719,7 +719,7 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles, screenshots] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
@@ -734,6 +734,7 @@
         restRequest('device_heartbeats', { query: `select=id,device_id,received_at,details&company_id=eq.${companyId}&order=received_at.desc&limit=250` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
+        restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` }),
       ]);
       state.devices = devices || [];
       state.media = media || [];
@@ -749,7 +750,6 @@
       state.deviceHeartbeats = deviceHeartbeats || [];
       state.companyMembers = companyMembers || [];
       state.profiles = profiles || [];
-      const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
       state.playerBranding = null;
       if (state.isPlatformAdmin) {
@@ -762,11 +762,11 @@
           console.warn('Player branding unavailable; keeping operational data visible.', brandingError);
         }
       }
-      await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
       // Keep this card deterministic even if another renderer is skipped.
       renderDevicePlanUsage();
       updateConnectionStatus(true);
+      loadNotificationInbox({ quiet: true }).catch(() => null);
     } catch (error) {
       updateConnectionStatus(false);
       throw error;
@@ -1425,20 +1425,31 @@
     return { planName: plan?.name || 'Plano atual', limit, used, available, hasOverride };
   }
 
+  function currentStoragePlanUsage() {
+    const plan = (state.publicConfig?.plans || []).find(p => p.id === state.subscription?.plan_id);
+    const override = state.subscription?.limit_overrides?.storage_limit_mb;
+    const raw = override !== undefined && override !== null && override !== '' ? override : plan?.storage_limit_mb;
+    const limit = raw !== undefined && raw !== null && raw !== '' && Number.isFinite(Number(raw)) && Number(raw) >= 0 ? Number(raw) * 1024 * 1024 : null;
+    const used = state.media.reduce((sum, media) => sum + Math.max(0, Number(media.size_bytes) || 0), 0);
+    return { used, limit, remaining: limit === null ? null : Math.max(0, limit - used) };
+  }
+
   function renderDevicePlanUsage() {
     const box = $('#device-plan-usage');
     if (!box) return;
     const usage = currentDevicePlanUsage();
+    const storage = currentStoragePlanUsage();
+    const storageHtml = `<div class="plan-storage-usage"><strong>Armazenamento da biblioteca</strong><span><b>${formatBytes(storage.used)}</b> usado${storage.limit === null ? ' • Limite não definido' : ` • <b>${formatBytes(storage.remaining)}</b> livre de ${formatBytes(storage.limit)}`}</span>${storage.limit === null ? '' : `<progress value="${Math.min(storage.used, storage.limit)}" max="${Math.max(1, storage.limit)}" aria-label="Armazenamento utilizado"></progress>`}</div>`;
     const button = $('#add-device-button');
     if (!usage.limit) {
       box.className = 'plan-usage-banner warning';
-      box.innerHTML = '<strong>Limite de TVs não definido</strong><span>Fale com o administrador para configurar seu plano.</span>';
+      box.innerHTML = `<div><strong>Limite de TVs não definido</strong><span>Fale com o administrador para configurar seu plano.</span></div>${storageHtml}`;
       if (button) button.disabled = false;
       return;
     }
     const full = usage.used >= usage.limit;
     box.className = `plan-usage-banner ${full ? 'limit-reached' : ''}`;
-    box.innerHTML = `<div><strong>${escapeHtml(usage.planName)}</strong><span>Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'}.</span></div><div class="plan-usage-numbers"><b>${usage.used}</b> em uso <span>•</span> <b>${usage.available}</b> disponível${usage.available === 1 ? '' : 'is'}</div>`;
+    box.innerHTML = `<div><strong>${escapeHtml(/^plano\b/i.test(usage.planName) ? usage.planName : `Plano ${usage.planName}`)}</strong><span>Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'}.</span></div><div class="plan-usage-numbers"><b>${usage.used}</b> em uso <span>•</span> <b>${usage.available}</b> disponível${usage.available === 1 ? '' : 'is'}</div>${storageHtml}`;
     if (button) {
       button.disabled = full;
       button.title = full ? `Limite atingido: ${usage.used} de ${usage.limit} TVs em uso.` : `${usage.available} vaga(s) de TV disponível(is) no plano.`;

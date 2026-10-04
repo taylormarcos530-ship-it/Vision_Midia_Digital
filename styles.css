@@ -2320,3 +2320,18 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
 
 /* Online media controls */
 .media-source-actions{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.online-source-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:4px 0 14px}.online-source-card{appearance:none;text-align:left;border:1px solid var(--line);border-radius:12px;background:var(--surface-2);color:var(--text);padding:14px;cursor:pointer}.online-source-card strong,.online-source-card span{display:block}.online-source-card strong{font-size:13px;margin-bottom:5px}.online-source-card span{font-size:11px;line-height:1.4;color:var(--muted)}.online-source-card:hover{border-color:rgba(109,124,255,.55)}@media(max-width:650px){.media-source-actions{width:100%}.media-source-actions>.button,.media-source-actions>.upload-button{flex:1;justify-content:center}.online-source-grid{grid-template-columns:1fr}}
+
+/* Keep plan capacity visible; setup and branding stay available on demand. */
+.plan-usage-banner { flex-wrap:wrap; }
+.plan-storage-usage { flex:1 0 100%; display:grid; gap:6px; padding-top:10px; border-top:1px solid var(--line); }
+.plan-storage-usage progress { width:100%; height:7px; accent-color:var(--primary); }
+.device-setup-guide { margin-bottom:16px; border:1px solid var(--line); border-radius:14px; padding:12px 16px; }
+.device-setup-guide summary, details.player-branding-panel > summary { cursor:pointer; }
+.device-setup-guide .module-guide { margin:12px 0 0; }
+details.player-branding-panel:not([open]) > summary { margin-bottom:0; }
+@media(max-width:640px) { .player-managed-note { gap:6px; padding:10px; } .device-setup-guide .module-guide>div { padding:10px; } }
+
+details.player-branding-panel > summary::after { content:"Abrir ▾"; color:var(--muted); font-size:12px; white-space:nowrap; }
+details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
+.app-dialog { max-height:calc(100dvh - 32px); overflow:auto; }
+.app-dialog .dialog-header { position:sticky; top:-22px; z-index:2; background:#0d182a; padding-top:10px; }

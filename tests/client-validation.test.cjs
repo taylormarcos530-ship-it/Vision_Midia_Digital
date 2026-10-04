@@ -22,3 +22,11 @@ test('video can be added to tenant playlist without overriding its duration',asy
   vm.runInContext(fn('addMediaToPlaylist'),c);await c.addMediaToPlaylist('video');
   assert.equal(calls[0].body.company_id,'tenant');assert.equal(calls[0].body.media_id,'video');assert.equal(calls[0].body.duration_override_seconds,null);
 });
+test('storage shows tenant library bytes and honors overrides, full and missing limits',()=>{
+ const state={publicConfig:{plans:[{id:'pro',storage_limit_mb:1024}]},subscription:{plan_id:'pro'},media:[{size_bytes:268435456},{size_bytes:0}]};
+ const c=vm.createContext({state});vm.runInContext(fn('currentStoragePlanUsage'),c);
+ assert.equal(c.currentStoragePlanUsage().remaining,768*1024*1024);
+ state.subscription.limit_overrides={storage_limit_mb:128};assert.equal(c.currentStoragePlanUsage().remaining,0);
+ state.subscription.limit_overrides.storage_limit_mb=0;assert.equal(c.currentStoragePlanUsage().limit,0);
+ state.subscription={plan_id:'missing'};assert.equal(c.currentStoragePlanUsage().remaining,null);
+});
