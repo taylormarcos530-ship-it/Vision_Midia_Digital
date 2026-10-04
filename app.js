@@ -1000,6 +1000,10 @@
             <summary class="small-icon-button" title="Mais ações" aria-label="Mais ações">⋮</summary>
             <div class="device-more-popover">
               ${['owner','admin'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-replace-device="${device.id}">⇄ Substituir TV</button>` : ''}
+              ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="sync_now" data-maintenance-device="${device.id}">⟳ Sincronizar agora</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="reload_programming" data-maintenance-device="${device.id}">▶ Recarregar programação</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="clear_cache" data-maintenance-device="${device.id}">⌫ Limpar cache</button>` : ''}
               <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
               <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
             </div>
@@ -1168,6 +1172,48 @@
       if (!quiet) toast('Não foi possível capturar', message, 'error', 7500);
       return false;
     }
+  }
+
+  function remoteCommandLabel(type) {
+    return ({ restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
+  }
+
+  async function requestDeviceRestart(deviceId, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device) return false;
+    if (!['owner','admin','operator'].includes(state.companyRole)) {
+      toast('Sem permissão', 'Seu usuário não pode reiniciar Players.', 'error');
+      return false;
+    }
+    if (!confirm(`Reiniciar o Vision Player da TV “${device.name}”? A reprodução volta automaticamente depois do reinício.`)) return false;
+    setBusy(button, true, 'Solicitando...');
+    try {
+      const result = await functionRequest('device-control', { body:{ action:'restart_player', company_id:state.company.id, device_id:deviceId }, authenticated:true });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast('Reinício solicitado', `${device.name}: o Player receberá o comando na próxima consulta.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) {
+      toast('Não foi possível reiniciar', error.message, 'error', 6500);
+      return false;
+    } finally { setBusy(button, false); }
+  }
+
+  async function requestDeviceMaintenanceCommand(deviceId, commandType, button = null) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device || !['sync_now','clear_cache','reload_programming'].includes(commandType) || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (commandType === 'clear_cache' && !confirm(`Limpar o cache local da TV “${device.name}” e sincronizar novamente?`)) return false;
+    setBusy(button, true, 'Enviando...');
+    try {
+      const result = await functionRequest('device-control', { body:{ action:commandType, company_id:state.company.id, device_id:deviceId }, authenticated:true });
+      if (!result?.ok) throw new Error(result?.message || 'O servidor não confirmou o comando.');
+      toast(result?.duplicate ? 'Comando já pendente' : 'Comando enviado', `${device.name}: ${remoteCommandLabel(commandType)}.`);
+      await loadAllData().catch(() => {});
+      return true;
+    } catch (error) {
+      toast('Falha no comando remoto', error.message, 'error');
+      return false;
+    } finally { setBusy(button, false); }
   }
 
   function renderPlayerBranding() {
@@ -3474,6 +3520,10 @@
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
       const captureDevice = event.target.closest('[data-capture-device]');
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
+      const restartDevice = event.target.closest('[data-restart-device]');
+      if (restartDevice) return requestDeviceRestart(restartDevice.dataset.restartDevice, restartDevice);
+      const maintenanceButton = event.target.closest('[data-maintenance-command][data-maintenance-device]');
+      if (maintenanceButton) return requestDeviceMaintenanceCommand(maintenanceButton.dataset.maintenanceDevice, maintenanceButton.dataset.maintenanceCommand, maintenanceButton);
       const replaceDevice = event.target.closest('[data-replace-device]');
       if (replaceDevice) return openReplaceDeviceDialog(replaceDevice.dataset.replaceDevice);
       const editDevice = event.target.closest('[data-edit-device]');
