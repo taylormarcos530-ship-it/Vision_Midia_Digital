@@ -1,5 +1,5 @@
 [build]
-  command = "rm -rf dist && mkdir -p dist && cp 404.html app.js config.js downloads.css downloads.html downloads.js icon.svg index.html manifest.webmanifest master-embed.js master-payment.js master.css master.html master.js payment-ui.js player.css player.html player.js player.webmanifest saas-shell.js styles.css sw.js dist/ && cp -R downloads dist/downloads"
+  command = "rm -rf dist && mkdir -p dist && cp 404.html app.js clock.html config.js downloads.css downloads.html downloads.js icon.svg index.html manifest.webmanifest master-embed.js master-payment.js master.css master.html master.js news-feed.html payment-ui.js player.css player.html player.js player.webmanifest saas-shell.js styles.css sw.js dist/ && cp -R downloads dist/downloads"
   publish = "dist"
 
 [[headers]]
