@@ -309,10 +309,22 @@
         });
         if (result.status === 'claimed') $('#pairing-status').textContent = 'Autorizado. Finalizando vínculo…';
         if (result.status === 'issued' && result.device_token) {
+          // A pairing authorization creates a fresh TV session. Never inherit content from
+          // a previous TV/session; playback starts only from this device's server assignment.
+          state.playlistNonce++;
+          state.currentMediaId = null;
+          state.manifest = null;
+          state.lastSyncAt = null;
+          writeJson(MANIFEST_KEY, null);
+          await caches.delete(MEDIA_CACHE).catch(() => false);
+          state.cacheItems = 0;
+          state.cacheBytes = 0;
           state.deviceToken = result.device_token;
           localStorage.setItem(DEVICE_TOKEN_KEY, result.device_token);
           state.pairing = null;
           writeJson(PAIRING_KEY, null);
+          showPlayback();
+          showIdle('TV autorizada', 'Aguardando uma playlist ser atribuída a esta TV.');
           await startPlayer();
           return;
         }
