@@ -48,17 +48,36 @@ function pairingCode() {
 }
 
 async function playerBranding(admin, setupCode) {
-  const code = String(setupCode || '').trim().toUpperCase().slice(0, 12)
-  if (!code) return null
-  const { data, error } = await admin.from('company_player_branding').select('company_id,title,message,splash_path').eq('setup_code', code).maybeSingle()
-  if (error) throw error
-  if (!data) return null
+  const { data: globalBranding, error: globalError } = await admin
+    .from('platform_player_branding')
+    .select('title,message,splash_path')
+    .eq('id', 1)
+    .maybeSingle()
+  if (globalError) throw globalError
+
   let splashUrl = null
-  if (data.splash_path) {
-    const { data: signed, error: signedError } = await admin.storage.from('vision-media').createSignedUrl(data.splash_path, 60 * 60)
+  if (globalBranding?.splash_path) {
+    const { data: signed, error: signedError } = await admin.storage.from('vision-media').createSignedUrl(globalBranding.splash_path, 60 * 60)
     if (!signedError) splashUrl = signed?.signedUrl || null
   }
-  return { company_id: data.company_id, title: data.title || null, message: data.message || null, splash_url: splashUrl }
+
+  // The global Master branding is visual only and never pre-selects a client company.
+  // Keep legacy setup URLs compatible only for company routing while all Players share the same visuals.
+  const code = String(setupCode || '').trim().toUpperCase().slice(0, 12)
+  let companyId = null
+  if (code) {
+    const { data: legacy, error: legacyError } = await admin.from('company_player_branding').select('company_id').eq('setup_code', code).maybeSingle()
+    if (legacyError) throw legacyError
+    companyId = legacy?.company_id || null
+  }
+
+  if (!globalBranding && !companyId) return null
+  return {
+    company_id: companyId,
+    title: globalBranding?.title || null,
+    message: globalBranding?.message || null,
+    splash_url: splashUrl,
+  }
 }
 
 Deno.serve(async (req) => {
