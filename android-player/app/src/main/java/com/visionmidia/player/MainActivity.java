@@ -11,6 +11,9 @@ import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
 import android.net.Uri;
+import android.net.ConnectivityManager;
+import android.net.Network;
+import android.net.NetworkCapabilities;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -228,6 +231,29 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
+        }
+
+        @JavascriptInterface
+        public String getNetworkDiagnostics() {
+            try {
+                ConnectivityManager manager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+                if (manager == null) {
+                    return "{\"connected\":false,\"validated\":false,\"transport\":\"unknown\"}";
+                }
+                Network network = manager.getActiveNetwork();
+                NetworkCapabilities capabilities = network == null ? null : manager.getNetworkCapabilities(network);
+                boolean connected = capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET);
+                boolean validated = capabilities != null && capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED);
+                String transport = "other";
+                if (capabilities == null) transport = "offline";
+                else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_ETHERNET)) transport = "ethernet";
+                else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_WIFI)) transport = "wifi";
+                else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_CELLULAR)) transport = "cellular";
+                else if (capabilities.hasTransport(NetworkCapabilities.TRANSPORT_VPN)) transport = "vpn";
+                return "{\"connected\":" + connected + ",\"validated\":" + validated + ",\"transport\":\"" + transport + "\"}";
+            } catch (Exception ignored) {
+                return "{\"connected\":false,\"validated\":false,\"transport\":\"unknown\"}";
+            }
         }
 
         @JavascriptInterface
