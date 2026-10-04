@@ -32,6 +32,8 @@
     syncTimer: null,
     commandTimer: null,
     accessTimer: null,
+    scheduleTimer: null,
+    scheduleSignature: null,
     processingCommands: new Set(),
     lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
     currentMediaId: null,
@@ -685,6 +687,28 @@
     return days.includes(weekday);
   }
 
+  function activeScheduleSignature(manifest = state.manifest) {
+    if (!manifest?.items?.length) return '';
+    const timeZone = manifest.program?.timezone || 'America/Sao_Paulo';
+    return manifest.items
+      .filter(item => itemScheduleActive(item, timeZone))
+      .map(item => item.id)
+      .join('|');
+  }
+
+  function checkScheduleTransitions() {
+    const signature = activeScheduleSignature();
+    if (state.scheduleSignature == null) {
+      state.scheduleSignature = signature;
+      return;
+    }
+    if (signature !== state.scheduleSignature) {
+      state.scheduleSignature = signature;
+      state.playlistNonce++;
+      ensurePlaybackLoop();
+    }
+  }
+
   function blobToBase64(blob) {
     return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||'').split(',')[1]||'');reader.onerror=()=>reject(reader.error||new Error('Falha ao ler captura.'));reader.readAsDataURL(blob);});
   }
@@ -831,10 +855,13 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 10_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
+    state.scheduleSignature = activeScheduleSignature();
+    state.scheduleTimer = setInterval(checkScheduleTransitions, 1_000);
     pollDeviceCommands().catch(() => {});
   }
 
@@ -851,10 +878,13 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.scheduleTimer) clearInterval(state.scheduleTimer);
     state.heartbeatTimer = null;
     state.syncTimer = null;
     state.commandTimer = null;
     state.accessTimer = null;
+    state.scheduleTimer = null;
+    state.scheduleSignature = null;
     state.processingCommands.clear();
     localStorage.removeItem(DEVICE_TOKEN_KEY);
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
