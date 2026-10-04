@@ -2358,11 +2358,11 @@
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
       const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
-      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : (media.media_type === 'url' ? 'Online' : 'Vídeo');
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
-          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : (media.media_type === 'url' ? '↗' : '▧')}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
@@ -3795,6 +3795,71 @@
     box.innerHTML = `<strong>${ideal ? '✓ Proporção ideal' : '⚠ Proporção diferente da TV'}</strong><span>Imagem selecionada: ${width} × ${height} px • ${orientation}</span><small>${ideal ? 'A proporção está adequada para preencher a TV nessa orientação.' : `Para evitar faixas pretas ou cortes, crie a arte em ${target}.`}</small>`;
   }
 
+  function clockMediaUrl() {
+    return new URL('./clock.html', location.href).href;
+  }
+
+  function newsMediaUrl(source = 'soccer') {
+    const url = new URL('./news-feed.html', location.href);
+    url.searchParams.set('source', source);
+    return url.href;
+  }
+
+  function openOnlineMediaDialog(preset = '') {
+    const dialog = $('#online-media-dialog');
+    if (!dialog) return;
+    if (preset === 'clock') {
+      $('#online-media-name').value = 'Hora certa';
+      $('#online-media-url').value = clockMediaUrl();
+      $('#online-media-duration').value = '30';
+    } else if (preset === 'soccer') {
+      $('#online-media-name').value = 'Futebol & notícias';
+      $('#online-media-url').value = newsMediaUrl('soccer');
+      $('#online-media-duration').value = '30';
+    } else {
+      $('#online-media-name').value = '';
+      $('#online-media-url').value = '';
+      $('#online-media-duration').value = '30';
+    }
+    dialog.showModal();
+  }
+
+  async function handleOnlineMediaSave(event) {
+    event.preventDefault();
+    const name = ($('#online-media-name')?.value || '').trim();
+    const rawUrl = ($('#online-media-url')?.value || '').trim();
+    const duration = Math.max(5, Math.min(3600, Number($('#online-media-duration')?.value || 30)));
+    if (!name || !rawUrl) return toast('Preencha o conteúdo online', 'Informe nome e URL.', 'error');
+    let parsed;
+    try { parsed = new URL(rawUrl, location.href); } catch { return toast('URL inválida', 'Use um endereço HTTP ou HTTPS válido.', 'error'); }
+    if (!['http:', 'https:'].includes(parsed.protocol)) return toast('URL inválida', 'Use HTTP ou HTTPS.', 'error');
+    try {
+      await restRequest('media_assets', {
+        method: 'POST',
+        body: {
+          company_id: state.company.id,
+          name,
+          media_type: 'url',
+          mime_type: 'text/html',
+          storage_path: null,
+          source_url: parsed.href,
+          duration_seconds: duration,
+          size_bytes: 0,
+          width: null,
+          height: null,
+          processing_status: 'ready',
+          created_by: state.user.id,
+        },
+        prefer: 'return=minimal',
+      });
+      $('#online-media-dialog')?.close();
+      toast('Conteúdo online adicionado', name);
+      await loadAllData();
+    } catch (error) {
+      toast('Falha ao adicionar conteúdo online', error.message, 'error');
+    }
+  }
+
   async function handleMediaUpload(file) {
     if (!file) return;
     if (!['image/', 'video/'].some(prefix => file.type.startsWith(prefix))) {
@@ -4620,6 +4685,9 @@
     $('#report-print').addEventListener('click', () => { if (!state.report?.summary?.started) return toast('Sem dados para imprimir', 'Gere um relatório com veiculações primeiro.', 'error'); window.print(); });
     $$('[data-report-preset]').forEach(button => button.addEventListener('click', () => applyReportPreset(button.dataset.reportPreset)));
     $('#media-file-input').addEventListener('change', event => handleMediaUpload(event.target.files?.[0]));
+    $('#add-online-media-button')?.addEventListener('click', () => openOnlineMediaDialog());
+    $('#online-media-form')?.addEventListener('submit', handleOnlineMediaSave);
+    $('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
 
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
 
