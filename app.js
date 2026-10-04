@@ -114,6 +114,7 @@
     selectedNotificationIds: new Set(),
     deviceScreenshots: [],
     playerBranding: null,
+    isPlatformAdmin: false,
     selectedPlaylistItemIds: new Set(),
     scheduleTargetItemIds: [],
     draggingPlaylistItemId: null,
@@ -683,6 +684,9 @@
     ]);
     state.subscription = rows?.[0] || null;
     state.companyRole = memberRows?.[0]?.status === 'active' ? memberRows[0].role : null;
+    try {
+      state.isPlatformAdmin = Boolean(await restRequest('rpc/current_user_is_platform_admin', { method: 'POST', body: {} }));
+    } catch { state.isPlatformAdmin = false; }
     const reason = accessReason(state.subscription);
     if (reason) {
       showScreen('access');
@@ -706,7 +710,7 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles, playerBrandingRows] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
@@ -721,7 +725,6 @@
         restRequest('device_heartbeats', { query: `select=id,device_id,received_at,details&company_id=eq.${companyId}&order=received_at.desc&limit=250` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
-        restRequest('company_player_branding', { query: `select=company_id,setup_code,splash_path,title,message,updated_at,updated_by&company_id=eq.${companyId}&limit=1` }),
       ]);
       state.devices = devices || [];
       state.media = media || [];
@@ -739,7 +742,11 @@
       state.profiles = profiles || [];
       const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
-      state.playerBranding = playerBrandingRows?.[0] || null;
+      state.playerBranding = null;
+      if (state.isPlatformAdmin) {
+        const globalBrandingRows = await restRequest('platform_player_branding', { query: 'select=id,splash_path,title,message,updated_at,updated_by&id=eq.1&limit=1' });
+        state.playerBranding = globalBrandingRows?.[0] || null;
+      }
       await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
       updateConnectionStatus(true);
@@ -1960,24 +1967,17 @@
     }
   }
 
-  function createPlayerSetupCode() {
-    const alphabet = 'ABCDEF0123456789';
-    const bytes = new Uint8Array(8);
-    crypto.getRandomValues(bytes);
-    return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
-  }
-
   function renderPlayerBranding() {
+    const panel = $('#player-branding-panel');
+    if (panel) panel.classList.toggle('hidden', !state.isPlatformAdmin);
+    if (!state.isPlatformAdmin) return;
     const b = state.playerBranding;
-    const title = b?.title || state.company?.name || 'Vision Player';
+    const title = b?.title || 'Vision Player';
     const message = b?.message || 'Instale o Player e vincule a TV pelo código.';
     if ($('#branding-title')) $('#branding-title').value = b?.title || '';
     if ($('#branding-message')) $('#branding-message').value = b?.message || '';
     if ($('#branding-preview-title')) $('#branding-preview-title').textContent = title;
     if ($('#branding-preview-message')) $('#branding-preview-message').textContent = message;
-    if ($('#branding-setup-code')) $('#branding-setup-code').textContent = b?.setup_code || 'Será gerado ao salvar';
-    const playerUrl = b?.setup_code ? `${location.origin}/player.html?setup=${encodeURIComponent(b.setup_code)}` : `${location.origin}/player.html`;
-    if ($('#branding-player-url')) $('#branding-player-url').value = playerUrl;
     const preview = $('#player-branding-preview');
     if (preview) { preview.style.backgroundImage = ''; preview.dataset.loaded = ''; }
     hydratePlayerBrandingPreview();
@@ -1985,7 +1985,7 @@
 
   async function hydratePlayerBrandingPreview() {
     const preview = $('#player-branding-preview');
-    if (!preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
+    if (!state.isPlatformAdmin || !preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
     try {
       const url = await getSignedMediaUrl(state.playerBranding.splash_path);
       preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${url}")`;
@@ -1995,46 +1995,41 @@
 
   async function savePlayerBranding(event) {
     event.preventDefault();
+    if (!state.isPlatformAdmin) return toast('Sem permissão', 'Somente o Master pode alterar a identidade global do Player.', 'error');
     const button = $('#branding-save');
     const file = $('#branding-file')?.files?.[0] || null;
     let newPath = null;
-    let oldPath = state.playerBranding?.splash_path || null;
+    const oldPath = state.playerBranding?.splash_path || null;
     setBusy(button, true, 'Salvando...');
     try {
       if (file) {
         const optimized = await optimizeImageForUpload(file);
         const upload = optimized.file;
         const safeName = optimized.name.replace(/[^a-zA-Z0-9._-]+/g, '-').slice(-100);
-        newPath = `${state.company.id}/branding/${crypto.randomUUID()}-${safeName}`;
+        newPath = `_platform/branding/${crypto.randomUUID()}-${safeName}`;
         const encodedPath = newPath.split('/').map(encodeURIComponent).join('/');
         await storageRequest(`/object/${CONFIG.storageBucket}/${encodedPath}`, { body: upload, contentType: upload.type || 'image/webp', extraHeaders: { 'x-upsert': 'false' } });
       }
-      const setupCode = state.playerBranding?.setup_code || createPlayerSetupCode();
       const payload = {
-        company_id: state.company.id,
+        id: 1,
         title: $('#branding-title').value.trim() || null,
         message: $('#branding-message').value.trim() || null,
         splash_path: newPath || oldPath,
-        setup_code: setupCode,
+        updated_at: new Date().toISOString(),
         updated_by: state.user.id,
       };
-      let rows;
-      if (state.playerBranding) {
-        rows = await restRequest('company_player_branding', { method: 'PATCH', query: `company_id=eq.${encodeURIComponent(state.company.id)}`, body: payload, prefer: 'return=representation' });
-      } else {
-        rows = await restRequest('company_player_branding', { method: 'POST', body: payload, prefer: 'return=representation' });
-      }
-      state.playerBranding = rows?.[0] || state.playerBranding;
-      if (!state.playerBranding) throw new Error('A configuração foi enviada, mas não retornou do servidor.');
-      if (newPath && oldPath && oldPath !== newPath) {
-        storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [oldPath] } }).catch(() => {});
-      }
+      const rows = state.playerBranding
+        ? await restRequest('platform_player_branding', { method: 'PATCH', query: 'id=eq.1', body: payload, prefer: 'return=representation' })
+        : await restRequest('platform_player_branding', { method: 'POST', body: payload, prefer: 'return=representation' });
+      state.playerBranding = rows?.[0] || null;
+      if (!state.playerBranding) throw new Error('A configuração global foi enviada, mas não retornou do servidor.');
+      if (newPath && oldPath && oldPath !== newPath) storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [oldPath] } }).catch(() => {});
       $('#branding-file').value = '';
       renderPlayerBranding();
-      toast('Salvo com sucesso', 'Tela de instalação do Player atualizada.');
+      toast('Salvo com sucesso', 'A identidade global do Vision Player foi atualizada para todos os clientes.');
     } catch (error) {
       if (newPath) storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [newPath] } }).catch(() => {});
-      toast('Erro ao salvar tela do Player', error.message, 'error', 6000);
+      toast('Erro ao salvar tela global do Player', error.message, 'error', 6000);
     } finally { setBusy(button, false); }
   }
 
@@ -4574,8 +4569,7 @@
     });
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
-    $('#branding-copy-url')?.addEventListener('click', async () => { const value=$('#branding-player-url')?.value || ''; try{await navigator.clipboard.writeText(value);toast('Link copiado')}catch{$('#branding-player-url')?.select();document.execCommand('copy');toast('Link copiado')} });
-    $('#branding-open-player')?.addEventListener('click', () => window.open($('#branding-player-url')?.value || './player.html','_blank','noopener'));
+    $('#branding-open-player')?.addEventListener('click', () => window.open('./player.html','_blank','noopener'));
     $('#playlist-schedule-form').addEventListener('submit', applyPlaylistSchedule);
     $('#playlist-schedule-clear').addEventListener('click', clearPlaylistSchedule);
     $('#playlist-schedule-enabled').addEventListener('change', () => { playlistScheduleStatus(); syncPlaylistScheduleFormVisibility(); });
