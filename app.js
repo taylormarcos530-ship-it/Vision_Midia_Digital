@@ -1228,7 +1228,14 @@
     const playerUrl = b?.setup_code ? `${location.origin}/player.html?setup=${encodeURIComponent(b.setup_code)}` : `${location.origin}/player.html`;
     if ($('#branding-player-url')) $('#branding-player-url').value = playerUrl;
     const preview = $('#player-branding-preview');
-    if (preview) { preview.style.backgroundImage = ''; preview.dataset.loaded = ''; }
+    if (preview) {
+      preview.style.backgroundImage = '';
+      preview.style.backgroundSize = '';
+      preview.style.backgroundPosition = '';
+      preview.style.backgroundRepeat = '';
+      preview.style.backgroundColor = '';
+      preview.dataset.loaded = '';
+    }
     hydratePlayerBrandingPreview();
   }
 
@@ -1238,6 +1245,10 @@
     try {
       const url = await getSignedMediaUrl(state.playerBranding.splash_path);
       preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${url}")`;
+      preview.style.backgroundSize = 'cover, contain';
+      preview.style.backgroundPosition = 'center, center';
+      preview.style.backgroundRepeat = 'no-repeat, no-repeat';
+      preview.style.backgroundColor = '#000';
       preview.dataset.loaded = '1';
     } catch { /* generic preview remains */ }
   }
