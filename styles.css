@@ -1805,3 +1805,6 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
     visibility:visible!important;
   }
 }
+
+/* Direct TV orientation controls */
+.device-orientation-quick{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin:10px 0 12px}.device-orientation-quick>span{font-size:12px;color:var(--muted);font-weight:700}.device-orientation-quick .small-icon-button.active{border-color:#5683ff;box-shadow:0 0 0 1px rgba(86,131,255,.25);color:#fff}@media(max-width:640px){.device-orientation-quick .small-icon-button{flex:1 1 auto;min-width:110px}}
