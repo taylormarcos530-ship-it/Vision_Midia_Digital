@@ -165,6 +165,23 @@ Deno.serve(async (req) => {
       const currentCampaignId = safeUuid(body?.current_campaign_id)
       const currentPlaylistId = safeUuid(body?.current_playlist_id)
       const currentMediaId = safeUuid(body?.current_media_id)
+      const clientTimeRaw = Number(body?.client_time_ms)
+      const clientTimeMs = Number.isFinite(clientTimeRaw) && clientTimeRaw > 0 ? clientTimeRaw : null
+      const clockSkewMs = clientTimeMs == null ? null : Math.round(clientTimeMs - Date.now())
+      const clockSkewAbs = clockSkewMs == null ? null : Math.abs(clockSkewMs)
+      const clockStatus = clockSkewAbs == null
+        ? 'unknown'
+        : clockSkewAbs >= 5 * 60_000
+          ? 'incorrect'
+          : clockSkewAbs >= 2 * 60_000
+            ? 'warning'
+            : 'ok'
+      const timezoneOffsetRaw = Number(body?.timezone_offset_minutes)
+      const timezoneOffsetMinutes = Number.isFinite(timezoneOffsetRaw) ? Math.round(timezoneOffsetRaw) : null
+      const timezoneName = String(body?.timezone_name || '').trim().slice(0, 80) || null
+      const networkConnected = typeof body?.network_connected === 'boolean' ? body.network_connected : null
+      const networkValidated = typeof body?.network_validated === 'boolean' ? body.network_validated : null
+      const networkTransport = String(body?.network_transport || '').trim().slice(0, 40) || null
 
       const { error: updateError } = await admin.from('devices').update({
         status: 'online',
@@ -189,14 +206,23 @@ Deno.serve(async (req) => {
 
       const { data: lastHeartbeat, error: heartbeatReadError } = await admin
         .from('device_heartbeats')
-        .select('received_at')
+        .select('received_at,details')
         .eq('device_id', device.id)
         .order('received_at', { ascending: false })
         .limit(1)
         .maybeSingle()
       if (heartbeatReadError) throw heartbeatReadError
 
-      const shouldRecord = !lastHeartbeat || (Date.now() - new Date(lastHeartbeat.received_at).getTime()) >= 5 * 60 * 1000
+      const previousDetails = lastHeartbeat?.details && typeof lastHeartbeat.details === 'object' ? lastHeartbeat.details : {}
+      const diagnosticsChanged =
+        String(previousDetails.clock_status || '') !== String(clockStatus || '') ||
+        previousDetails.network_connected !== networkConnected ||
+        previousDetails.network_validated !== networkValidated ||
+        String(previousDetails.network_transport || '') !== String(networkTransport || '')
+      const shouldRecord =
+        !lastHeartbeat ||
+        (Date.now() - new Date(lastHeartbeat.received_at).getTime()) >= 5 * 60 * 1000 ||
+        diagnosticsChanged
       if (shouldRecord) {
         const details = body?.details && typeof body.details === 'object' && !Array.isArray(body.details) ? body.details : {}
         const { error: heartbeatError } = await admin.from('device_heartbeats').insert({
@@ -217,12 +243,29 @@ Deno.serve(async (req) => {
             cache_bytes: cacheBytes == null ? 0 : Math.round(cacheBytes),
             playback_queue_size: playbackQueueSize == null ? 0 : Math.round(playbackQueueSize),
             event_queue_size: eventQueueSize == null ? 0 : Math.round(eventQueueSize),
+            client_time_ms: clientTimeMs,
+            clock_skew_ms: clockSkewMs,
+            clock_status: clockStatus,
+            timezone_offset_minutes: timezoneOffsetMinutes,
+            timezone_name: timezoneName,
+            network_connected: networkConnected,
+            network_validated: networkValidated,
+            network_transport: networkTransport,
           },
         })
         if (heartbeatError) throw heartbeatError
       }
 
-      return json({ ok: true, device_id: device.id, server_time: now })
+      return json({
+        ok: true,
+        device_id: device.id,
+        server_time: now,
+        clock_skew_ms: clockSkewMs,
+        clock_status: clockStatus,
+        network_connected: networkConnected,
+        network_validated: networkValidated,
+        network_transport: networkTransport,
+      })
     }
 
     if (action === 'event' || action === 'event_batch') {
