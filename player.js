@@ -1198,7 +1198,10 @@
           : manifest?.program;
         let usingFallback = fallbackLocked;
 
-        if ((!playlist || !items.length) && fallback?.playlist && fallbackActive.length) {
+        // Fallback is a recovery path for an assigned primary playlist only.
+        // A newly paired/unassigned TV must stay idle and must never inherit or
+        // start the company's emergency/default playlist just because it exists.
+        if (playlist && !items.length && fallback?.playlist && fallbackActive.length) {
           playlist = fallback.playlist;
           items = fallbackActive;
           usingFallback = true;
