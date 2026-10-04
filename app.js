@@ -1993,7 +1993,9 @@
     if ($('#branding-message')) $('#branding-message').value = b?.message || '';
     if ($('#branding-preview-title')) $('#branding-preview-title').textContent = title;
     if ($('#branding-preview-message')) $('#branding-preview-message').textContent = message;
-    const playerUrl = new URL('player.html', document.currentScript?.src || new URL('./', location.href)).href;
+    const playerUrl = location.hostname.endsWith('.github.io')
+      ? `${location.origin}/Vision_Midia_Digital/player.html`
+      : `${location.origin}/player.html`;
     if ($('#branding-player-url')) $('#branding-player-url').value = playerUrl;
     if ($('#branding-setup-code')) $('#branding-setup-code').textContent = 'Global / Master';
     const preview = $('#player-branding-preview');
@@ -4588,7 +4590,7 @@
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
     $('#branding-copy-url')?.addEventListener('click', async () => {
-      const value = $('#branding-player-url')?.value || new URL('player.html', document.currentScript?.src || new URL('./', location.href)).href;
+      const value = $('#branding-player-url')?.value || (location.hostname.endsWith('.github.io') ? `${location.origin}/Vision_Midia_Digital/player.html` : `${location.origin}/player.html`);
       try { await navigator.clipboard.writeText(value); toast('Link copiado'); }
       catch { $('#branding-player-url')?.select(); document.execCommand('copy'); toast('Link copiado'); }
     });
