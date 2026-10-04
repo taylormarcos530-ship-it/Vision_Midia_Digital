@@ -702,3 +702,31 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .client-title small{font-size:12px}
   .client-actions .small-button{font-size:13px;padding-inline:8px}
 }
+
+/* MOBILE_OVERFLOW_FIX_V43 — keep the redesigned Master screens inside the phone viewport. */
+@media(max-width:720px){
+  html,body{width:100%;max-width:100%;overflow-x:hidden}
+  .master-main,.master-content,.master-view,.premium-master-view,
+  .hero,.master-executive-hero,.master-module-hero,.panel,.client-card,.plan-card{
+    width:100%;max-width:100%;min-width:0
+  }
+  .master-executive-hero{
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    gap:18px;
+    padding:18px;
+  }
+  .master-executive-copy,.master-executive-copy h2,.master-executive-copy p{
+    width:100%;max-width:100%;min-width:0;overflow-wrap:anywhere
+  }
+  .master-executive-copy h2{font-size:clamp(28px,8vw,40px)}
+  .master-command-card{width:100%;min-width:0}
+  .master-module-hero{flex-direction:column;align-items:stretch;gap:14px}
+  .master-module-heading{width:100%;min-width:0}
+  .master-module-heading h2,.master-module-heading p{overflow-wrap:anywhere}
+  .master-module-hero>.button{width:100%;max-width:none}
+  .master-client-tools{grid-template-columns:1fr;min-width:0}
+  .mini-row{flex-wrap:wrap;min-width:0}
+  .mini-row>div{min-width:0;overflow-wrap:anywhere}
+}
