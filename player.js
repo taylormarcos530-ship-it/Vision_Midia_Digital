@@ -464,6 +464,13 @@
           state.deviceToken = result.device_token;
           localStorage.setItem(DEVICE_TOKEN_KEY, result.device_token);
           try { window.VisionAndroid?.storeDeviceToken?.(result.device_token); } catch {}
+          // A newly paired TV must never inherit the previous device's saved programming.
+          // Clear only the device-owned manifest/runtime fallback; media cache stays available
+          // and will be reused only if the new manifest explicitly references it.
+          writeJson(MANIFEST_KEY, null);
+          state.manifest = null;
+          state.runtimeFallbackVersion = null;
+          state.playlistNonce++;
           state.pairing = null;
           writeJson(PAIRING_KEY, null);
           await startPlayer();
