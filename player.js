@@ -690,17 +690,57 @@
     return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
   }
 
+  async function clearPlayerCache() {
+    state.cachePrefetchVersion = null;
+    await caches.delete(MEDIA_CACHE).catch(() => false);
+    state.cacheItems = 0;
+    state.cacheBytes = 0;
+  }
+
+  function restartPlayerRuntime() {
+    try { if (window.VisionAndroid?.restartApp) { window.VisionAndroid.restartApp(); return; } } catch {}
+    location.reload();
+  }
+
   async function pollDeviceCommands() {
     if(!state.deviceToken||!navigator.onLine)return;
     const result=await gateway({action:'commands'});
     for(const command of result?.commands||[]){
-      if(command.command_type!=='screenshot'||state.processingCommands.has(command.id))continue;
+      if(state.processingCommands.has(command.id))continue;
+      if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming'].includes(command.command_type))continue;
       state.processingCommands.add(command.id);
       try{
-        const capture=await captureCurrentFrame();
-        await gateway({action:'screenshot_result',command_id:command.id,...capture});
+        if(command.command_type==='screenshot'){
+          const capture=await captureCurrentFrame();
+          await gateway({action:'screenshot_result',command_id:command.id,...capture});
+          continue;
+        }
+        if(command.command_type==='restart_player'){
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          setTimeout(restartPlayerRuntime,250);
+          continue;
+        }
+        if(command.command_type==='sync_now'){
+          await syncManifest();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          continue;
+        }
+        if(command.command_type==='clear_cache'){
+          await clearPlayerCache();
+          state.playlistNonce++;
+          await syncManifest();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          continue;
+        }
+        if(command.command_type==='reload_programming'){
+          state.playlistNonce++;
+          await syncManifest();
+          ensurePlaybackLoop();
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+        }
       }catch(error){
-        await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        if(command.command_type==='screenshot') await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        else await gateway({action:'command_result',command_id:command.id,status:'failed',error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
       }finally{state.processingCommands.delete(command.id)}
     }
   }
@@ -780,8 +820,8 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 10_000);
-    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
+    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 5_000);
+    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 3_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 2_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
     pollDeviceCommands().catch(() => {});
