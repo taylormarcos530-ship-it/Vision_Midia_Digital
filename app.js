@@ -2256,7 +2256,7 @@
 
   function currentMediaRenderSignature() {
     const mediaPart = state.media.map(media => [
-      media.id, media.storage_path, media.updated_at, media.name, media.width, media.height, media.size_bytes
+      media.id, media.storage_path, media.source_url, media.media_type, media.updated_at, media.name, media.width, media.height, media.size_bytes, media.duration_seconds
     ].join(':')).join('|');
     const itemPart = state.playlistItems.map(item => `${item.id}:${item.playlist_id}:${item.media_id}`).join('|');
     const playlistPart = state.playlists.map(playlist => `${playlist.id}:${playlist.name}`).join('|');
