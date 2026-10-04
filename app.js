@@ -16,7 +16,7 @@
   const VIEW_KEY = 'vision_midia_active_view_v1';
   const ACTIVE_AREA_KEY = 'vision_midia_active_area_v1';
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
-  const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports']);
+  const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
   const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.0';
   const EXPECTED_APK_VERSION = '1.4.9-preview';
@@ -107,6 +107,10 @@
     deviceCommands: [],
     companyMembers: [],
     profiles: [],
+    notifications: [],
+    notificationUnreadCount: 0,
+    notificationFilter: 'all',
+    selectedNotificationIds: new Set(),
     deviceScreenshots: [],
     playerBranding: null,
     selectedPlaylistItemIds: new Set(),
@@ -732,12 +736,157 @@
       const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
       state.playerBranding = null;
+      await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
       updateConnectionStatus(true);
     } catch (error) {
       updateConnectionStatus(false);
       throw error;
     }
+  }
+
+
+  function inboxDateTime(value) {
+    if (!value) return '';
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return '';
+    return new Intl.DateTimeFormat('pt-BR', {
+      dateStyle: 'short',
+      timeStyle: 'short',
+      timeZone: state.company?.timezone || 'America/Sao_Paulo',
+    }).format(date);
+  }
+
+  function visibleInboxItems() {
+    const filter = state.notificationFilter || 'all';
+    return (state.notifications || []).filter(item => {
+      if (filter === 'unread') return !item.is_read;
+      if (filter === 'read') return Boolean(item.is_read);
+      return true;
+    });
+  }
+
+  function updateInboxBadge() {
+    const badge = $('#inbox-unread-badge');
+    if (!badge) return;
+    const count = Number(state.notificationUnreadCount || 0);
+    badge.textContent = count > 99 ? '99+' : String(count);
+    badge.classList.toggle('hidden', count < 1);
+  }
+
+  function renderNotificationInbox() {
+    updateInboxBadge();
+    const list = $('#inbox-list');
+    const empty = $('#inbox-empty');
+    if (!list || !empty) return;
+
+    const items = visibleInboxItems();
+    const validIds = new Set((state.notifications || []).map(item => item.id));
+    state.selectedNotificationIds = new Set(
+      [...state.selectedNotificationIds].filter(id => validIds.has(id))
+    );
+
+    list.innerHTML = items.map(item => {
+      const selected = state.selectedNotificationIds.has(item.id);
+      return `
+        <article class="inbox-message-card ${item.is_read ? 'read' : 'unread'}">
+          <label class="inbox-message-check" aria-label="Selecionar mensagem">
+            <input type="checkbox" data-inbox-select="${escapeHtml(item.id)}" ${selected ? 'checked' : ''} />
+          </label>
+          <div class="inbox-message-copy">
+            <div class="inbox-message-head">
+              <div>
+                <strong>${escapeHtml(item.title || 'Vision Mídia Digital')}</strong>
+                <div class="inbox-message-meta">
+                  <span class="inbox-read-state">${item.is_read ? 'Lida' : 'Não lida'}</span>
+                  <span>${escapeHtml(inboxDateTime(item.created_at))}</span>
+                </div>
+              </div>
+            </div>
+            <p class="inbox-message-body">${escapeHtml(item.message || '')}</p>
+          </div>
+          <div class="inbox-message-actions">
+            <button class="button ghost" type="button" data-inbox-read="${escapeHtml(item.id)}" data-next-read="${item.is_read ? 'false' : 'true'}">
+              ${item.is_read ? 'Marcar não lida' : 'Marcar lida'}
+            </button>
+            <button class="button ghost" type="button" data-inbox-delete="${escapeHtml(item.id)}">Excluir</button>
+          </div>
+        </article>
+      `;
+    }).join('');
+
+    list.classList.toggle('hidden', !items.length);
+    empty.classList.toggle('hidden', Boolean(items.length));
+
+    const selectAll = $('#inbox-select-all');
+    if (selectAll) {
+      const visibleIds = items.map(item => item.id);
+      const selectedVisible = visibleIds.filter(id => state.selectedNotificationIds.has(id));
+      selectAll.checked = visibleIds.length > 0 && selectedVisible.length === visibleIds.length;
+      selectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleIds.length;
+      selectAll.disabled = visibleIds.length === 0;
+    }
+    const deleteButton = $('#inbox-delete-selected');
+    if (deleteButton) deleteButton.disabled = state.selectedNotificationIds.size === 0;
+  }
+
+  async function loadNotificationInbox({ quiet = false } = {}) {
+    if (!state.company?.id || !state.session?.access_token) {
+      state.notifications = [];
+      state.notificationUnreadCount = 0;
+      renderNotificationInbox();
+      return [];
+    }
+    try {
+      const result = await functionRequest('notification-inbox', {
+        authenticated: true,
+        body: { action: 'list', company_id: state.company.id },
+      });
+      state.notifications = Array.isArray(result?.items) ? result.items : [];
+      state.notificationUnreadCount = Number(result?.unread_count || 0);
+      renderNotificationInbox();
+      return state.notifications;
+    } catch (error) {
+      if (!quiet) toast('Não foi possível carregar as mensagens', error.message, 'error');
+      throw error;
+    }
+  }
+
+  async function setInboxMessageRead(notificationId, isRead) {
+    if (!notificationId || !state.company?.id) return;
+    await functionRequest('notification-inbox', {
+      authenticated: true,
+      body: {
+        action: 'set_read',
+        company_id: state.company.id,
+        notification_id: notificationId,
+        is_read: Boolean(isRead),
+      },
+    });
+    const item = (state.notifications || []).find(row => row.id === notificationId);
+    if (item) item.is_read = Boolean(isRead);
+    state.notificationUnreadCount = (state.notifications || []).filter(row => !row.is_read).length;
+    renderNotificationInbox();
+  }
+
+  async function deleteInboxMessages(ids) {
+    const notificationIds = [...new Set((ids || []).filter(Boolean))];
+    if (!notificationIds.length || !state.company?.id) return;
+    await functionRequest('notification-inbox', {
+      authenticated: true,
+      body: {
+        action: 'delete_many',
+        company_id: state.company.id,
+        notification_ids: notificationIds,
+      },
+    });
+    const deleted = new Set(notificationIds);
+    state.notifications = (state.notifications || []).filter(item => !deleted.has(item.id));
+    state.selectedNotificationIds = new Set(
+      [...state.selectedNotificationIds].filter(id => !deleted.has(id))
+    );
+    state.notificationUnreadCount = state.notifications.filter(row => !row.is_read).length;
+    renderNotificationInbox();
   }
 
   function renderIdentity() {
@@ -756,6 +905,7 @@
     renderPlaylists();
     renderCampaigns();
     renderReportFilterOptions();
+    renderNotificationInbox();
     if (state.report) renderPlaybackReport();
     if (state.editingPlaylistId) renderPlaylistEditor();
   }
@@ -2914,6 +3064,7 @@
       playlists: ['CONTEÚDO', 'Playlists'],
       campaigns: ['PROGRAMAÇÃO', 'Campanhas'],
       reports: ['RELATÓRIOS', 'Prova de veiculação'],
+      inbox: ['COMUNICAÇÃO', 'Mensagens'],
     };
     if (!VALID_OPERATIONAL_VIEWS.has(view)) view = 'dashboard';
     state.activeView = view;
@@ -2928,6 +3079,7 @@
     $('#view-title').textContent = titles[view]?.[1] || '';
     $('#sidebar').classList.remove('open');
     if (view === 'reports' && !state.report && !state.reportLoading) loadPlaybackReport({ quiet: true });
+    if (view === 'inbox') loadNotificationInbox({ quiet: true }).catch(() => null);
   }
 
   function updateConnectionStatus(force) {
@@ -4192,8 +4344,69 @@
       catch (error) { toast('Falha ao atualizar', error.message, 'error'); }
     });
     $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
-    $$('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
-    $$('[data-go-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.goView)));
+    $('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
+    $('[data-go-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.goView)));
+    $('#inbox-refresh')?.addEventListener('click', async () => {
+      const button = $('#inbox-refresh');
+      setBusy(button, true, 'Atualizando...');
+      try { await loadNotificationInbox(); }
+      finally { setBusy(button, false); }
+    });
+    $('#inbox-filter')?.addEventListener('change', event => {
+      state.notificationFilter = event.target.value || 'all';
+      state.selectedNotificationIds.clear();
+      renderNotificationInbox();
+    });
+    $('#inbox-select-all')?.addEventListener('change', event => {
+      const ids = visibleInboxItems().map(item => item.id);
+      if (event.target.checked) ids.forEach(id => state.selectedNotificationIds.add(id));
+      else ids.forEach(id => state.selectedNotificationIds.delete(id));
+      renderNotificationInbox();
+    });
+    $('#inbox-delete-selected')?.addEventListener('click', async () => {
+      const ids = [...state.selectedNotificationIds];
+      if (!ids.length) return;
+      if (!confirm(`Excluir ${ids.length} mensagem(ns) da sua caixa de entrada?`)) return;
+      const button = $('#inbox-delete-selected');
+      setBusy(button, true, 'Excluindo...');
+      try {
+        await deleteInboxMessages(ids);
+        toast('Mensagens excluídas', `${ids.length} mensagem(ns) removida(s) da sua caixa.`);
+      } catch (error) {
+        toast('Não foi possível excluir', error.message, 'error');
+      } finally { setBusy(button, false); }
+    });
+    document.addEventListener('change', event => {
+      const checkbox = event.target.closest?.('[data-inbox-select]');
+      if (!checkbox) return;
+      const id = checkbox.dataset.inboxSelect;
+      if (checkbox.checked) state.selectedNotificationIds.add(id);
+      else state.selectedNotificationIds.delete(id);
+      renderNotificationInbox();
+    });
+    document.addEventListener('click', async event => {
+      const readButton = event.target.closest?.('[data-inbox-read]');
+      if (readButton) {
+        const id = readButton.dataset.inboxRead;
+        const nextRead = readButton.dataset.nextRead !== 'false';
+        setBusy(readButton, true, nextRead ? 'Marcando...' : 'Alterando...');
+        try { await setInboxMessageRead(id, nextRead); }
+        catch (error) { toast('Não foi possível alterar a mensagem', error.message, 'error'); }
+        finally { setBusy(readButton, false); }
+        return;
+      }
+      const deleteButton = event.target.closest?.('[data-inbox-delete]');
+      if (!deleteButton) return;
+      const id = deleteButton.dataset.inboxDelete;
+      if (!confirm('Excluir esta mensagem da sua caixa de entrada?')) return;
+      setBusy(deleteButton, true, 'Excluindo...');
+      try {
+        await deleteInboxMessages([id]);
+        toast('Mensagem excluída');
+      } catch (error) {
+        toast('Não foi possível excluir', error.message, 'error');
+      } finally { setBusy(deleteButton, false); }
+    });
     $$('[data-action="quick-device"]').forEach(btn => btn.addEventListener('click', () => { setView('devices'); openPairDeviceDialog(); }));
 
     $('#add-device-button').addEventListener('click', openPairDeviceDialog);
