@@ -10,8 +10,8 @@ android {
         applicationId 'com.visionmidia.player'
         minSdk 24
         targetSdk 35
-        versionCode 14
-        versionName '1.4.14-recovery-preview'
+        versionCode 15
+        versionName '1.4.15-recovery-preview'
     }
 
     buildTypes {
