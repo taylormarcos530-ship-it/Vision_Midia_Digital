@@ -808,12 +808,20 @@
     if (!list || !empty) return;
 
     const items = visibleInboxItems();
+    let dueNotice = '';
+    const sub = state.subscription;
+    const dueValue = sub?.status === 'trialing' ? sub.trial_ends_at : sub?.current_period_end;
+    const dueTime = new Date(dueValue || '').getTime();
+    if (dueValue && Number.isFinite(dueTime) && ['active','trialing','past_due'].includes(sub?.status) && dueTime - Date.now() <= 3 * 86400000) {
+      const expired = dueTime < Date.now();
+      dueNotice = `<article class="inbox-message-card unread"><div class="inbox-message-copy"><strong>${expired ? 'Assinatura vencida' : 'Vencimento próximo'}</strong><p class="inbox-message-body">Seu ${sub.status === 'trialing' ? 'teste' : 'plano'} ${expired ? 'venceu' : 'vence'} em ${escapeHtml(formatAccessDate(dueValue))}. Entre em contato com o suporte para renovar.</p><small>Este aviso acompanha o vencimento atual da sua conta.</small></div></article>`;
+    }
     const validIds = new Set((state.notifications || []).map(item => item.id));
     state.selectedNotificationIds = new Set(
       [...state.selectedNotificationIds].filter(id => validIds.has(id))
     );
 
-    list.innerHTML = items.map(item => {
+    list.innerHTML = dueNotice + items.map(item => {
       const selected = state.selectedNotificationIds.has(item.id);
       return `
         <article class="inbox-message-card ${item.is_read ? 'read' : 'unread'}">
@@ -842,8 +850,8 @@
       `;
     }).join('');
 
-    list.classList.toggle('hidden', !items.length);
-    empty.classList.toggle('hidden', Boolean(items.length));
+    list.classList.toggle('hidden', !items.length && !dueNotice);
+    empty.classList.toggle('hidden', Boolean(items.length || dueNotice));
 
     const selectAll = $('#inbox-select-all');
     if (selectAll) {
@@ -4605,7 +4613,10 @@
     });
     $('#menu-button').addEventListener('click', () => $('#sidebar').classList.toggle('open'));
     $$('.nav-item[data-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.view)));
-    $$('[data-go-view]').forEach(btn => btn.addEventListener('click', () => setView(btn.dataset.goView)));
+    document.addEventListener('click', event => {
+      const button = event.target.closest('[data-go-view]');
+      if (button) setView(button.dataset.goView);
+    });
     $('#inbox-refresh')?.addEventListener('click', async () => {
       const button = $('#inbox-refresh');
       setBusy(button, true, 'Atualizando...');
@@ -4714,6 +4725,22 @@
     });
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
+    $('#branding-file')?.addEventListener('change', event => {
+      const file = event.target.files?.[0];
+      const preview = $('#player-branding-preview');
+      if (!file || !preview) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        const img = new Image();
+        img.onload = () => {
+          preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${reader.result}")`;
+          toast('Capa pronta para salvar', 'Clique em Salvar tela global para aplicar ao Player.');
+        };
+        img.onerror = () => toast('Imagem inválida', 'Não foi possível abrir a capa selecionada.', 'error');
+        img.src = String(reader.result);
+      };
+      reader.readAsDataURL(file);
+    });
     $('#branding-copy-url')?.addEventListener('click', async () => {
       const value = $('#branding-player-url')?.value || `${location.origin}/player.html`;
       try { await navigator.clipboard.writeText(value); toast('Link copiado'); }

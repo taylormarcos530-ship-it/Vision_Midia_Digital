@@ -484,6 +484,8 @@
     finally{if(button)button.blur()}
   }
   function renderNotificationComposer(){
+    const alerts = $('#master-message-expiry');
+    if (alerts) alerts.innerHTML = dueCompanies().map(info => `<div class="master-expiry-item ${info.state}"><div><strong>${esc(info.company.name)}</strong><small>${esc(info.when)} • ${esc(new Intl.DateTimeFormat('pt-BR',{dateStyle:'short'}).format(info.dueDate))}</small></div><button type="button" class="small-button" data-compose-expiry="${esc(info.company.id)}">Preparar aviso</button></div>`).join('') || '<p class="helper">Nenhum vencimento nos próximos 3 dias.</p>';
     const select=$('#mn-company');
     if(!select)return;
     const current=select.value;
@@ -509,6 +511,13 @@
       : 'Olá! Há uma atualização importante sobre sua conta Vision Mídia Digital.';
     $('#mn-message').focus();
   }
+  document.addEventListener('click', event => {
+    const button = event.target.closest('[data-compose-expiry]');
+    if (!button) return;
+    $('#mn-company').value = button.dataset.composeExpiry;
+    fillExpiryNotification();
+    $('#master-notification-form').scrollIntoView({ behavior:'smooth', block:'center' });
+  });
   async function sendMasterNotification(ev){
     ev.preventDefault();
     const companyId=$('#mn-company')?.value||'';
