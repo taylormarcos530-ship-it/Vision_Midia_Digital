@@ -1029,6 +1029,14 @@
           <span class="device-setting-chip ${device.settings?.autostart_enabled === false ? 'off' : 'on'}">⏻ Auto início ${device.settings?.autostart_enabled === false ? 'desligado' : 'ligado'}</span>
         </div>
 
+        <div class="device-orientation-quick" aria-label="Orientação da TV">
+          <span>Tela</span>
+          <button type="button" class="small-icon-button ${device.orientation === 'landscape' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="landscape">▭ Horizontal</button>
+          <button type="button" class="small-icon-button ${device.orientation === 'portrait' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="portrait">▯ Vertical</button>
+          <button type="button" class="small-icon-button ${!device.orientation || device.orientation === 'auto' ? 'active' : ''}" data-quick-orientation="${device.id}" data-orientation="auto">↻ Automática</button>
+          <button type="button" class="small-icon-button" data-edit-device="${device.id}">⚙ Ajustar</button>
+        </div>
+
         <label class="device-assignment">Playlist padrão
           <select data-device-playlist="${device.id}" ${state.playlists.length ? '' : 'disabled'}>
             <option value="">${state.playlists.length ? 'Nenhuma playlist' : 'Crie uma playlist primeiro'}</option>
@@ -1127,6 +1135,17 @@
     } finally {
       setBusy(button, false);
     }
+  }
+
+  async function setQuickDeviceOrientation(deviceId, orientation) {
+    const device = state.devices.find(item => item.id === deviceId);
+    if (!device || !['auto','landscape','portrait'].includes(orientation)) return;
+    try {
+      await restRequest('devices', { method:'PATCH', query:`id=eq.${encodeURIComponent(deviceId)}&company_id=eq.${encodeURIComponent(state.company.id)}`, body:{ orientation }, prefer:'return=minimal' });
+      device.orientation = orientation;
+      renderDevices();
+      toast('Orientação atualizada', `${device.name}: ${orientationLabel(orientation)}.`);
+    } catch (error) { toast('Não foi possível alterar a orientação', error.message, 'error'); }
   }
 
   async function requestDeviceScreenshot(deviceId, { quiet = false, automatic = false } = {}) {
@@ -3478,6 +3497,8 @@
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
       const viewDevice = event.target.closest('[data-view-device]');
       if (viewDevice) return openTvViewer(viewDevice.dataset.viewDevice);
+      const quickOrientation = event.target.closest('[data-quick-orientation]');
+      if (quickOrientation) return setQuickDeviceOrientation(quickOrientation.dataset.quickOrientation, quickOrientation.dataset.orientation);
       const captureDevice = event.target.closest('[data-capture-device]');
       if (captureDevice) return requestDeviceScreenshot(captureDevice.dataset.captureDevice);
       const replaceDevice = event.target.closest('[data-replace-device]');
