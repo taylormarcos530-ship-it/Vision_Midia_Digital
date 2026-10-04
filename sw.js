@@ -1,5 +1,5 @@
-const CACHE = 'vision-midia-shell-v44';
-// preview-refresh-v44-downloads-render
+const CACHE = 'vision-midia-shell-v41';
+// preview-refresh-v39-timed-access
 // preview-refresh-v35-playlists
 const SHELL = [
   './', './index.html', './styles.css', './config.js', './app.js', './payment-ui.js', './saas-shell.js', './manifest.webmanifest', './icon.svg',
@@ -93,12 +93,42 @@ self.addEventListener('fetch', event => {
   );
 });
 
+self.addEventListener('push', event => {
+  let payload = {};
+  try {
+    payload = event.data ? event.data.json() : {};
+  } catch {
+    payload = { body: event.data ? event.data.text() : '' };
+  }
+
+  const title = String(payload.title || 'Vision Mídia Digital');
+  const targetUrl = payload.url || './';
+  const options = {
+    body: String(payload.body || ''),
+    icon: payload.icon || './icon.svg',
+    badge: payload.badge || './icon.svg',
+    image: payload.image || undefined,
+    tag: payload.tag || 'vision-midia',
+    renotify: Boolean(payload.renotify),
+    data: { url: targetUrl },
+  };
+
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
 self.addEventListener('notificationclick', event => {
   event.notification.close();
+  const target = new URL(event.notification?.data?.url || './', self.location.origin).href;
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(list => {
-      if (list[0]) return list[0].focus();
-      return clients.openWindow('./');
+      const existing = list.find(client => client.url === target || client.url.startsWith(self.location.origin));
+      if (existing) {
+        return existing.focus().then(client => {
+          if ('navigate' in client && client.url !== target) return client.navigate(target);
+          return client;
+        });
+      }
+      return clients.openWindow(target);
     })
   );
 });
