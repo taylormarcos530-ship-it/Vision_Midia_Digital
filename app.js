@@ -1449,7 +1449,7 @@
     }
     const full = usage.used >= usage.limit;
     box.className = `plan-usage-banner ${full ? 'limit-reached' : ''}`;
-    box.innerHTML = `<div><strong>${escapeHtml(/^plano\b/i.test(usage.planName) ? usage.planName : `Plano ${usage.planName}`)}</strong><span>Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'}.</span></div><div class="plan-usage-numbers"><b>${usage.used}</b> em uso <span>•</span> <b>${usage.available}</b> disponível${usage.available === 1 ? '' : 'is'}</div>${storageHtml}`;
+    box.innerHTML = `<div><strong>${escapeHtml(/^plano\b/i.test(usage.planName) ? usage.planName : `Plano ${usage.planName}`)}</strong><span>Seu plano permite ${usage.limit} TV${usage.limit === 1 ? '' : 's'}.</span></div><div class="plan-usage-numbers"><b>${usage.used}</b> em uso <span>•</span> <b>${usage.available}</b> ${usage.available === 1 ? 'disponível' : 'disponíveis'}</div>${storageHtml}`;
     if (button) {
       button.disabled = full;
       button.title = full ? `Limite atingido: ${usage.used} de ${usage.limit} TVs em uso.` : `${usage.available} vaga(s) de TV disponível(is) no plano.`;

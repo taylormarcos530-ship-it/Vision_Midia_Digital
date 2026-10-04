@@ -2334,4 +2334,4 @@ details.player-branding-panel:not([open]) > summary { margin-bottom:0; }
 details.player-branding-panel > summary::after { content:"Abrir ▾"; color:var(--muted); font-size:12px; white-space:nowrap; }
 details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 .app-dialog { max-height:calc(100dvh - 32px); overflow:auto; }
-.app-dialog .dialog-header { position:sticky; top:-22px; z-index:2; background:#0d182a; padding-top:10px; }
+.app-dialog .dialog-header { position:sticky; top:0; z-index:2; background:#0d182a; padding-top:10px; }
