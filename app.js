@@ -563,7 +563,7 @@
     accessGateTimer = setInterval(refreshGateSoon, 10_000);
     setInterval(() => {
       if (state.company?.id && !document.hidden && !$('#app-shell').classList.contains('hidden')) loadAllData().catch(() => updateConnectionStatus(false));
-    }, 30_000);
+    }, 10_000);
 
     if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
       navigator.serviceWorker.register('./sw.js').catch(() => {});
@@ -1147,9 +1147,9 @@
       if (!command?.id) throw new Error('O servidor não confirmou o pedido de captura.');
       if (!quiet) toast('Captura solicitada', `${device.name}: aguardando o Player responder.`);
 
-      const deadline = Date.now() + 25000;
+      const deadline = Date.now() + 15000;
       while (Date.now() < deadline) {
-        await new Promise(resolve => setTimeout(resolve, 1800));
+        await new Promise(resolve => setTimeout(resolve, 900));
         const result = await restRequest('device_commands', { query: `select=id,status,error_message&company_id=eq.${encodeURIComponent(state.company.id)}&id=eq.${encodeURIComponent(command.id)}&limit=1` });
         const row = result?.[0];
         if (row?.status === 'completed') {
@@ -1160,7 +1160,7 @@
         }
         if (row?.status === 'failed') throw new Error(row.error_message || 'O Player não conseguiu capturar a tela.');
       }
-      throw new Error('A TV não respondeu ao pedido de captura em até 25 segundos.');
+      throw new Error('A TV não respondeu ao pedido de captura em até 15 segundos.');
     } catch (error) {
       const message = friendlyScreenshotError(error);
       state.deviceCaptureStates.set(deviceId, { status: 'error', message, automatic });
