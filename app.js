@@ -920,6 +920,7 @@
     renderCampaigns();
     renderReportFilterOptions();
     renderNotificationInbox();
+    renderPlayerBranding();
     if (state.report) renderPlaybackReport();
     if (state.editingPlaylistId) renderPlaylistEditor();
   }
