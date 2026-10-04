@@ -1766,20 +1766,21 @@
   }
 
   async function hydrateMediaPreviews() {
+    const renderSignature = state.mediaRenderSignature;
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
       const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
-      if (!preview || preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
+      if (!preview || preview.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || preview.dataset.loadingPath === media.storage_path) continue;
       preview.dataset.loadingPath = media.storage_path;
       try {
         const url = await signedMediaUrlCached(media);
-        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
+        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path || state.mediaRenderSignature !== renderSignature) continue;
         const element = await loadStablePreviewElement(media, url);
-        if (!preview.isConnected) continue;
+        if (!preview.isConnected || state.mediaRenderSignature !== renderSignature) continue;
         const old = preview.querySelector(':scope > img, :scope > video');
         if (old) old.replaceWith(element);
         else preview.insertBefore(element, preview.firstChild);
         preview.querySelector('.media-preview-placeholder')?.remove();
-        preview.dataset.loadedPath = media.storage_path;
+        preview.dataset.loadedPath = `${media.storage_path}:${media.updated_at || ''}`;
         delete preview.dataset.previewError;
       } catch {
         if (preview.isConnected) preview.dataset.previewError = '1';
@@ -1872,20 +1873,21 @@
   }
 
   async function hydratePlaylistCardPreviews(mediaIds) {
+    const renderSignature = state.playlistRenderSignature;
     const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
     for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
       const media = mediaById[mediaId];
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
       const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
       for (const target of targets) {
-        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        if (target.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || target.dataset.loadingPath === media.storage_path) continue;
         target.dataset.loadingPath = media.storage_path;
         try {
           const url = await signedMediaUrlCached(media);
           const element = await loadStablePreviewElement(media, url);
-          if (!target.isConnected) continue;
+          if (!target.isConnected || state.playlistRenderSignature !== renderSignature) continue;
           target.replaceChildren(element);
-          target.dataset.loadedPath = media.storage_path;
+          target.dataset.loadedPath = `${media.storage_path}:${media.updated_at || ''}`;
         } catch {
           // Mantém o placeholder atual e permite nova tentativa numa próxima atualização.
         } finally {
@@ -2135,14 +2137,14 @@
       const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
       if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
       for (const target of targets) {
-        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
+        if (target.dataset.loadedPath === `${media.storage_path}:${media.updated_at || ''}` || target.dataset.loadingPath === media.storage_path) continue;
         target.dataset.loadingPath = media.storage_path;
         try {
           const url = await signedMediaUrlCached(media);
           const element = await loadStablePreviewElement(media, url);
           if (!target.isConnected) continue;
           target.replaceChildren(element);
-          target.dataset.loadedPath = media.storage_path;
+          target.dataset.loadedPath = `${media.storage_path}:${media.updated_at || ''}`;
         } catch {
           // Mantém o placeholder e tenta novamente quando a tela for atualizada.
         } finally {
