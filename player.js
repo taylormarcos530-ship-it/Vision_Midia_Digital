@@ -245,8 +245,16 @@
     $('#pairing-instruction').textContent = message;
     if (branding?.splash_url) {
       screen.style.backgroundImage = `linear-gradient(rgba(0,0,0,.32),rgba(0,0,0,.58)),url("${branding.splash_url}")`;
+      screen.style.backgroundSize = 'cover, contain';
+      screen.style.backgroundPosition = 'center, center';
+      screen.style.backgroundRepeat = 'no-repeat, no-repeat';
+      screen.style.backgroundColor = '#000';
     } else {
       screen.style.backgroundImage = '';
+      screen.style.backgroundSize = '';
+      screen.style.backgroundPosition = '';
+      screen.style.backgroundRepeat = '';
+      screen.style.backgroundColor = '';
     }
   }
 
