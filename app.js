@@ -1673,18 +1673,26 @@
 
   async function hydrateDeviceProgramPreviews() {
     const targets = $$('[data-device-program-preview]');
-    for (const target of targets) {
+    await Promise.all(targets.map(async target => {
       const mediaId = target.dataset.deviceProgramPreview;
       const media = state.media.find(item => item.id === mediaId);
-      if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
-      if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
-      target.dataset.loadingPath = media.storage_path;
+      const path = media?.storage_path || media?.source_url;
+      if (!path || !['image','video','url'].includes(media.media_type)) {
+        target.innerHTML = '<div class="device-capture-state"><strong>Conteúdo sem prévia disponível</strong><small>Use Capturar para solicitar a tela da TV.</small></div>';
+        return;
+      }
+      if (target.dataset.loadedPath === path || target.dataset.loadingPath === path) return;
+      target.dataset.loadingPath = path;
       try {
-        const url = await signedMediaUrlCached(media);
-        const element = await loadStablePreviewElement(media, url);
-        if (!target.isConnected) continue;
+        if (media.media_type === 'url') {
+          target.replaceChildren(onlineDeviceProgramPreview(media));
+          target.dataset.loadedPath = path;
+          return;
+        }
+        const element = await devicePreviewWithDeadline(async () => loadStablePreviewElement(media, await signedMediaUrlCached(media)));
+        if (!target.isConnected) return;
         target.replaceChildren(element);
-        target.dataset.loadedPath = media.storage_path;
+        target.dataset.loadedPath = path;
       } catch {
         if (target.isConnected) {
           target.innerHTML = '<div class="device-capture-state"><span class="device-preview-symbol">!</span><strong>Prévia indisponível</strong><small>A captura antiga foi descartada. Faça uma nova captura quando a TV estiver online.</small></div>';
@@ -1692,7 +1700,27 @@
       } finally {
         if (target.isConnected) delete target.dataset.loadingPath;
       }
-    }
+    }));
+  }
+
+  async function devicePreviewWithDeadline(load) {
+    let timer;
+    try {
+      return await Promise.race([load(), new Promise((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Prévia indisponível. Tente atualizar novamente.')), 6000);
+      })]);
+    } finally { clearTimeout(timer); }
+  }
+
+  function onlineDeviceProgramPreview(media) {
+    const url = new URL(resolveOnlineMediaUrl(media.source_url));
+    if (!['https:', 'http:'].includes(url.protocol)) throw new Error('URL de prévia inválida.');
+    const frame = document.createElement('iframe');
+    frame.title = `Prévia da programação: ${media.name || 'Conteúdo online'}`;
+    frame.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+    frame.referrerPolicy = 'no-referrer';
+    frame.src = url.href;
+    return frame;
   }
 
   function scheduleAutomaticDeviceCaptures() {
@@ -1895,14 +1923,20 @@
       configureTvViewerFrame(preview, device);
       setTvViewerProgramPreviewMode(preview, device, true);
       $('#view-tv-captured-at').textContent = 'Captura antiga descartada • exibindo prévia da programação';
+      if (media?.media_type === 'url' && media.source_url) {
+        const element = onlineDeviceProgramPreview(media);
+        element.classList.add('tv-viewer-media');
+        preview.replaceChildren(element);
+        syncTvViewerProgramMediaLayout(preview);
+        return;
+      }
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) {
         preview.innerHTML = '<div class="tv-viewer-empty">A captura antiga desta TV foi feita com orientação incompatível.<br><small>Quando a TV ficar online, use “Atualizar agora” para gerar uma nova captura.</small></div>';
         return;
       }
       preview.innerHTML = '<div class="tv-viewer-empty">Carregando prévia da programação…</div>';
       try {
-        const url = await signedMediaUrlCached(media);
-        const element = await loadStablePreviewElement(media, url);
+        const element = await devicePreviewWithDeadline(async () => loadStablePreviewElement(media, await signedMediaUrlCached(media)));
         if (state.viewingDeviceId !== deviceId) return;
         element.classList.add('tv-viewer-media');
         preview.replaceChildren(element);

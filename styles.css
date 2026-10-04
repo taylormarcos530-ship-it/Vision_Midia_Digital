@@ -2025,6 +2025,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   background:#05080d;
 }
 .device-program-preview>img,
+.device-program-preview>iframe,
 .device-program-preview>video{
   width:100%;
   height:100%;
@@ -2033,6 +2034,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   background:#000;
 }
 .tv-viewer-preview>img,
+.tv-viewer-preview>iframe,
 .tv-viewer-preview>video{
   width:100%;
   height:100%;
@@ -2040,6 +2042,7 @@ html{-webkit-text-size-adjust:100%;text-size-adjust:100%}
   object-position:center !important;
   background:#000;
 }
+.device-program-preview>iframe,.tv-viewer-preview>iframe{border:0;pointer-events:none;}
 .owner-access-box{
   display:grid;
   grid-template-columns:minmax(0,1fr) auto;
