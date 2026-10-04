@@ -47,6 +47,10 @@
 
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+  const clearElement = (element) => { if (!element) return; while (element.firstChild) element.removeChild(element.firstChild); };
+  const newClientId = () => (globalThis.crypto && typeof globalThis.crypto.randomUUID === 'function')
+    ? globalThis.crypto.randomUUID()
+    : `vf-${Date.now()}-${Math.random().toString(16).slice(2)}-${Math.random().toString(16).slice(2)}`;
 
   async function waitForChangeOrTimeout(nonce, ms) {
     const deadline = Date.now() + ms;
