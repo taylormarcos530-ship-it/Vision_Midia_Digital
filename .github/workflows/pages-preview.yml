@@ -2,7 +2,7 @@ name: Publish Vision Midia Digital Preview
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/saas-media-playlist-device-controls]
   workflow_dispatch:
 
 permissions:
