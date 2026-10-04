@@ -114,7 +114,7 @@ test('Netlify adapter preserves original feed response and rejects failed upstre
     assert.equal(data.items[0].description, 'Resultado');
     assert.match(response.headers.get('cache-control'), /s-maxage=300/);
     global.fetch = async url => {
-      assert.equal(url, 'https://g1.globo.com/rss/g1/brasil/');
+      assert.equal(url, 'https://g1.globo.com/rss/g1/');
       return new Response('<rss><channel><language>pt-BR</language><item><title>Brasil</title></item></channel></rss>');
     };
     assert.equal((await handler(new Request('https://preview.example/api/news-feed?source=news_br'))).status, 200);

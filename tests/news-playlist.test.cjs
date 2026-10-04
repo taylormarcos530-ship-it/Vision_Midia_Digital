@@ -30,3 +30,26 @@ test('cinema feed adapter decodes RSS descriptions and rejects unknown sources',
     assert.equal((await handler(new Request('https://example.com/api/news-feed?source=unknown'))).status,400);
   }finally{global.fetch=original}
 });
+test('feed preserves official photo URLs and strips untrusted image hosts',async()=>{
+  const handler=(await import('../netlify/functions/news-feed.mts')).default;
+  const original=global.fetch;
+  try {
+    for(const image of ['https://cinepop.com.br/wp-content/uploads/poster.webp','https://attacker.example/tracker.png']) {
+      global.fetch=async()=>new Response(`<rss><channel><language>pt-BR</language><item><title>Estreia</title><description>&lt;img src="${image}" /&gt;&lt;p&gt;Resumo&lt;/p&gt;</description></item></channel></rss>`);
+      const data=await (await handler(new Request('https://example.com/api/news-feed?source=cinema_br'))).json();
+      assert.equal(data.schema_version,2);assert.equal(data.language,'pt-BR');
+      assert.equal(data.items[0].image_url,image.includes('attacker')?'':image);
+      assert.equal(data.items[0].description,'Resumo');
+    }
+  }finally{global.fetch=original}
+});
+test('branding draft survives refresh and pending signed image cannot replace draft',async()=>{
+  function fn(name) {const start=app.indexOf(`  ${name.startsWith('hydrate')?'async ':''}function ${name}(`);return app.slice(start,app.indexOf('\n  }',start)+4)}
+  const preview={dataset:{},style:{backgroundImage:'local-image'}};
+  const form={dataset:{dirty:'1'}};
+  const nodes={'#player-branding-panel':{classList:{remove(){}}},'#player-branding-form':form,'#player-branding-preview':preview,'#branding-title':{value:'New title'}};
+  const c=vm.createContext({$:s=>nodes[s],state:{playerBranding:{title:'Saved title',splash_path:'saved.webp'}},location:{origin:'https://fixture.test'},getSignedMediaUrl:async()=>{form.dataset.dirty='1';return 'https://fixture.test/old.jpg'}});
+  vm.runInContext(fn('renderPlayerBranding')+fn('hydratePlayerBrandingPreview'),c);
+  c.renderPlayerBranding();assert.equal(nodes['#branding-title'].value,'New title');assert.equal(preview.style.backgroundImage,'local-image');
+  delete form.dataset.dirty;await c.hydratePlayerBrandingPreview();assert.equal(preview.style.backgroundImage,'local-image');
+});

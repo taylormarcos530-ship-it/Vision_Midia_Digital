@@ -68,6 +68,14 @@ self.addEventListener('fetch', event => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin || request.method !== 'GET') return;
 
+  // Online feeds must not reuse a cached response from an old source/provider.
+  if (url.pathname.endsWith('/api/news-feed')) {
+    event.respondWith(fetch(request).catch(() => new Response(JSON.stringify({ ok: false }), {
+      status: 503, headers: { 'Content-Type': 'application/json' },
+    })));
+    return;
+  }
+
   if (request.mode === 'navigate') {
     event.respondWith(networkFirst(request, () => navigationFallback(request, url)));
     return;

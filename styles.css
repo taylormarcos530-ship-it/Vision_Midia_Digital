@@ -454,7 +454,7 @@ textarea { resize: vertical; min-height: 90px; }
 /* SIGNAGE_V2_UI */
 .player-branding-panel { min-height: 0; margin-bottom: 18px; }
 .branding-layout { display: grid; grid-template-columns: minmax(260px,.8fr) minmax(320px,1.2fr); gap: 18px; align-items: stretch; }
-.branding-preview { min-height: 260px; border-radius: 16px; border: 1px solid var(--line); background: radial-gradient(circle at 20% 0%, #17335f, #08111f 58%, #02050a); background-size: cover; background-position: center; display: grid; place-content: center; justify-items: center; text-align: center; padding: 26px; overflow: hidden; position: relative; }
+.branding-preview { min-height: 260px; border-radius: 16px; border: 1px solid var(--line); background: radial-gradient(circle at 20% 0%, #17335f, #08111f 58%, #02050a); background-size: contain; background-repeat: no-repeat; background-position: center; display: grid; place-content: center; justify-items: center; text-align: center; padding: 26px; overflow: hidden; position: relative; }
 .branding-preview::after { content:""; position:absolute; inset:0; background:linear-gradient(to bottom,rgba(0,0,0,.05),rgba(0,0,0,.35)); pointer-events:none; }
 .branding-preview > * { position: relative; z-index: 1; }
 .branding-preview-placeholder { width: 58px; height: 58px; display:grid; place-items:center; border-radius:16px; background:linear-gradient(145deg,var(--blue),#6e5cff); font-size:28px; font-weight:900; margin-bottom:14px; }

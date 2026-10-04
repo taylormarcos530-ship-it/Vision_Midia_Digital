@@ -2038,6 +2038,7 @@
   function renderPlayerBranding() {
     const panel = $('#player-branding-panel');
     if (panel) panel.classList.remove('hidden');
+    if ($('#player-branding-form')?.dataset.dirty === '1') return;
     const b = state.playerBranding;
     const title = b?.title || 'Vision Player';
     const message = b?.message || 'Instale o Player e vincule a TV pelo código.';
@@ -2056,8 +2057,10 @@
   async function hydratePlayerBrandingPreview() {
     const preview = $('#player-branding-preview');
     if (!preview || !state.playerBranding?.splash_path || preview.dataset.loaded === '1') return;
+    const path = state.playerBranding.splash_path;
     try {
-      const url = await getSignedMediaUrl(state.playerBranding.splash_path);
+      const url = await getSignedMediaUrl(path);
+      if ($('#player-branding-form')?.dataset.dirty === '1' || state.playerBranding?.splash_path !== path) return;
       preview.style.backgroundImage = `linear-gradient(rgba(0,0,0,.2),rgba(0,0,0,.45)),url("${url}")`;
       preview.dataset.loaded = '1';
     } catch { /* generic preview remains */ }
@@ -2095,6 +2098,7 @@
       if (!state.playerBranding) throw new Error('A configuração global foi enviada, mas não retornou do servidor.');
       if (newPath && oldPath && oldPath !== newPath) storageRequest(`/object/${CONFIG.storageBucket}`, { method: 'DELETE', body: { prefixes: [oldPath] } }).catch(() => {});
       $('#branding-file').value = '';
+      delete $('#player-branding-form').dataset.dirty;
       renderPlayerBranding();
       toast('Salvo com sucesso', 'A identidade global do Vision Player foi atualizada para todos os clientes.');
     } catch (error) {
@@ -4582,6 +4586,8 @@
       }
     } catch { /* local logout still proceeds */ }
     saveSession(null);
+    const brandingForm = $('#player-branding-form');
+    if (brandingForm) { brandingForm.reset(); delete brandingForm.dataset.dirty; }
     localStorage.removeItem(COMPANY_KEY);
     state.company = null;
     state.devices = [];
@@ -4755,10 +4761,16 @@
     });
     $('#playlist-form').addEventListener('submit', handleCreatePlaylist);
     $('#player-branding-form')?.addEventListener('submit', savePlayerBranding);
+    $('#player-branding-form')?.addEventListener('input', () => {
+      $('#player-branding-form').dataset.dirty = '1';
+      $('#branding-preview-title').textContent = $('#branding-title').value || 'Vision Player';
+      $('#branding-preview-message').textContent = $('#branding-message').value || 'Instale o Player e vincule a TV pelo código.';
+    });
     $('#branding-file')?.addEventListener('change', event => {
       const file = event.target.files?.[0];
       const preview = $('#player-branding-preview');
       if (!file || !preview) return;
+      $('#player-branding-form').dataset.dirty = '1';
       const reader = new FileReader();
       reader.onload = () => {
         const img = new Image();
