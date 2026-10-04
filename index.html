@@ -388,6 +388,16 @@
               <div><span class="eyebrow">SAÚDE DOS DISPOSITIVOS</span><h3>TVs monitoradas</h3></div>
               <small>Atualização automática do painel a cada 30 segundos</small>
             </div>
+            <div class="monitor-device-tools">
+              <label><span>Buscar TV</span><input id="monitor-device-search" type="search" placeholder="Nome da TV" autocomplete="off" /></label>
+              <label><span>Status</span><select id="monitor-device-filter">
+                <option value="all">Todas</option>
+                <option value="online">Online</option>
+                <option value="offline">Offline</option>
+                <option value="issue">Com alerta</option>
+                <option value="stale">Desatualizadas</option>
+              </select></label>
+            </div>
             <div id="monitor-devices-grid" class="monitor-device-grid"></div>
             <div id="monitor-devices-empty" class="empty-state hidden">Nenhuma TV pareada para monitorar.</div>
           </article>
