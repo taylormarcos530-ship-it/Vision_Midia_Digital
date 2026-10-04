@@ -1960,8 +1960,8 @@
   }
 
   function createPlayerSetupCode() {
-    const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const bytes = new Uint8Array(10);
+    const alphabet = 'ABCDEF0123456789';
+    const bytes = new Uint8Array(8);
     crypto.getRandomValues(bytes);
     return Array.from(bytes, value => alphabet[value % alphabet.length]).join('');
   }
