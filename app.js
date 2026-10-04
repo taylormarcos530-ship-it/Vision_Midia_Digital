@@ -18,8 +18,8 @@
   const LOGIN_VISUAL_PREVIEW_KEY = 'vision_midia_login_visual_preview_v1';
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
-  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.0';
-  const EXPECTED_APK_VERSION = '1.4.9-preview';
+  const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.2';
+  const EXPECTED_APK_VERSION = '1.5.0-preview';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -105,6 +105,7 @@
     campaignDevices: [],
     deviceEvents: [],
     deviceCommands: [],
+    deviceHeartbeats: [],
     companyMembers: [],
     profiles: [],
     notifications: [],
@@ -705,7 +706,7 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, companyMembers, profiles] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
@@ -717,6 +718,7 @@
         restRequest('campaign_devices', { query: `select=*&company_id=eq.${companyId}` }),
         restRequest('device_events', { query: `select=id,client_event_id,device_id,severity,event_code,message,details,occurred_at&company_id=eq.${companyId}&order=occurred_at.desc&limit=100` }),
         restRequest('device_commands', { query: `select=id,device_id,command_type,status,requested_by,requested_at,delivered_at,completed_at,error_message&company_id=eq.${companyId}&order=requested_at.desc&limit=100` }),
+        restRequest('device_heartbeats', { query: `select=id,device_id,received_at,details&company_id=eq.${companyId}&order=received_at.desc&limit=250` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
       ]);
@@ -731,6 +733,7 @@
       state.campaignDevices = campaignDevices || [];
       state.deviceEvents = deviceEvents || [];
       state.deviceCommands = deviceCommands || [];
+      state.deviceHeartbeats = deviceHeartbeats || [];
       state.companyMembers = companyMembers || [];
       state.profiles = profiles || [];
       const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
@@ -1158,10 +1161,63 @@
     }).length;
   }
 
+  function latestDeviceHeartbeat(deviceId) {
+    return state.deviceHeartbeats.find(row => row.device_id === deviceId) || null;
+  }
+
+  function networkTransportLabel(value) {
+    return ({ wifi:'Wi-Fi', ethernet:'Cabo', cellular:'Rede móvel', vpn:'VPN', offline:'Offline', other:'Outra rede', unknown:'Rede não identificada' })[String(value || '').toLowerCase()] || 'Rede não identificada';
+  }
+
+  function formatClockSkew(value) {
+    const ms = Math.abs(Number(value || 0));
+    if (!Number.isFinite(ms) || ms < 30_000) return 'menos de 1 min';
+    const minutes = Math.max(1, Math.round(ms / 60_000));
+    if (minutes < 60) return `${minutes} min`;
+    const hours = Math.round(minutes / 60);
+    return `${hours} h`;
+  }
+
+  function heartbeatNetworkLabel(heartbeat) {
+    const details = heartbeat?.details || {};
+    const transport = networkTransportLabel(details.network_transport);
+    if (details.network_connected === false) return 'Sem internet';
+    if (details.network_connected === true && details.network_validated === false) return `${transport} • sem internet validada`;
+    if (details.network_connected === true && details.network_validated === true) return `Internet OK • ${transport}`;
+    if (details.network_connected === true) return `Conectada • ${transport}`;
+    return 'Diagnóstico ainda não recebido';
+  }
+
+  function heartbeatClockLabel(heartbeat) {
+    const details = heartbeat?.details || {};
+    if (details.clock_status === 'incorrect') return `Incorreta • diferença de ${formatClockSkew(details.clock_skew_ms)}`;
+    if (details.clock_status === 'warning') return `Fora de sincronia • diferença de ${formatClockSkew(details.clock_skew_ms)}`;
+    if (details.clock_status === 'ok') return 'Sincronizada';
+    return 'Diagnóstico ainda não recebido';
+  }
+
+  function deviceLikelyCause(device) {
+    const heartbeat = latestDeviceHeartbeat(device.id);
+    const details = heartbeat?.details || {};
+    const status = effectiveDeviceStatus(device);
+    if (details.clock_status === 'incorrect') return 'Data/hora do TV Box incorreta — ative Data e hora automáticas.';
+    if (details.network_connected === false) return 'Sem internet no TV Box — verifique Wi-Fi ou cabo de rede.';
+    if (details.network_connected === true && details.network_validated === false) return 'Rede conectada, mas sem acesso à internet validado.';
+    if (status === 'offline') return 'TV offline — causa não confirmada. Verifique energia, internet e Data/hora automáticas.';
+    if (deviceSyncIsStale(device)) return 'Player conectado, mas a sincronização está atrasada.';
+    return 'Nenhuma falha detectada no último diagnóstico.';
+  }
+
   function deviceDiagnostics(device) {
     const alerts = [];
     const status = effectiveDeviceStatus(device);
     if (status === 'offline') alerts.push({ level:'error', label:'TV offline' });
+    const heartbeat = latestDeviceHeartbeat(device.id);
+    const health = heartbeat?.details || {};
+    if (health.clock_status === 'incorrect') alerts.push({ level:'error', label:'Data/hora incorreta' });
+    else if (health.clock_status === 'warning') alerts.push({ level:'warning', label:'Relógio fora de sincronia' });
+    if (health.network_connected === false) alerts.push({ level:'error', label:'Sem internet' });
+    else if (health.network_connected === true && health.network_validated === false) alerts.push({ level:'warning', label:'Internet não validada' });
     if (deviceSyncIsStale(device)) alerts.push({ level:'warning', label:'Sincronização atrasada' });
     if (device.storage_free_mb != null && Number(device.storage_free_mb) < 256) alerts.push({ level:Number(device.storage_free_mb) < 100 ? 'error' : 'warning', label:'Pouco armazenamento' });
     const playerVersion = device.player_version || device.app_version || '';
@@ -2079,6 +2135,10 @@
         const storageBytes = device.storage_free_mb == null ? null : Number(device.storage_free_mb) * 1024 * 1024;
         const queueTotal = Number(device.playback_queue_size || 0) + Number(device.event_queue_size || 0);
         const diagnostics = deviceDiagnostics(device);
+        const heartbeat = latestDeviceHeartbeat(device.id);
+        const networkHealth = heartbeatNetworkLabel(heartbeat);
+        const clockHealth = heartbeatClockLabel(heartbeat);
+        const likelyCause = deviceLikelyCause(device);
         return `
           <article class="monitor-device-card ${activeIssue ? 'has-issue' : ''}">
             <div class="monitor-device-head">
@@ -2107,6 +2167,9 @@
               <div><span>Playlist atual</span><strong>${escapeHtml(playlistName)}</strong></div>
               <div class="monitor-current-media"><span>Mídia em reprodução</span><strong>${escapeHtml(mediaName)}</strong></div>
               <div><span>Filas offline</span><strong>${Number(device.playback_queue_size || 0)} veiculação • ${Number(device.event_queue_size || 0)} evento</strong></div>
+              <div><span>Internet</span><strong class="monitor-wrap-value">${escapeHtml(networkHealth)}</strong></div>
+              <div><span>Data/hora</span><strong class="monitor-wrap-value">${escapeHtml(clockHealth)}</strong></div>
+              <div class="monitor-diagnostic-cell"><span>Diagnóstico</span><strong class="monitor-wrap-value">${escapeHtml(likelyCause)}</strong></div>
             </div>
             ${activeIssue ? `<div class="monitor-last-error"><strong>Última falha:</strong> ${escapeHtml(device.last_error_message || device.last_error_code || 'Erro do player')}<small>${escapeHtml(formatMonitorDateTime(device.last_error_at))}</small></div>` : ''}
           </article>`;
