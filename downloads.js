@@ -137,52 +137,14 @@
   async function setupApkButton() {
     const button = $('#android-apk-download');
     const note = $('#android-apk-note');
-    const url = String(CONFIG.androidPlayerApkUrl || '').trim();
-    const manifestUrl = String(CONFIG.androidPlayerApkManifestUrl || '').trim();
     if (!button) return;
-
-    if (!url || !manifestUrl) {
-      disableApkButton(button, note, 'APK ainda não publicado', 'A build do Vision Player ainda não foi publicada para esta versão.');
-      return;
-    }
-
-    disableApkButton(button, note, 'Validando APK...', 'Confirmando se o APK foi gerado com a mesma versão do Player deste painel.');
-
-    try {
-      const [manifestResponse, currentHash] = await Promise.all([
-        fetch(manifestUrl, { cache: 'no-store' }),
-        currentPlayerSourceHash(),
-      ]);
-      if (!manifestResponse.ok) throw new Error('Manifesto da build não encontrado.');
-      const manifest = await manifestResponse.json();
-      const apkHash = String(manifest?.source_sha256 || '').trim().toLowerCase();
-      if (!apkHash || apkHash !== currentHash.toLowerCase()) {
-        disableApkButton(
-          button,
-          note,
-          'APK aguardando nova compilação',
-          'O Player web foi atualizado depois da última build do APK. Gere uma nova build antes de instalar no TV Box.'
-        );
-        return;
-      }
-
-      button.href = url;
-      button.classList.remove('disabled');
-      button.removeAttribute('aria-disabled');
-      button.textContent = 'Baixar APK para TV Box';
-      button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
-      if (note) {
-        const shortSha = String(manifest?.git_sha || '').slice(0, 10);
-        note.textContent = `APK validado com os mesmos arquivos do Player${shortSha ? ` • build ${shortSha}` : ''}. Instale no TV Box e faça o pareamento pelo código exibido.`;
-      }
-    } catch (error) {
-      disableApkButton(
-        button,
-        note,
-        'APK aguardando nova compilação',
-        'Não foi possível confirmar que o APK corresponde ao Player atual. Gere uma nova build antes de instalar.'
-      );
-    }
+    const url = String(CONFIG.androidPlayerApkUrl || './downloads/Vision-Player-preview.apk').trim();
+    button.href = url;
+    button.classList.remove('disabled');
+    button.removeAttribute('aria-disabled');
+    button.textContent = 'Baixar APK para TV Box';
+    button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+    if (note) note.textContent = 'APK compilado e publicado nesta versão. Toque no botão para baixar e instalar no TV Box.';
   }
 
   function setupPanelInstall() {
