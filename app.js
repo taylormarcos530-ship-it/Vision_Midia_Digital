@@ -706,7 +706,7 @@
     if (!state.company?.id) return;
     const companyId = encodeURIComponent(state.company.id);
     try {
-      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles] = await Promise.all([
+      const [devices, media, playlists, playlistItems, deviceAssignments, deviceGroups, deviceGroupMembers, campaigns, campaignDevices, deviceEvents, deviceCommands, deviceHeartbeats, companyMembers, profiles, playerBrandingRows] = await Promise.all([
         restRequest('devices', { query: `select=*&company_id=eq.${companyId}&retired_at=is.null&order=created_at.desc` }),
         restRequest('media_assets', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
         restRequest('playlists', { query: `select=*&company_id=eq.${companyId}&order=created_at.desc` }),
@@ -721,6 +721,7 @@
         restRequest('device_heartbeats', { query: `select=id,device_id,received_at,details&company_id=eq.${companyId}&order=received_at.desc&limit=250` }),
         restRequest('company_members', { query: `select=user_id,role,status&company_id=eq.${companyId}` }),
         restRequest('profiles', { query: 'select=id,display_name&order=updated_at.desc' }),
+        restRequest('company_player_branding', { query: `select=company_id,setup_code,splash_path,title,message,updated_at,updated_by&company_id=eq.${companyId}&limit=1` }),
       ]);
       state.devices = devices || [];
       state.media = media || [];
@@ -738,7 +739,7 @@
       state.profiles = profiles || [];
       const screenshots = await restRequest('device_screenshots', { query: `select=*&company_id=eq.${companyId}&order=captured_at.desc&limit=80` });
       state.deviceScreenshots = screenshots || [];
-      state.playerBranding = null;
+      state.playerBranding = playerBrandingRows?.[0] || null;
       await loadNotificationInbox({ quiet: true }).catch(() => null);
       renderAll();
       updateConnectionStatus(true);
