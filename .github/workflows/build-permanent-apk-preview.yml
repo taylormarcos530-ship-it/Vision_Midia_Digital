@@ -80,14 +80,15 @@ jobs:
       - name: Build installable preview APK
         run: gradle -p android-player --no-daemon assembleDebug
 
-      - name: Copy APK to permanent download path
+      - name: Stage validated APK outside the worktree
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p downloads
-          cp android-player/app/build/outputs/apk/debug/app-debug.apk downloads/Vision-Player-preview.apk
-          test -s downloads/Vision-Player-preview.apk
-          sha256sum downloads/Vision-Player-preview.apk > downloads/Vision-Player-preview.sha256
+          rm -rf /tmp/vision-player-preview
+          mkdir -p /tmp/vision-player-preview
+          cp android-player/app/build/outputs/apk/debug/app-debug.apk /tmp/vision-player-preview/Vision-Player-preview.apk
+          test -s /tmp/vision-player-preview/Vision-Player-preview.apk
+          sha256sum /tmp/vision-player-preview/Vision-Player-preview.apk > /tmp/vision-player-preview/Vision-Player-preview.sha256
 
       - name: Record Player source fingerprint
         shell: bash
@@ -103,7 +104,7 @@ jobs:
               'git_sha': os.environ.get('GITHUB_SHA', ''),
               'files': files,
           }
-          Path('downloads/Vision-Player-preview.source.json').write_text(json.dumps(data, indent=2) + '\n')
+          Path('/tmp/vision-player-preview/Vision-Player-preview.source.json').write_text(json.dumps(data, indent=2) + '\n')
           PY
 
       - name: Upload validation artifact
@@ -111,9 +112,9 @@ jobs:
         with:
           name: Vision-Player-preview
           path: |
-            downloads/Vision-Player-preview.apk
-            downloads/Vision-Player-preview.sha256
-            downloads/Vision-Player-preview.source.json
+            /tmp/vision-player-preview/Vision-Player-preview.apk
+            /tmp/vision-player-preview/Vision-Player-preview.sha256
+            /tmp/vision-player-preview/Vision-Player-preview.source.json
           retention-days: 30
 
       - name: Commit permanent preview APK to triggering branch
@@ -123,11 +124,21 @@ jobs:
           set -euo pipefail
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+
+          # Synchronize first, while the generated binary is still outside the worktree.
+          # This avoids binary conflicts when an older cancelled run managed to push
+          # its preview files after this run had already started.
+          git pull --rebase origin "$GITHUB_REF_NAME"
+
+          mkdir -p downloads
+          cp /tmp/vision-player-preview/Vision-Player-preview.apk downloads/Vision-Player-preview.apk
+          cp /tmp/vision-player-preview/Vision-Player-preview.sha256 downloads/Vision-Player-preview.sha256
+          cp /tmp/vision-player-preview/Vision-Player-preview.source.json downloads/Vision-Player-preview.source.json
+
           git add downloads/Vision-Player-preview.apk downloads/Vision-Player-preview.sha256 downloads/Vision-Player-preview.source.json
           if git diff --cached --quiet; then
             echo 'APK already up to date.'
             exit 0
           fi
           git commit -m 'build: add permanent Vision Player preview APK'
-          git pull --rebase origin "$GITHUB_REF_NAME"
           git push origin "HEAD:$GITHUB_REF_NAME"
