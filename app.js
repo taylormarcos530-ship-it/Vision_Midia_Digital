@@ -1420,7 +1420,7 @@
 
   function currentMediaRenderSignature() {
     const mediaPart = state.media.map(media => [
-      media.id, media.storage_path, media.updated_at, media.name, media.width, media.height, media.size_bytes
+      media.id, media.storage_path, media.source_url, media.media_type, media.updated_at, media.name, media.width, media.height, media.size_bytes
     ].join(':')).join('|');
     const itemPart = state.playlistItems.map(item => `${item.id}:${item.playlist_id}:${item.media_id}`).join('|');
     const playlistPart = state.playlists.map(playlist => `${playlist.id}:${playlist.name}`).join('|');
@@ -1437,33 +1437,41 @@
   }
 
   async function hydrateMediaPreviews() {
-    for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
-      const preview = $([`[data-media-preview="${CSS.escape(media.id)}"]`].join(''));
-      if (!preview || preview.dataset.loadedPath === media.storage_path) continue;
+    for (const media of state.media.filter(item => (item.storage_path || item.source_url) && ['image','video','url'].includes(item.media_type))) {
+      const preview = document.querySelector(`[data-media-preview="${CSS.escape(media.id)}"]`);
+      const previewKey = `${media.storage_path || media.source_url}:${media.updated_at || ''}`;
+      if (!preview || preview.dataset.loadedPath === previewKey) continue;
       try {
-        const url = await signedMediaUrlCached(media);
-        if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
         let element;
-        if (media.media_type === 'image') {
-          element = new Image();
+        if (media.media_type === 'url') {
+          element = document.createElement('iframe');
+          element.src = media.source_url;
+          element.title = media.name || 'Conteúdo dinâmico';
           element.loading = 'lazy';
-          element.decoding = 'async';
-          element.alt = media.name || 'Imagem';
-          element.src = url;
-          try { await element.decode(); } catch {}
+          element.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         } else {
-          element = document.createElement('video');
-          element.muted = true;
-          element.preload = 'metadata';
-          element.playsInline = true;
-          element.src = url;
+          const url = await signedMediaUrlCached(media);
+          if (media.media_type === 'image') {
+            element = new Image();
+            element.loading = 'lazy';
+            element.decoding = 'async';
+            element.alt = media.name || 'Imagem';
+            element.src = url;
+            try { await element.decode(); } catch {}
+          } else {
+            element = document.createElement('video');
+            element.muted = true;
+            element.preload = 'metadata';
+            element.playsInline = true;
+            element.src = url;
+          }
         }
         if (!preview.isConnected) continue;
         const placeholder = preview.querySelector('.media-preview-placeholder');
         preview.insertBefore(element, placeholder || preview.firstChild);
         placeholder?.remove();
-        preview.dataset.loadedPath = media.storage_path;
-      } catch { /* mantém placeholder sem piscar */ }
+        preview.dataset.loadedPath = previewKey;
+      } catch { /* mantém placeholder e tenta novamente na próxima atualização */ }
     }
   }
 
@@ -1492,11 +1500,11 @@
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
       const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
-      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : 'Vídeo';
+      const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : media.media_type === 'url' ? 'Conteúdo dinâmico' : 'Vídeo';
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
-          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : '▧'}</span>
+          <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : media.media_type === 'url' ? '☁' : '▧'}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="-90" title="Girar para a esquerda" aria-label="Girar para a esquerda">↶</button>
             <button class="media-overlay-button" type="button" data-rotate-media="${media.id}" data-rotation="90" title="Girar para a direita" aria-label="Girar para a direita">↷</button>
@@ -2959,6 +2967,42 @@
     }
   }
 
+  function syncDynamicContentForm() {
+    const type = $('#dynamic-content-type')?.value || 'clock';
+    $('#dynamic-city-field')?.classList.toggle('hidden', type === 'news');
+    $('#dynamic-category-field')?.classList.toggle('hidden', type !== 'news');
+  }
+
+  async function handleCreateDynamicContent(event) {
+    event.preventDefault();
+    const button = $('#dynamic-content-save');
+    const type = $('#dynamic-content-type').value;
+    const city = ($('#dynamic-content-city').value || 'Anápolis').trim();
+    const category = $('#dynamic-content-category').value || 'geral';
+    const duration = Math.max(5, Math.min(300, Number($('#dynamic-content-duration').value || 15)));
+    const params = new URLSearchParams({ type });
+    if (type !== 'news') params.set('city', city || 'Anápolis');
+    if (type === 'news') params.set('category', category);
+    const sourceUrl = new URL('./widget.html', location.href);
+    sourceUrl.search = params.toString();
+    setBusy(button, true, 'Criando...');
+    try {
+      await restRequest('media_assets', { method:'POST', body:{
+        company_id:state.company.id,
+        name:type === 'weather' ? `Clima • ${city || 'Anápolis'}` : type === 'news' ? `Notícias • ${category === 'esportes' ? 'Esportes / futebol' : category}` : 'Relógio e data',
+        media_type:'url', mime_type:'text/html', storage_path:null, source_url:sourceUrl.href,
+        duration_seconds:duration, size_bytes:0, width:null, height:null, processing_status:'ready', created_by:state.user.id
+      }, prefer:'return=minimal' });
+      closeDialog('dynamic-content-dialog');
+      toast('Conteúdo dinâmico criado');
+      await loadAllData();
+    } catch (error) {
+      toast('Não foi possível criar o conteúdo', error.message, 'error', 6500);
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
   async function handleCreatePlaylist(event) {
     event.preventDefault();
     const button = $('#playlist-save');
@@ -3383,6 +3427,9 @@
     $('#replace-device-form').addEventListener('submit', handleReplaceDevice);
     $('#device-form').addEventListener('submit', handleSaveDevice);
     $('#add-playlist-button').addEventListener('click', () => openDialog('playlist-dialog'));
+    $('#add-dynamic-content-button')?.addEventListener('click', () => { syncDynamicContentForm(); openDialog('dynamic-content-dialog'); });
+    $('#dynamic-content-type')?.addEventListener('change', syncDynamicContentForm);
+    $('#dynamic-content-form')?.addEventListener('submit', handleCreateDynamicContent);
     $('[data-open-playlist-create]')?.addEventListener('click', () => openDialog('playlist-dialog'));
     $('#playlist-search')?.addEventListener('input', renderPlaylists);
     $('#playlist-status-filter')?.addEventListener('change', renderPlaylists);
