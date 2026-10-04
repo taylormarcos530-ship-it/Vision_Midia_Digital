@@ -23,10 +23,10 @@ async function persistCompanyNotificationBestEffort(admin: any, companyId: strin
   }
 }
 
-export async function sendCompanyPush(admin: any, companyId: string, payload: VisionPushPayload) {
+export async function sendCompanyPush(admin: any, companyId: string, payload: VisionPushPayload, persistInbox = true) {
   if (!companyId) return { sent: 0, failed: 0, skipped: 'company_required' }
 
-  await persistCompanyNotificationBestEffort(admin, companyId, payload)
+  if (persistInbox) await persistCompanyNotificationBestEffort(admin, companyId, payload)
 
   const { data: cfg, error: cfgError } = await admin
     .from('web_push_config')

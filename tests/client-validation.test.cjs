@@ -11,11 +11,11 @@ test('outside pointer closes sidebar while inside and menu button preserve it',(
   for(const target of ['inside','button']){c.dismissSidebarFromOutside({target});assert.equal(open,true)}
   c.dismissSidebarFromOutside({target:'outside'});assert.equal(open,false);
 });
-test('master sees due companies while tenant sees only its subscription',()=>{
-  const state={isPlatformAdmin:true,expiryCompanies:[{id:'due',subscription:{status:'active',current_period_end:new Date(Date.now()-1000).toISOString()}},{id:'later',subscription:{status:'active',current_period_end:new Date(Date.now()+9*86400000).toISOString()}}],company:{id:'own'},subscription:{status:'active',current_period_end:new Date().toISOString()}};
-  const c=vm.createContext({state,Date});vm.runInContext(fn('currentDueNotices'),c);
-  assert.equal(c.currentDueNotices().length,1);assert.equal(c.currentDueNotices()[0].company.id,'due');
-  state.isPlatformAdmin=false;assert.equal(c.currentDueNotices()[0].company.id,'own');
+test('inbox keeps only three newest messages before applying read filter',()=>{
+ const state={notificationFilter:'all',notifications:[{id:'1',is_read:false},{id:'2',is_read:true},{id:'3',is_read:false},{id:'4',is_read:false}]};
+ const c=vm.createContext({state});vm.runInContext(fn('visibleInboxItems'),c);
+ assert.equal(c.visibleInboxItems().length,3);state.notificationFilter='read';assert.equal(c.visibleInboxItems()[0].id,'2');
+ state.notificationFilter='unread';assert.equal(c.visibleInboxItems().length,2);
 });
 test('video can be added to tenant playlist without overriding its duration',async()=>{
   const calls=[];const c=vm.createContext({state:{company:{id:'tenant'},editingPlaylistId:'playlist',playlistItems:[],media:[{id:'video',media_type:'video'}]},restRequest:async(t,o)=>calls.push({t,...o}),loadAllData:async()=>{},renderPlaylistEditor(){},toast(){throw Error('save failed')}});

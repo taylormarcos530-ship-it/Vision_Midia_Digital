@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
         .select('id,company_id,title,message,created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
-        .limit(100)
+        .limit(3)
       if (notificationsError) throw notificationsError
 
       const ids = (notifications || []).map((item: any) => item.id)

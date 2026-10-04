@@ -478,6 +478,8 @@ Deno.serve(async (req) => {
         status: 'online',
         last_seen_at: now,
         app_version: appVersion,
+        ...(body?.apk_version ? { apk_version: String(body.apk_version).slice(0, 80) } : {}),
+        ...(body?.player_version ? { player_version: String(body.player_version).slice(0, 80) } : {}),
         screen_width: screenWidth,
         screen_height: screenHeight,
         storage_free_mb: storageFreeMb == null ? null : Math.round(storageFreeMb),

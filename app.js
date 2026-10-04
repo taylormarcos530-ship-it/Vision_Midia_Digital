@@ -112,7 +112,6 @@
     companyMembers: [],
     profiles: [],
     notifications: [],
-    expiryCompanies: [],
     notificationUnreadCount: 0,
     notificationFilter: 'all',
     selectedNotificationIds: new Set(),
@@ -787,28 +786,17 @@
 
   function visibleInboxItems() {
     const filter = state.notificationFilter || 'all';
-    return (state.notifications || []).filter(item => {
+    return (state.notifications || []).slice(0, 3).filter(item => {
       if (filter === 'unread') return !item.is_read;
       if (filter === 'read') return Boolean(item.is_read);
       return true;
     });
   }
 
-  function currentDueNotices() {
-    const companies = state.isPlatformAdmin ? state.expiryCompanies || [] : [{ ...state.company, subscription: state.subscription }];
-    return companies.map(company => {
-      const sub = company.subscription;
-      const dueValue = sub?.status === 'trialing' ? sub.trial_ends_at : sub?.current_period_end;
-      const dueTime = new Date(dueValue || '').getTime();
-      if (!dueValue || !Number.isFinite(dueTime) || !['active','trialing','past_due'].includes(sub?.status) || dueTime - Date.now() > 3 * 86400000) return null;
-      return { company, subscription: sub, dueValue, expired: dueTime < Date.now() };
-    }).filter(Boolean);
-  }
-
   function updateInboxBadge() {
     const badge = $('#inbox-unread-badge');
     if (!badge) return;
-    const count = Number(state.notificationUnreadCount || 0) + currentDueNotices().length;
+    const count = Number(state.notificationUnreadCount || 0);
     badge.textContent = count > 99 ? '99+' : String(count);
     badge.classList.toggle('hidden', count < 1);
   }
@@ -820,17 +808,12 @@
     if (!list || !empty) return;
 
     const items = visibleInboxItems();
-    const dueNotice = state.notificationFilter === 'read' ? '' : currentDueNotices().map(info => {
-      const { company, subscription: sub, dueValue, expired } = info;
-      const owner = state.isPlatformAdmin ? company.name + ': ' : 'Sua conta: ';
-      return `<article class="inbox-message-card unread"><div class="inbox-message-copy"><strong>${escapeHtml(owner)}${expired ? 'assinatura vencida' : 'vencimento próximo'}</strong><p class="inbox-message-body">O ${sub.status === 'trialing' ? 'teste' : 'plano'} ${expired ? 'venceu' : 'vence'} em ${escapeHtml(formatAccessDate(dueValue))}. Entre em contato com o suporte para renovar.</p><small>Aviso do vencimento cadastrado, atualizado automaticamente.</small></div></article>`;
-    }).join('');
     const validIds = new Set((state.notifications || []).map(item => item.id));
     state.selectedNotificationIds = new Set(
       [...state.selectedNotificationIds].filter(id => validIds.has(id))
     );
 
-    list.innerHTML = dueNotice + items.map(item => {
+    list.innerHTML = items.map(item => {
       const selected = state.selectedNotificationIds.has(item.id);
       return `
         <article class="inbox-message-card ${item.is_read ? 'read' : 'unread'}">
@@ -859,8 +842,8 @@
       `;
     }).join('');
 
-    list.classList.toggle('hidden', !items.length && !dueNotice);
-    empty.classList.toggle('hidden', Boolean(items.length || dueNotice));
+    list.classList.toggle('hidden', !items.length);
+    empty.classList.toggle('hidden', Boolean(items.length));
 
     const selectAll = $('#inbox-select-all');
     if (selectAll) {
@@ -882,19 +865,11 @@
       return [];
     }
     try {
-      if (state.isPlatformAdmin) {
-        const dashboard = await functionRequest('master-admin', { authenticated: true, body: { action: 'dashboard' } });
-        state.expiryCompanies = Array.isArray(dashboard?.companies) ? dashboard.companies : [];
-      } else {
-        state.expiryCompanies = [];
-        const rows = await restRequest('company_subscriptions', { query: `select=*&company_id=eq.${encodeURIComponent(state.company.id)}&limit=1` });
-        state.subscription = rows?.[0] || null;
-      }
       const result = await functionRequest('notification-inbox', {
         authenticated: true,
         body: { action: 'list', company_id: state.company.id },
       });
-      state.notifications = Array.isArray(result?.items) ? result.items : [];
+      state.notifications = Array.isArray(result?.items) ? result.items.slice(0, 3) : [];
       state.notificationUnreadCount = Number(result?.unread_count || 0);
       renderNotificationInbox();
       return state.notifications;
@@ -4652,7 +4627,6 @@
     if (brandingForm) { brandingForm.reset(); delete brandingForm.dataset.dirty; }
     localStorage.removeItem(COMPANY_KEY);
     state.company = null;
-    state.expiryCompanies = [];
     state.devices = [];
     state.media = [];
     state.playlists = [];

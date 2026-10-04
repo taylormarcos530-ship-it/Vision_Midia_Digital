@@ -168,7 +168,7 @@
       button.textContent = `Baixar APK ${manifest.apk_version || 'preview'}`;
       button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
       if (note) {
-        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Instale no TV Box e faça o pareamento pelo código exibido.`;
+        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… APK de teste. Atualizar uma instalação existente exige a mesma assinatura; preserve o pareamento atual.`;
       }
     } catch (error) {
       // The permanent APK path is the source of truth for download availability.

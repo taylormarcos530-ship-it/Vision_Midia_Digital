@@ -2335,3 +2335,11 @@ details.player-branding-panel > summary::after { content:"Abrir ▾"; color:var(
 details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 .app-dialog { max-height:calc(100dvh - 32px); overflow:auto; }
 .app-dialog .dialog-header { position:sticky; top:0; z-index:2; background:#0d182a; padding-top:10px; }
+
+/* Grid prevents intrinsic text/progress sizing from pushing capacity off screen. */
+#device-plan-usage { display:grid; grid-template-columns:minmax(0,1fr); width:100%; box-sizing:border-box; gap:10px; }
+#device-plan-usage > div { min-width:0; max-width:100%; }
+#device-plan-usage .plan-storage-usage { width:100%; box-sizing:border-box; flex-basis:auto; overflow-wrap:anywhere; }
+#device-plan-usage .plan-storage-usage progress { min-width:0; max-width:100%; }
+#device-plan-usage .plan-usage-numbers { flex-wrap:wrap; white-space:normal; }
+.inbox-message-check input, #inbox-select-all { width:20px; height:20px; min-height:0; padding:0; accent-color:var(--primary); }
