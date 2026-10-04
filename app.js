@@ -686,7 +686,11 @@
     state.companyRole = memberRows?.[0]?.status === 'active' ? memberRows[0].role : null;
     try {
       const adminResult = await restRequest('rpc/current_user_is_platform_admin', { method: 'POST', body: {} });
-      state.isPlatformAdmin = adminResult === true || adminResult === 'true' || adminResult?.value === true;
+      state.isPlatformAdmin =
+        adminResult === true ||
+        adminResult === 'true' ||
+        adminResult?.value === true ||
+        (Array.isArray(adminResult) && (adminResult[0] === true || adminResult[0]?.current_user_is_platform_admin === true));
     } catch { state.isPlatformAdmin = false; }
     const reason = accessReason(state.subscription);
     if (reason) {
