@@ -3,6 +3,7 @@
   // preview-refresh-v39-timed-access
   // preview-refresh-v40-force-vercel-after-tv-list-fix
   // preview-refresh-v41-after-vercel-preview-settings-reset
+  // preview-refresh-v42-vercel-root-player-and-stale-manifest-fix
   // preview-refresh-v37-media-library
   // preview-refresh-v38-complete-media
   // preview-refresh-v36-complete-playlists
