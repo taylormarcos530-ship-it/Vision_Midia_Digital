@@ -124,13 +124,13 @@
     button.classList.remove('disabled');
     button.removeAttribute('aria-disabled');
     button.textContent = 'Baixar APK para TV Box';
-    button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+    button.setAttribute('download', 'Vision-Player-Estavel.apk');
     if (note) note.textContent = 'APK compilado disponível. Confirmando os metadados da build…';
 
     try {
       const cacheBust = Date.now().toString(36);
       const manifestRequest = `${manifestUrl}${manifestUrl.includes('?') ? '&' : '?'}v=${cacheBust}`;
-      const checksumRequest = `./downloads/Vision-Player-preview.sha256?v=${cacheBust}`;
+      const checksumRequest = `${url.replace(/\.apk$/, ".sha256")}?v=${cacheBust}`;
       const apkRequest = `${url}${url.includes('?') ? '&' : '?'}v=${cacheBust}`;
 
       const [manifestResponse, checksumResponse, apkResponse] = await Promise.all([
@@ -157,6 +157,10 @@
         throw new Error('Checksum diferente dos metadados da build.');
       }
 
+      if (manifest.application_id !== 'com.visionmidia.player.stable' || manifest.version_code < 16 || manifest.signer_sha256 !== '21642106e5a7add7537db0b87b4a6e4ff4609862beff3087aa8a76144febf8cb') {
+        throw new Error('Identidade da versão estável não confirmada.');
+      }
+
       const contentLength = Number(apkResponse.headers.get('content-length') || 0);
       if (contentLength > 0 && contentLength < 100000) {
         throw new Error('Arquivo APK inválido ou incompleto.');
@@ -166,19 +170,12 @@
       button.classList.remove('disabled');
       button.removeAttribute('aria-disabled');
       button.textContent = `Baixar APK ${manifest.apk_version || 'preview'}`;
-      button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
+      button.setAttribute('download', 'Vision-Player-Estavel.apk');
       if (note) {
-        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… APK de teste. Atualizar uma instalação existente exige a mesma assinatura; preserve o pareamento atual.`;
+        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Assinatura permanente. Primeira migração: instale ao lado do Player antigo e use Substituir TV. Depois, atualize sobre o Player Estável instalado.`;
       }
     } catch (error) {
-      // The permanent APK path is the source of truth for download availability.
-      // Validation failures must not create a false "needs compilation" state.
-      button.href = url;
-      button.classList.remove('disabled');
-      button.removeAttribute('aria-disabled');
-      button.textContent = 'Baixar APK para TV Box';
-      button.setAttribute('download', 'Vision-Player-TVBox-preview.apk');
-      if (note) note.textContent = `APK compilado disponível para download. A checagem automática dos metadados não respondeu: ${error?.message || 'erro desconhecido'}.`;
+      disableApkButton(button, note, 'Tentar novamente após atualizar', `Não foi possível conferir o APK: ${error?.message || 'erro desconhecido'}. Atualize a página para tentar novamente.`);
     }
   }
 
