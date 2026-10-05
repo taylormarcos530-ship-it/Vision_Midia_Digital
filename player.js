@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.6';
+  const APP_VERSION = 'vision-player-web-1.5.7';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -196,14 +196,43 @@
     }
   }
 
+  const nativeRequests = new Map();
+  let nativeRequestSequence = 0;
+  window.VisionNativeNetwork = {
+    complete(id, envelope) {
+      const request = nativeRequests.get(id);
+      if (!request) return;
+      nativeRequests.delete(id);
+      clearTimeout(request.timer);
+      request.resolve(String(envelope || ''));
+    },
+  };
+
+  function requestNativeAsync(url, payload, token) {
+    return new Promise((resolve, reject) => {
+      const id = `${Date.now()}-${++nativeRequestSequence}`;
+      const timer = setTimeout(() => {
+        nativeRequests.delete(id);
+        const error = new Error('A conexão demorou demais. A reprodução local continua.');
+        error.status = 0;
+        reject(error);
+      }, 40000);
+      nativeRequests.set(id, { resolve, timer });
+      try { window.VisionAndroid.postJsonAsync(id, url, payload, CONFIG.supabasePublishableKey, token || ''); }
+      catch (error) { clearTimeout(timer); nativeRequests.delete(id); reject(error); }
+    });
+  }
+
   async function functionRequest(name, body, deviceToken = null) {
     const url = `${CONFIG.supabaseUrl}/functions/v1/${name}`;
     const payload = JSON.stringify(body || {});
 
-    if (window.VisionAndroid?.postJson) {
+    if (window.VisionAndroid?.postJsonAsync || window.VisionAndroid?.postJson) {
       let envelope = '';
       try {
-        envelope = String(window.VisionAndroid.postJson(
+        envelope = window.VisionAndroid.postJsonAsync
+          ? await requestNativeAsync(url, payload, deviceToken)
+          : String(window.VisionAndroid.postJson(
           url,
           payload,
           CONFIG.supabasePublishableKey,

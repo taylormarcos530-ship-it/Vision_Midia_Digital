@@ -3801,13 +3801,17 @@
     setBusy(button, true);
     try {
       if (id) {
-        await restRequest('devices', {
+        const saved = await restRequest('devices', {
           method: 'PATCH',
           query: `id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
           body: payload,
-          prefer: 'return=minimal',
+          prefer: 'return=representation',
         });
-        void functionRequest('device-control', { body:{ action:'sync_now', company_id:state.company.id, device_id:id }, authenticated:true }).catch(() => {});
+        const confirmed = Array.isArray(saved) && saved.find(device => device.id === id);
+        if (!confirmed || ['audio_enabled', 'autostart_enabled', 'kiosk_return_enabled'].some(key => confirmed.settings?.[key] !== payload.settings[key])) {
+          throw new Error('O servidor não confirmou as configurações. Atualize a tela e tente salvar novamente.');
+        }
+        void functionRequest('device-control' , { body:{ action:'sync_now', company_id:state.company.id, device_id:id }, authenticated:true }).catch(() => {});
         toast('TV atualizada', 'Configurações salvas. A TV aplicará a alteração ao sincronizar.');
       } else {
         await restRequest('devices', {

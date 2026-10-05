@@ -43,6 +43,12 @@ import androidx.webkit.WebViewFeature;
 import androidx.webkit.WebViewClientCompat;
 
 import java.util.Locale;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.ExecutorService;
+import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
@@ -61,10 +67,12 @@ public class MainActivity extends Activity {
     private boolean mutedMusicByPlayer = false;
     private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
-    private static final long KIOSK_RETURN_RETRY_MS = 650L;
+    private static final long KIOSK_RETURN_RETRY_MS = 200L;
     private static final long KIOSK_RETURN_GUARD_MS = 1500L;
     private static final long KIOSK_MAINTENANCE_DURATION_MS = 10L * 60L * 1000L;
 
+    private final ExecutorService networkExecutor = new ThreadPoolExecutor(3, 3, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(12));
+    private volatile boolean destroyed = false;
     private WebView webView;
     private SharedPreferences prefs;
     private WebViewAssetLoader assetLoader;
@@ -217,14 +225,15 @@ public class MainActivity extends Activity {
         String kioskStatus = isKioskReturnEnabled() ? "ativado" : "desativado";
         String version = new PlayerBridge().getAppVersion();
         new AlertDialog.Builder(this)
-                .setTitle("Vision Player " + version + "\nEmpresa: " + prefs.getString(KEY_SETUP_CODE, "—") + " • Quiosque " + kioskStatus)
+                .setTitle("Vision Player " + version + "\nEmpresa: " + prefs.getString(KEY_SETUP_CODE, "—") + " • Quiosque " + kioskStatus + (isKioskReturnEnabled() && !canReturnFromBackground() ? " (permissão Android pendente)" : ""))
                 .setItems(new String[]{
                         "Voltar ao Player",
                         "Recarregar",
                         "Abrir configurações (manutenção por 10 min)",
                         isKioskReturnEnabled() ? "Desativar quiosque" : "Ativar quiosque",
                         "Baixar atualização do Player Estável",
-                        "Alterar código"
+                        "Alterar código",
+                        canReturnFromBackground() ? "Retorno e auto início: permissão liberada" : "Liberar retorno e auto início no Android"
                 }, (dialog, which) -> {
                     if (which == 1) {
                         loadPlayer(prefs.getString(KEY_SETUP_CODE, ""));
@@ -238,10 +247,36 @@ public class MainActivity extends Activity {
                         openPlayerUpdateDownload();
                     } else if (which == 5) {
                         showSetupDialog(true);
+                    } else if (which == 6) {
+                        requestBackgroundReturnPermission();
                     }
                 })
                 .setNegativeButton("Fechar", null)
                 .show();
+    }
+
+    private boolean canReturnFromBackground() {
+        return Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(this);
+    }
+
+    private void requestBackgroundReturnPermission() {
+        if (canReturnFromBackground()) {
+            Toast.makeText(this, "Permissão já liberada. Reinicie o TV Box para testar o auto início.", Toast.LENGTH_LONG).show();
+            return;
+        }
+        new AlertDialog.Builder(this)
+                .setTitle("Permitir retorno automático")
+                .setMessage("O Android precisa autorizar o Vision Player a aparecer sobre outros apps para retornar após Home e abrir ao ligar. Na próxima tela, libere essa permissão para o Vision Player Estável. O modo manutenção continua disponível no menu.")
+                .setPositiveButton("Abrir permissão", (dialog, which) -> {
+                    prefs.edit().putLong(KEY_KIOSK_MAINTENANCE_UNTIL, System.currentTimeMillis() + KIOSK_MAINTENANCE_DURATION_MS).apply();
+                    kioskHandler.removeCallbacksAndMessages(null);
+                    try {
+                        startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:" + getPackageName())));
+                    } catch (Exception error) {
+                        Toast.makeText(this, "Abra Configurações > Apps > Acesso especial > Exibir sobre outros apps e libere o Vision Player.", Toast.LENGTH_LONG).show();
+                    }
+                })
+                .setNegativeButton("Agora não", null).show();
     }
 
     private void openPlayerUpdateDownload() {
@@ -310,7 +345,7 @@ public class MainActivity extends Activity {
             overridePendingTransition(0, 0);
         } catch (Exception ignored) {
             // Android 10 e alguns firmwares de TV Box podem bloquear Activity em background.
-            // O retorno é best-effort e nunca usa lock task nem permissões invasivas.
+            // A permissão de retorno pode ser liberada explicitamente no menu do Player.
         }
     }
 
@@ -450,6 +485,28 @@ public class MainActivity extends Activity {
                 enterImmersiveMode();
             });
             return true;
+        }
+
+        @JavascriptInterface
+        public void postJsonAsync(String requestId, String url, String jsonBody, String apiKey, String deviceToken) {
+            if (destroyed || requestId == null || !requestId.matches("[0-9]+-[0-9]+")) return;
+            try { networkExecutor.execute(() -> {
+                String envelope = postJson(url, jsonBody, apiKey, deviceToken);
+                runOnUiThread(() -> {
+                    if (destroyed || webView == null) return;
+                    String current = webView.getUrl();
+                    if (current == null || !current.startsWith(LOCAL_PLAYER)) return;
+                    webView.evaluateJavascript("window.VisionNativeNetwork && window.VisionNativeNetwork.complete("
+                            + JSONObject.quote(requestId) + "," + JSONObject.quote(envelope) + ");", null);
+                });
+            }); } catch (RejectedExecutionException busy) {
+                runOnUiThread(() -> {
+                    if (!destroyed && webView != null && webView.getUrl() != null && webView.getUrl().startsWith(LOCAL_PLAYER)) {
+                        webView.evaluateJavascript("window.VisionNativeNetwork && window.VisionNativeNetwork.complete("
+                                + JSONObject.quote(requestId) + "," + JSONObject.quote("0\n" + Base64.encodeToString("Servidor ocupado. A reprodução local continua.".getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP)) + ");", null);
+                    }
+                });
+            }
         }
 
         @JavascriptInterface
@@ -616,6 +673,8 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        destroyed = true;
+        networkExecutor.shutdownNow();
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
         kioskHandler.removeCallbacksAndMessages(null);
