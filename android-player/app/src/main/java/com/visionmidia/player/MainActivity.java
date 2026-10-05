@@ -10,6 +10,7 @@ import android.content.pm.ActivityInfo;
 import android.content.pm.PackageManager;
 import android.content.res.Configuration;
 import android.graphics.Color;
+import android.media.AudioManager;
 import android.net.Uri;
 import android.net.ConnectivityManager;
 import android.net.Network;
@@ -37,6 +38,8 @@ import android.util.Base64;
 
 import androidx.annotation.Nullable;
 import androidx.webkit.WebViewAssetLoader;
+import androidx.webkit.WebViewCompat;
+import androidx.webkit.WebViewFeature;
 import androidx.webkit.WebViewClientCompat;
 
 import java.util.Locale;
@@ -54,6 +57,8 @@ public class MainActivity extends Activity {
     public static final String KEY_KIOSK_RETURN = "kiosk_return_enabled";
     private static final String KEY_KIOSK_MAINTENANCE_UNTIL = "kiosk_maintenance_until";
     private static final String KEY_WATCHDOG_RECOVERY_AT = "watchdog_recovery_at";
+    private static final String KEY_AUDIO_ENABLED = "audio_enabled";
+    private boolean mutedMusicByPlayer = false;
     private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
     private static final long KIOSK_RETURN_RETRY_MS = 650L;
@@ -210,13 +215,15 @@ public class MainActivity extends Activity {
 
     private void showPlayerMenu() {
         String kioskStatus = isKioskReturnEnabled() ? "ativado" : "desativado";
+        String version = new PlayerBridge().getAppVersion();
         new AlertDialog.Builder(this)
-                .setTitle("Vision Player")
-                .setMessage("Código da empresa: " + prefs.getString(KEY_SETUP_CODE, "—") + "\nQuiosque leve: " + kioskStatus)
+                .setTitle("Vision Player " + version + "\nEmpresa: " + prefs.getString(KEY_SETUP_CODE, "—") + " • Quiosque " + kioskStatus)
                 .setItems(new String[]{
                         "Voltar ao Player",
                         "Recarregar",
                         "Abrir configurações (manutenção por 10 min)",
+                        isKioskReturnEnabled() ? "Desativar quiosque" : "Ativar quiosque",
+                        "Baixar atualização do Player Estável",
                         "Alterar código"
                 }, (dialog, which) -> {
                     if (which == 1) {
@@ -224,10 +231,55 @@ public class MainActivity extends Activity {
                     } else if (which == 2) {
                         openAndroidSettingsForMaintenance();
                     } else if (which == 3) {
+                        boolean enabled = !isKioskReturnEnabled();
+                        Toast.makeText(this, "Salvando configuração no painel…", Toast.LENGTH_SHORT).show();
+                        webView.evaluateJavascript("window.VisionPlayerControls && window.VisionPlayerControls.setKioskReturn(" + enabled + ")", null);
+                    } else if (which == 4) {
+                        openPlayerUpdateDownload();
+                    } else if (which == 5) {
                         showSetupDialog(true);
                     }
                 })
+                .setNegativeButton("Fechar", null)
                 .show();
+    }
+
+    private void openPlayerUpdateDownload() {
+        prefs.edit().putLong(KEY_KIOSK_MAINTENANCE_UNTIL, System.currentTimeMillis() + KIOSK_MAINTENANCE_DURATION_MS).apply();
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk")));
+            Toast.makeText(this, "Abra o APK baixado e confirme Atualizar. Seu vínculo será mantido no Player Estável.", Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
+            Toast.makeText(this, "Baixe o APK pelo painel em Aplicativos / Downloads.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void restorePlayerMusicMute() {
+        if (!mutedMusicByPlayer) return;
+        AudioManager audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audio != null) audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_UNMUTE, 0);
+        mutedMusicByPlayer = false;
+    }
+
+    private void applyAudioSetting() {
+        if (webView == null || prefs == null) return;
+        boolean enabled = prefs.getBoolean(KEY_AUDIO_ENABLED, true);
+        try {
+            if (WebViewFeature.isFeatureSupported(WebViewFeature.MUTE_AUDIO)) {
+                restorePlayerMusicMute();
+                WebViewCompat.setAudioMuted(webView, !enabled);
+                return;
+            }
+        } catch (RuntimeException ignored) { /* Legacy TV Box WebViews use the music output fallback. */ }
+        AudioManager audio = (AudioManager) getSystemService(Context.AUDIO_SERVICE);
+        if (audio == null) return;
+        if (enabled) {
+            restorePlayerMusicMute();
+        } else if (!audio.isStreamMute(AudioManager.STREAM_MUSIC)) {
+            audio.adjustStreamVolume(AudioManager.STREAM_MUSIC, AudioManager.ADJUST_MUTE, 0);
+            mutedMusicByPlayer = true;
+        }
     }
 
     private boolean isKioskReturnEnabled() {
@@ -318,19 +370,34 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public void setAudioEnabled(boolean enabled) {
+            runOnUiThread(() -> {
+                prefs.edit().putBoolean(KEY_AUDIO_ENABLED, enabled).apply();
+                applyAudioSetting();
+            });
+        }
+
+        @JavascriptInterface
+        public void showSettingsResult(String message, boolean saved) {
+            runOnUiThread(() -> Toast.makeText(MainActivity.this, message == null ? "" : message, Toast.LENGTH_LONG).show());
+        }
+
+        @JavascriptInterface
         public void setAutostart(boolean enabled) {
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
         }
 
         @JavascriptInterface
         public void setKioskReturn(boolean enabled) {
-            SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, enabled);
-            if (!enabled) editor.remove(KEY_KIOSK_MAINTENANCE_UNTIL);
-            editor.apply();
-            if (!enabled) {
-                kioskHandler.removeCallbacksAndMessages(null);
-                kioskReturnInProgress = false;
-            }
+            runOnUiThread(() -> {
+                SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, enabled);
+                if (!enabled) editor.remove(KEY_KIOSK_MAINTENANCE_UNTIL);
+                editor.apply();
+                if (!enabled) {
+                    kioskHandler.removeCallbacksAndMessages(null);
+                    kioskReturnInProgress = false;
+                }
+            });
         }
 
         @JavascriptInterface
@@ -535,6 +602,7 @@ public class MainActivity extends Activity {
         watchdogHandler.removeCallbacks(playerWatchdog);
         watchdogHandler.postDelayed(playerWatchdog, 30_000L);
         if (webView != null) webView.onResume();
+        applyAudioSetting();
     }
 
     @Override
@@ -542,6 +610,7 @@ public class MainActivity extends Activity {
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
         if (webView != null) webView.onPause();
+        restorePlayerMusicMute();
         super.onPause();
     }
 
@@ -550,6 +619,7 @@ public class MainActivity extends Activity {
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
         kioskHandler.removeCallbacksAndMessages(null);
+        restorePlayerMusicMute();
         if (webView != null) {
             webView.stopLoading();
             webView.destroy();

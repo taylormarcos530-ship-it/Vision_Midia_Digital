@@ -133,7 +133,7 @@ async function resolveProgram(admin, device) {
     { data: assignment, error: assignmentError },
     { data: membership, error: membershipError },
   ] = await Promise.all([
-    admin.from('companies').select('timezone').eq('id', device.company_id).maybeSingle(),
+    admin.from('companies').select('timezone,fallback_playlist_id').eq('id', device.company_id).maybeSingle(),
     admin.from('campaigns')
       .select('id,name,playlist_id,start_date,end_date,start_time,end_time,weekdays,priority,all_devices,updated_at,created_at')
       .eq('company_id', device.company_id)
@@ -172,22 +172,18 @@ async function resolveProgram(admin, device) {
 
   const clock = localDateParts(new Date(), company?.timezone || 'America/Sao_Paulo')
   const targeted = new Set((targets || []).map(row => row.campaign_id))
-  const hasPrimaryProgramming = Boolean(assignment?.playlist_id || group?.playlist_id)
-  const campaign = hasPrimaryProgramming
-    ? (campaigns || []).find(item => (item.all_devices || targeted.has(item.id)) && campaignIsActive(item, clock)) || null
-    : null
+  const campaign = (campaigns || []).find(item => (item.all_devices || targeted.has(item.id)) && campaignIsActive(item, clock)) || null
+  const fallbackPlaylistId = device.fallback_playlist_id || company?.fallback_playlist_id || null
   const assignmentVersion = {
     device: assignment?.updated_at || null,
     group_member: effectiveMembership?.created_at || null,
     group: group?.updated_at || null,
   }
 
-  // A campaign can only override an already assigned direct/group playlist.
-  // A newly paired TV without programming must remain idle.
   if (campaign) {
     return {
       playlistId: campaign.playlist_id,
-      fallbackPlaylistId: null,
+      fallbackPlaylistId: fallbackPlaylistId === campaign.playlist_id ? null : fallbackPlaylistId,
       assignmentUpdatedAt: assignmentVersion,
       program: {
         source: 'campaign',
@@ -205,7 +201,7 @@ async function resolveProgram(admin, device) {
   if (assignment?.playlist_id) {
     return {
       playlistId: assignment.playlist_id,
-      fallbackPlaylistId: null,
+      fallbackPlaylistId: fallbackPlaylistId === assignment.playlist_id ? null : fallbackPlaylistId,
       assignmentUpdatedAt: assignmentVersion,
       program: {
         source: 'default',
@@ -223,7 +219,7 @@ async function resolveProgram(admin, device) {
   if (group?.playlist_id) {
     return {
       playlistId: group.playlist_id,
-      fallbackPlaylistId: null,
+      fallbackPlaylistId: fallbackPlaylistId === group.playlist_id ? null : fallbackPlaylistId,
       assignmentUpdatedAt: assignmentVersion,
       program: {
         source: 'group',
@@ -240,7 +236,8 @@ async function resolveProgram(admin, device) {
 
   return {
     playlistId: null,
-    // A newly paired TV with no programming must stay idle.
+    // A newly paired TV with no primary programming must stay idle.
+    // Emergency fallback is only valid when a campaign/direct/group playlist exists and fails.
     fallbackPlaylistId: null,
     assignmentUpdatedAt: assignmentVersion,
     program: {
@@ -456,6 +453,21 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const action = body?.action
 
+    if (action === 'player_settings') {
+      if (typeof body?.kiosk_return_enabled !== 'boolean') return json({ error:'invalid_setting' }, 400)
+      const settings = { ...(device.settings || {}), kiosk_return_enabled:body.kiosk_return_enabled }
+      const { data: saved, error: saveError } = await admin.from('devices')
+        .update({ settings })
+        .eq('id', device.id)
+        .eq('company_id', device.company_id)
+        .eq('updated_at', device.updated_at)
+        .select('id,settings')
+        .maybeSingle()
+      if (saveError) throw saveError
+      if (!saved) return json({ error:'settings_changed', message:'A configuração mudou. Aguarde a sincronização e tente novamente.' }, 409)
+      return json({ ok:true, settings:saved.settings })
+    }
+
     if (action === 'unpair') {
       const { error: deleteError } = await admin
         .from('devices')
@@ -614,19 +626,39 @@ Deno.serve(async (req) => {
         supportsItemSchedules,
         resolved.program?.timezone,
       )
-      if (resolved.playlistId && (!primary || !primary.items.length || primary.essentialUnavailable)) {
-        return json({ error: 'assigned_playlist_unavailable' }, 409)
+      const fallback = resolved.fallbackPlaylistId
+        ? await loadPlaylistPayload(admin, device.company_id, resolved.fallbackPlaylistId, supportsItemSchedules, resolved.program?.timezone)
+        : null
+
+      if (resolved.playlistId && !primary && !fallback) {
+        return json({ error: 'assigned_playlist_missing' }, 409)
       }
 
-      const program = resolved.program
+      let program = resolved.program
+      const fallbackUsable = Boolean(fallback?.items?.length && !fallback?.essentialUnavailable)
+      let fallbackPayload = fallbackUsable ? fallback : null
+      if ((!primary || !primary.items.length || primary.essentialUnavailable) && fallbackUsable) {
+        const fallbackReason = primary?.essentialUnavailable
+          ? 'essential_media_unavailable'
+          : (resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist')
+        primary = fallback
+        fallbackPayload = null
+        program = {
+          ...resolved.program,
+          source: 'fallback',
+          fallback_reason: fallbackReason,
+        }
+      }
 
       const versionSource = JSON.stringify({
-        device_config: [device.orientation, device.settings || {}],
+        device_config: [device.orientation, device.settings || {}, device.fallback_playlist_id || null],
         access: [device.access_status, device.access_expires_at],
         assignment: resolved.assignmentUpdatedAt,
         program,
         playlist: primary?.updatedAt || null,
         items: (primary?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
+        fallback_playlist: fallbackPayload?.updatedAt || null,
+        fallback_items: (fallbackPayload?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
       })
 
       return json({
@@ -642,7 +674,9 @@ Deno.serve(async (req) => {
         program,
         playlist: primary?.playlist || null,
         items: primary?.items || [],
-        fallback: null,
+        fallback: fallbackPayload?.items?.length
+          ? { playlist: fallbackPayload.playlist, items: fallbackPayload.items }
+          : null,
         generated_at: new Date().toISOString(),
       })
     }

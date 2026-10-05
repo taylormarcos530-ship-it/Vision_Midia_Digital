@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.5';
+  const APP_VERSION = 'vision-player-web-1.5.6';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -669,6 +669,7 @@
 
   async function applyDeviceSettings(settings = {}, orientation = 'auto') {
     state.audioEnabled = settings.audio_enabled !== false;
+    try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
     await applyPlayerOrientation(orientation);
     const currentVideo = $('#media-stage video');
     if (currentVideo) currentVideo.muted = !state.audioEnabled;
@@ -683,6 +684,24 @@
     try { window.VisionAndroid?.setAutostart?.(settings.autostart_enabled !== false); } catch {}
     try { window.VisionAndroid?.setKioskReturn?.(settings.kiosk_return_enabled === true); } catch {}
   }
+
+  async function changeKioskReturn(enabled) {
+    try {
+      if (!state.deviceToken) throw new Error('Vincule esta TV antes de alterar o quiosque.');
+      const result = await gateway({ action:'player_settings', kiosk_return_enabled:enabled === true });
+      if (!result?.ok || !result.settings) throw new Error('Não foi possível salvar a configuração.');
+      if (state.manifest?.device) {
+        state.manifest.device.settings = result.settings;
+        writeJson(MANIFEST_KEY, state.manifest);
+      }
+      await applyDeviceSettings(result.settings, state.manifest?.device?.orientation || 'auto');
+      window.VisionAndroid?.showSettingsResult?.(enabled ? 'Quiosque ativado nesta TV e no painel.' : 'Quiosque desativado nesta TV e no painel.', true);
+    } catch (error) {
+      window.VisionAndroid?.showSettingsResult?.('Não foi possível salvar: ' + error.message, false);
+    }
+  }
+
+  window.VisionPlayerControls = { setKioskReturn:changeKioskReturn };
 
   async function cacheMediaItem(cache, item, { foreground = false } = {}) {
     if (!item?.media || !['image','video'].includes(item.media.type)) return false;
