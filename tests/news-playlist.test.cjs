@@ -9,7 +9,7 @@ const save=app.slice(start,app.indexOf('\n  }',start)+4);
 function context(playlist='playlist',fail=false){
   const calls=[],messages=[],button={disabled:false};
   const nodes={'#online-media-name':{value:'Cinema'},'#online-media-url':{value:'https://preview.example/news-feed.html?source=cinema_br'},'#online-media-duration':{value:'30'},'#online-media-playlist':{value:playlist},'#online-media-dialog':{close(){}}};
-  const c=vm.createContext({URL,location:{origin:'https://preview.example',href:'https://preview.example/index.html'},state:{company:{id:'tenant'},user:{id:'user'},playlists:[{id:'playlist'}],playlistItems:[{playlist_id:'playlist',position:3}]},$:s=>nodes[s],resolveOnlineMediaUrl:x=>x,toast:(...x)=>messages.push(x),setBusy:(b,v)=>b.disabled=v,loadAllData:async()=>{},restRequest:async(table,options)=>{calls.push({table,...options});if(fail&&table==='playlist_items')throw Error('Denied');return [{id:'media'}]}});
+  const c=vm.createContext({syncPlaylistDevices:async()=>{},URL,location:{origin:'https://preview.example',href:'https://preview.example/index.html'},state:{company:{id:'tenant'},user:{id:'user'},playlists:[{id:'playlist'}],playlistItems:[{playlist_id:'playlist',position:3}]},$:s=>nodes[s],resolveOnlineMediaUrl:x=>x,toast:(...x)=>messages.push(x),setBusy:(b,v)=>b.disabled=v,loadAllData:async()=>{},restRequest:async(table,options)=>{calls.push({table,...options});if(fail&&table==='playlist_items')throw Error('Denied');return [{id:'media'}]}});
   vm.runInContext(save,c);
   return {c,calls,messages,button,event:{preventDefault(){},target:{querySelector:()=>button}}};
 }
@@ -48,7 +48,7 @@ test('branding draft survives refresh and pending signed image cannot replace dr
   const preview={dataset:{},style:{backgroundImage:'local-image'}};
   const form={dataset:{dirty:'1'}};
   const nodes={'#player-branding-panel':{classList:{remove(){}}},'#player-branding-form':form,'#player-branding-preview':preview,'#branding-title':{value:'New title'}};
-  const c=vm.createContext({$:s=>nodes[s],state:{playerBranding:{title:'Saved title',splash_path:'saved.webp'}},location:{origin:'https://fixture.test'},getSignedMediaUrl:async()=>{form.dataset.dirty='1';return 'https://fixture.test/old.jpg'}});
+  const c=vm.createContext({syncPlaylistDevices:async()=>{},$:s=>nodes[s],state:{playerBranding:{title:'Saved title',splash_path:'saved.webp'}},location:{origin:'https://fixture.test'},getSignedMediaUrl:async()=>{form.dataset.dirty='1';return 'https://fixture.test/old.jpg'}});
   vm.runInContext(fn('renderPlayerBranding')+fn('hydratePlayerBrandingPreview'),c);
   c.renderPlayerBranding();assert.equal(nodes['#branding-title'].value,'New title');assert.equal(preview.style.backgroundImage,'local-image');
   delete form.dataset.dirty;await c.hydratePlayerBrandingPreview();assert.equal(preview.style.backgroundImage,'local-image');

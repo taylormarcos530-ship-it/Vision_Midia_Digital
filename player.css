@@ -20,7 +20,7 @@ button { font: inherit; }
 .playback-screen { position: relative; background: #000; }
 .media-stage { position: absolute; inset: 0; display: grid; place-items: center; overflow: hidden; background: #000; }
 .media-stage img, .media-stage video { display:block; width:100%; height:100%; max-width:100vw; max-height:100vh; object-fit:contain !important; object-position:center center !important; background:#000; transform:none !important; }
-.media-stage iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+.media-stage iframe { width: 100%; height: 100%; border: 0; background: #07111f; }
 .idle-overlay { position: absolute; inset: 0; display: grid; place-content: center; justify-items: center; gap: 12px; padding: 30px; text-align: center; background: radial-gradient(circle at center, #0c1b32 0, #03070d 65%, #000 100%); }
 .idle-overlay h2 { margin: 10px 0 0; font-size: clamp(26px, 4vw, 42px); }
 .idle-overlay p { margin: 0; max-width: 650px; color: #9eacc1; font-size: clamp(15px, 2vw, 19px); }

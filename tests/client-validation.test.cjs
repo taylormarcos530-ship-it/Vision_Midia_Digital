@@ -18,7 +18,7 @@ test('inbox keeps only three newest messages before applying read filter',()=>{
  state.notificationFilter='unread';assert.equal(c.visibleInboxItems().length,2);
 });
 test('video can be added to tenant playlist without overriding its duration',async()=>{
-  const calls=[];const c=vm.createContext({state:{company:{id:'tenant'},editingPlaylistId:'playlist',playlistItems:[],media:[{id:'video',media_type:'video'}]},restRequest:async(t,o)=>calls.push({t,...o}),loadAllData:async()=>{},renderPlaylistEditor(){},toast(){throw Error('save failed')}});
+  const calls=[];const c=vm.createContext({syncPlaylistDevices:async()=>{},state:{company:{id:'tenant'},editingPlaylistId:'playlist',playlistItems:[],media:[{id:'video',media_type:'video'}]},restRequest:async(t,o)=>calls.push({t,...o}),loadAllData:async()=>{},renderPlaylistEditor(){},toast(){throw Error('save failed')}});
   vm.runInContext(fn('addMediaToPlaylist'),c);await c.addMediaToPlaylist('video');
   assert.equal(calls[0].body.company_id,'tenant');assert.equal(calls[0].body.media_id,'video');assert.equal(calls[0].body.duration_override_seconds,null);
 });

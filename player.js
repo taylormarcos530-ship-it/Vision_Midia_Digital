@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.3';
+  const APP_VERSION = 'vision-player-web-1.5.5';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -48,6 +48,7 @@
     lastEventTimes: {},
     cachePrefetchVersion: null,
     runtimeFallbackVersion: null,
+    priorityMediaId: null,
     pairingStartInFlight: false,
     pairingRetryTimer: null,
     pairingRateLimitedUntil: 0,
@@ -781,8 +782,13 @@
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
       await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
-      await cacheManifestAssets(manifest);
+      if (changed) state.priorityMediaId = null;
+      if (changed && state.manifest && state.manifest?.playlist?.id === manifest?.playlist?.id) {
+        const previousIds = new Set((state.manifest.items || []).map(item => item.media?.id));
+        state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
+      }
       state.manifest = manifest;
+      void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
       showPlayback();
@@ -862,6 +868,36 @@
       if (file === 'news-feed.html') return new URL('./news-feed.html' + url.search, location.href).href;
     }
     return url.href;
+  }
+
+  async function prepareOnlineFrame(stage, iframe, url, nonce) {
+    iframe.style.visibility = 'hidden';
+    iframe.style.position = 'absolute';
+    iframe.style.inset = '0';
+    iframe.style.background = '#07111f';
+    let finish;
+    const ready = new Promise(resolve => { finish = resolve; });
+    const loaded = () => finish('loaded');
+    const failed = () => finish('error');
+    iframe.addEventListener('load', loaded, { once:true });
+    iframe.addEventListener('error', failed, { once:true });
+    iframe.src = url;
+    stage.appendChild(iframe);
+    try {
+      const result = await Promise.race([ready, waitForChangeOrTimeout(nonce, 8000)]);
+      if (result !== 'loaded' || nonce !== state.playlistNonce || !navigator.onLine) {
+        iframe.remove();
+        return false;
+      }
+      iframe.style.visibility = 'visible';
+      iframe.style.position = '';
+      iframe.style.inset = '';
+      swapStageElement(stage, iframe, null);
+      return true;
+    } finally {
+      iframe.removeEventListener('load', loaded);
+      iframe.removeEventListener('error', failed);
+    }
   }
 
   async function playItem(item, playlist, program, nonce) {
@@ -980,28 +1016,10 @@
         iframe.style.height = '100%';
         iframe.style.border = '0';
 
-        let loaded = false;
-        const loadSignal = new Promise(resolve => {
-          iframe.addEventListener('load', () => { loaded = true; resolve('loaded'); }, { once:true });
-          iframe.addEventListener('error', () => resolve('error'), { once:true });
-        });
-        iframe.src = parsedUrl.href;
-        swapStageElement(stage, iframe, null);
-
-        const initial = await Promise.race([
-          loadSignal,
-          waitForChangeOrTimeout(nonce, 8000),
-        ]);
-        if (nonce !== state.playlistNonce) return false;
-        if (!navigator.onLine) {
-          replaceNodeChildren(stage);
-          completed = false;
-          return false;
-        }
-        if (initial === 'error') throw new Error('Falha ao abrir o conteúdo online.');
-
+        if (!await prepareOnlineFrame(stage, iframe, parsedUrl.href, nonce)) return false;
+        const visibleAt = Date.now();
         const durationMs = Math.max(5, Number(item.duration_seconds || 15)) * 1000;
-        const elapsedMs = Math.min(8000, Date.now() - startedAt.getTime());
+        const elapsedMs = Date.now() - visibleAt;
         const urlWait = await Promise.race([
           waitForChangeOrTimeout(nonce, Math.max(1, durationMs - elapsedMs)),
           new Promise(resolve => {
@@ -1014,7 +1032,7 @@
           completed = false;
           return false;
         }
-        completed = urlWait !== 'changed' && loaded;
+        completed = urlWait !== 'changed';
       } else {
         throw new Error('Tipo de mídia não suportado.');
       }
@@ -1212,6 +1230,11 @@
         }
 
         const queue = playlist.shuffle ? shuffled(items) : [...items];
+        if (state.priorityMediaId && playlist.repeat_mode !== 'single') {
+          const priorityIndex = queue.findIndex(item => item.media?.id === state.priorityMediaId);
+          if (priorityIndex > 0) queue.unshift(queue.splice(priorityIndex, 1)[0]);
+          state.priorityMediaId = null;
+        }
         let completedCount = 0;
 
         if (playlist.repeat_mode === 'single' && queue.length) {

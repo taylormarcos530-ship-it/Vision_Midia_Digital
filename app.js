@@ -4049,6 +4049,7 @@
           prefer: 'return=minimal',
         });
       }
+      if (playlistId) void syncPlaylistDevices(playlistId);
       $('#online-media-dialog')?.close();
       toast(playlistId ? 'Conteúdo adicionado à playlist' : 'Conteúdo online adicionado', name);
       await loadAllData();
@@ -4200,6 +4201,17 @@
     } catch (error) { toast('Erro ao excluir mídia', error.message, 'error'); }
   }
 
+  async function syncPlaylistDevices(playlistId) {
+    if (!playlistId || !state.company?.id || !['owner','admin','operator'].includes(state.companyRole)) return;
+    const devices = state.devices.filter(device => device.company_id === state.company.id && !device.retired_at && device.status !== 'disabled' && devicePlaybackHealth(device).playlistId === playlistId);
+    const results = await Promise.allSettled(devices.map(device => functionRequest('device-control', {
+      body:{ action:'sync_now', company_id:state.company.id, device_id:device.id }, authenticated:true,
+    })));
+    if (results.some(result => result.status === 'rejected' || result.value?.ok === false)) {
+      console.warn('Sincronização imediata indisponível; o Player continuará sincronizando automaticamente.');
+    }
+  }
+
   async function linkMediaToPlaylist(mediaId, playlistId) {
     const media = state.media.find(item => item.id === mediaId);
     const playlist = state.playlists.find(item => item.id === playlistId);
@@ -4223,6 +4235,7 @@
         },
         prefer:'return=minimal',
       });
+      void syncPlaylistDevices(playlistId);
       toast('Mídia vinculada', `${media.name} foi adicionada à playlist ${playlist.name}.`);
       state.mediaRenderSignature = '';
       await loadAllData();
@@ -4386,6 +4399,7 @@
         },
         prefer: 'return=minimal',
       });
+      void syncPlaylistDevices(state.editingPlaylistId);
       await loadAllData();
       renderPlaylistEditor();
     } catch (error) { toast('Erro ao adicionar mídia', error.message, 'error'); }
