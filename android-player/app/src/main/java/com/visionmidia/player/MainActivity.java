@@ -151,7 +151,8 @@ public class MainActivity extends Activity {
     private boolean applySetupFromIntent(Intent intent) {
         if (intent == null || intent.getData() == null) return false;
         Uri uri = intent.getData();
-        if (!"visionmidia".equalsIgnoreCase(uri.getScheme()) || !"setup".equalsIgnoreCase(uri.getHost())) return false;
+        String expectedScheme = getPackageName().endsWith(".stable") ? "visionmidia-stable" : "visionmidia";
+        if (!expectedScheme.equalsIgnoreCase(uri.getScheme()) || !"setup".equalsIgnoreCase(uri.getHost())) return false;
         String code = uri.getLastPathSegment();
         if (!isValidSetupCode(code)) return false;
         code = code.toUpperCase(Locale.ROOT);

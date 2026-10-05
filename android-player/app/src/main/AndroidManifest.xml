@@ -10,7 +10,7 @@
     <application
         android:allowBackup="false"
         android:usesCleartextTraffic="false"
-        android:label="Vision Player"
+        android:label="${playerLabel}"
         android:icon="@drawable/ic_vision_player"
         android:theme="@android:style/Theme.Material.NoActionBar">
 
@@ -32,7 +32,7 @@
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="visionmidia" android:host="setup" />
+                <data android:scheme="${setupScheme}" android:host="setup" />
             </intent-filter>
         </activity>
 

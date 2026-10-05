@@ -86,6 +86,13 @@ jobs:
           printf '%s' "$KEYSTORE_B64" | base64 --decode > /tmp/vision-release.jks
           chmod 600 /tmp/vision-release.jks
 
+      - name: Verify permanent signing identity
+        shell: bash
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+        run: python3 scripts/verify-android-signing-key.py /tmp/vision-release.jks android-player/signing-certificate.sha256
+
       - name: Sign and verify APK
         shell: bash
         env:
@@ -105,6 +112,9 @@ jobs:
             --out downloads/Vision-Player.apk \
             "$APK_IN"
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs downloads/Vision-Player.apk
+          ACTUAL_CERT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs downloads/Vision-Player.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$ACTUAL_CERT" = "$(tr -d '[:space:]' < android-player/signing-certificate.sha256)" || { echo 'APK signing identity mismatch'; exit 1; }
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging downloads/Vision-Player.apk > /tmp/vision-stable-badging.txt
           sha256sum downloads/Vision-Player.apk > downloads/Vision-Player.sha256
 
       - name: Record Player source fingerprint
@@ -113,12 +123,21 @@ jobs:
           set -euo pipefail
           python3 - <<'PY'
           from pathlib import Path
-          import hashlib, json, os
+          import hashlib, json, os, re
           files = ['player.html', 'player.css', 'player.js', 'config.js', 'icon.svg', 'player.webmanifest', 'sw.js', 'clock.html', 'news-feed.html', 'news-feed.css', 'news-feed.js']
           payload = ''.join(f"{name}\n{Path(name).read_text()}\n" for name in files)
+          badging = Path('/tmp/vision-stable-badging.txt').read_text()
+          package = re.search(r"package: name='([^']+)' versionCode='(\d+)' versionName='([^']+)'", badging)
+          assert package and package.group(1) == 'com.visionmidia.player.stable', 'Incorrect stable package identity'
+          assert 'application-debuggable' not in badging, 'Stable APK cannot be debuggable'
           data = {
               'source_sha256': hashlib.sha256(payload.encode()).hexdigest(),
               'git_sha': os.environ.get('GITHUB_SHA', ''),
+              'apk_version': package.group(3),
+              'version_code': int(package.group(2)),
+              'application_id': package.group(1),
+              'signer_sha256': Path('android-player/signing-certificate.sha256').read_text().strip(),
+              'apk_sha256': hashlib.sha256(Path('downloads/Vision-Player.apk').read_bytes()).hexdigest(),
               'files': files,
           }
           Path('downloads/Vision-Player.source.json').write_text(json.dumps(data, indent=2) + '\n')
