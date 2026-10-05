@@ -81,6 +81,7 @@ public class MainActivity extends Activity {
     private volatile long lastPlayerPulseAt = 0L;
     private boolean watchdogActive = false;
     private boolean kioskReturnInProgress = false;
+    private boolean playerVisible = false;
     private final Runnable playerWatchdog = new Runnable() {
         @Override
         public void run() {
@@ -335,7 +336,8 @@ public class MainActivity extends Activity {
     private void launchPlayerToFront() {
         Intent launch = new Intent(this, MainActivity.class);
         launch.addFlags(
-                Intent.FLAG_ACTIVITY_SINGLE_TOP
+                Intent.FLAG_ACTIVITY_NEW_TASK
+                        | Intent.FLAG_ACTIVITY_SINGLE_TOP
                         | Intent.FLAG_ACTIVITY_CLEAR_TOP
                         | Intent.FLAG_ACTIVITY_NO_ANIMATION
                         | Intent.FLAG_ACTIVITY_NO_USER_ACTION
@@ -350,20 +352,22 @@ public class MainActivity extends Activity {
     }
 
     private void tryReturnToPlayer() {
-        if (!isKioskReturnEnabled() || isKioskMaintenanceActive() || kioskReturnInProgress || isFinishing()) return;
-
-        // onUserLeaveHint roda antes de onPause quando o usuário pressiona Home.
-        // A primeira tentativa acontece enquanto a Activity ainda é visível; uma única
-        // repetição curta cobre firmwares de TV Box que concluem a troca de task depois.
+        if (playerVisible || !isKioskReturnEnabled() || isKioskMaintenanceActive() || kioskReturnInProgress || isFinishing()) return;
         kioskReturnInProgress = true;
-        launchPlayerToFront();
+        // Defer until onPause has returned: launching before Home finishes can
+        // target the already-visible task and cancel its own pending retry.
         kioskHandler.postDelayed(() -> {
-            if (!isKioskReturnEnabled() || isKioskMaintenanceActive() || isFinishing()) {
+            if (playerVisible || !isKioskReturnEnabled() || isKioskMaintenanceActive() || isFinishing()) {
                 kioskReturnInProgress = false;
                 return;
             }
-            if (!hasWindowFocus()) launchPlayerToFront();
-            kioskHandler.postDelayed(() -> kioskReturnInProgress = false, KIOSK_RETURN_GUARD_MS);
+            launchPlayerToFront();
+            kioskHandler.postDelayed(() -> {
+                if (!playerVisible && isKioskReturnEnabled() && !isKioskMaintenanceActive() && !isFinishing()) {
+                    launchPlayerToFront();
+                }
+                kioskReturnInProgress = false;
+            }, KIOSK_RETURN_GUARD_MS);
         }, KIOSK_RETURN_RETRY_MS);
     }
 
@@ -642,12 +646,13 @@ public class MainActivity extends Activity {
     @Override
     protected void onUserLeaveHint() {
         super.onUserLeaveHint();
-        tryReturnToPlayer();
+        // Return is scheduled after onPause, not while Home is still leaving.
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        playerVisible = true;
         enterImmersiveMode();
         kioskReturnInProgress = false;
         kioskHandler.removeCallbacksAndMessages(null);
@@ -664,11 +669,13 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onPause() {
+        playerVisible = false;
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
         if (webView != null) webView.onPause();
         restorePlayerMusicMute();
         super.onPause();
+        tryReturnToPlayer();
     }
 
     @Override
