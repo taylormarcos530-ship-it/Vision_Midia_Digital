@@ -2502,21 +2502,34 @@
       return;
     }
 
-    const signature = currentMediaRenderSignature();
-    if (signature === state.mediaRenderSignature && grid.children.length === state.media.length) {
+    if (!state.playlists.some(p => p.id === state.mediaOrderPlaylistId)) state.mediaOrderPlaylistId = state.playlists[0]?.id || '';
+    const orderPlaylist = state.mediaOrderPlaylistId;
+    let toolbar = $('#media-order-toolbar');
+    if (!toolbar) {
+      toolbar = document.createElement('div'); toolbar.id = 'media-order-toolbar';
+      grid.before(toolbar);
+    }
+    toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist">${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Segure ⋮⋮ e arraste, ou use ↑ ↓. A ordem é salva na playlist escolhida.</small>`;
+    const orderedItems = state.playlistItems.filter(i => i.playlist_id === orderPlaylist).sort((a,b) => a.position-b.position);
+    const linkedIds = new Set(orderedItems.map(i => i.media_id));
+    const entries = orderedItems.map(item => ({media:state.media.find(m => m.id === item.media_id),item})).filter(e => e.media);
+    entries.push(...state.media.filter(m => !linkedIds.has(m.id)).map(media => ({media,item:null})));
+    const signature = currentMediaRenderSignature() + ':' + orderPlaylist + ':' + orderedItems.map(i => i.id + ':' + i.position).join('|');
+    if (signature === state.mediaRenderSignature && grid.children.length === entries.length) {
       hydrateMediaPreviews();
       return;
     }
     state.mediaRenderSignature = signature;
 
-    grid.innerHTML = state.media.map(media => {
+    grid.innerHTML = entries.map(({media,item}) => {
       const linkedItems = state.playlistItems.filter(item => item.media_id === media.id);
       const linkedPlaylists = new Set(linkedItems.map(item => item.playlist_id));
       const dimensions = media.width && media.height ? `${media.width}×${media.height}` : 'Resolução não detectada';
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
       const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : (media.media_type === 'url' ? 'Online' : 'Vídeo');
       return `
-      <article class="media-row-compact media-row-pro" data-media-card="${media.id}">
+      <article class="media-row-compact media-row-pro" data-media-card="${media.id}" ${item ? `data-playlist-drag-item="${item.id}" data-order-playlist="${orderPlaylist}"` : ''}>
+        ${item ? `<div class="media-order-controls"><button class="drag-handle" type="button" aria-label="Segure e arraste para ordenar">⋮⋮</button><strong>${orderedItems.indexOf(item)+1}º na TV</strong><button class="small-icon-button" type="button" data-move-item="${item.id}" data-order-playlist="${orderPlaylist}" data-direction="up" aria-label="Mover para cima" ${orderedItems.indexOf(item)===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-order-playlist="${orderPlaylist}" data-direction="down" aria-label="Mover para baixo" ${orderedItems.indexOf(item)===orderedItems.length-1?'disabled':''}>↓</button></div>` : '<div class="media-order-unlinked">Fora desta playlist</div>'}
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
           <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : (media.media_type === 'url' ? '↗' : '▧')}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
@@ -4652,14 +4665,15 @@
     } catch (error) { toast('Erro ao excluir itens', error.message, 'error'); }
   }
 
-  async function persistPlaylistOrder(orderedIds) {
+  async function persistPlaylistOrder(orderedIds, playlistId = state.editingPlaylistId) {
     if (!orderedIds?.length || state.playlistOrderSaving) return;
-    const playlistId = state.editingPlaylistId;
     state.playlistOrderSaving = true;
     try {
       await Promise.all(orderedIds.map((id,index) => restRequest('playlist_items',{method:'PATCH',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{position:index},prefer:'return=minimal'})));
       orderedIds.forEach((id,index)=>{const item=state.playlistItems.find(row=>row.id===id);if(item)item.position=index;});
-      renderPlaylistEditor();
+      if (state.editingPlaylistId === playlistId) renderPlaylistEditor();
+      state.mediaRenderSignature = '';
+      renderMedia();
       toast('Ordem atualizada');
       await syncPlaylistDevices(playlistId);
     } catch (error) { toast('Erro ao reordenar', error.message, 'error'); await loadAllData().catch(()=>{}); }
@@ -4677,9 +4691,9 @@
     } catch (error) { toast('Erro ao remover mídia', error.message, 'error'); }
   }
 
-  async function movePlaylistItem(itemId, direction) {
+  async function movePlaylistItem(itemId, direction, playlistId = state.editingPlaylistId) {
     const items = state.playlistItems
-      .filter(i => i.playlist_id === state.editingPlaylistId)
+      .filter(i => i.playlist_id === playlistId)
       .sort((a,b) => a.position - b.position);
     const index = items.findIndex(i => i.id === itemId);
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -4687,7 +4701,7 @@
     const ids = items.map(item => item.id);
     ids.splice(index, 1);
     ids.splice(targetIndex, 0, itemId);
-    await persistPlaylistOrder(ids);
+    await persistPlaylistOrder(ids, playlistId);
   }
 
   async function logout() {
@@ -5013,10 +5027,11 @@
       const removeItem = event.target.closest('[data-remove-item]');
       if (removeItem) return removePlaylistItem(removeItem.dataset.removeItem);
       const moveItem = event.target.closest('[data-move-item]');
-      if (moveItem) return movePlaylistItem(moveItem.dataset.moveItem, moveItem.dataset.direction);
+      if (moveItem) return movePlaylistItem(moveItem.dataset.moveItem, moveItem.dataset.direction, moveItem.dataset.orderPlaylist || state.editingPlaylistId);
     });
 
     document.addEventListener('change', event => {
+      if (event.target.id === 'media-order-playlist') { state.mediaOrderPlaylistId = event.target.value; state.mediaRenderSignature = ''; renderMedia(); return; }
       const itemCheck = event.target.closest('[data-select-playlist-item]');
       if (itemCheck) { if(itemCheck.checked) state.selectedPlaylistItemIds.add(itemCheck.dataset.selectPlaylistItem); else state.selectedPlaylistItemIds.delete(itemCheck.dataset.selectPlaylistItem); syncPlaylistBulkUi(); return; }
       if (event.target.id === 'playlist-select-all') { const checked=event.target.checked; const items=state.playlistItems.filter(i=>i.playlist_id===state.editingPlaylistId); state.selectedPlaylistItemIds = checked ? new Set(items.map(i=>i.id)) : new Set(); renderPlaylistEditor(); return; }
@@ -5028,12 +5043,12 @@
     // Pointer events support holding the handle on phones as well as a mouse.
     let playlistPointerDrag = null;
     document.addEventListener('pointerdown', event => {
-      const handle = event.target.closest('.playlist-item-row .drag-handle');
+      const handle = event.target.closest('[data-playlist-drag-item] .drag-handle');
       if (!handle || event.button !== 0 || state.playlistOrderSaving) return;
       const row = handle.closest('[data-playlist-drag-item]');
       event.preventDefault();
       handle.setPointerCapture(event.pointerId);
-      playlistPointerDrag = { pointerId:event.pointerId, row, target:row, playlistId:state.editingPlaylistId };
+      playlistPointerDrag = { pointerId:event.pointerId, row, target:row, playlistId:row.dataset.orderPlaylist || state.editingPlaylistId };
       row.classList.add('dragging');
     });
     document.addEventListener('pointermove', event => {
@@ -5041,7 +5056,7 @@
       if (!drag || drag.pointerId !== event.pointerId) return;
       const row = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-playlist-drag-item]');
       if (!row || row.parentElement !== drag.row.parentElement) return;
-      $$('.playlist-item-row.drag-over').forEach(el => el.classList.remove('drag-over'));
+      $$('[data-playlist-drag-item].drag-over').forEach(el => el.classList.remove('drag-over'));
       drag.target = row;
       if (row !== drag.row) row.classList.add('drag-over');
       const scroller = row.closest('dialog');
@@ -5055,14 +5070,14 @@
       const drag = playlistPointerDrag;
       if (!drag || drag.pointerId !== event.pointerId) return;
       playlistPointerDrag = null;
-      $$('.playlist-item-row').forEach(el => el.classList.remove('dragging', 'drag-over'));
-      if (event.type !== 'pointerup' || drag.playlistId !== state.editingPlaylistId) return;
+      $$('[data-playlist-drag-item]').forEach(el => el.classList.remove('dragging', 'drag-over'));
+      if (event.type !== 'pointerup' || drag.playlistId !== (drag.row.dataset.orderPlaylist || state.editingPlaylistId)) return;
       const ids = state.playlistItems.filter(i => i.playlist_id === drag.playlistId).sort((a,b) => a.position-b.position).map(i => i.id);
       const from = ids.indexOf(drag.row.dataset.playlistDragItem), to = ids.indexOf(drag.target.dataset.playlistDragItem);
       if (from < 0 || to < 0 || from === to) return;
       const [id] = ids.splice(from, 1);
       ids.splice(to, 0, id);
-      persistPlaylistOrder(ids);
+      persistPlaylistOrder(ids, drag.playlistId);
     };
     document.addEventListener('pointerup', finishPlaylistPointerDrag);
     document.addEventListener('pointercancel', finishPlaylistPointerDrag);
@@ -5078,7 +5093,7 @@
       const row = event.target.closest('[data-playlist-drag-item]');
       if (!row || !state.draggingPlaylistItemId) return;
       event.preventDefault();
-      $$('.playlist-item-row.drag-over').forEach(el=>el.classList.remove('drag-over'));
+      $$('[data-playlist-drag-item].drag-over').forEach(el=>el.classList.remove('drag-over'));
       if (row.dataset.playlistDragItem !== state.draggingPlaylistItemId) row.classList.add('drag-over');
     });
     document.addEventListener('drop', event => {
@@ -5086,13 +5101,14 @@
       if (!row || !state.draggingPlaylistItemId) return;
       event.preventDefault();
       const dragged=state.draggingPlaylistItemId,target=row.dataset.playlistDragItem;
-      const ids=state.playlistItems.filter(i=>i.playlist_id===state.editingPlaylistId).sort((a,b)=>a.position-b.position).map(i=>i.id);
+      const playlistId = row.dataset.orderPlaylist || state.editingPlaylistId;
+      const ids=state.playlistItems.filter(i=>i.playlist_id===playlistId).sort((a,b)=>a.position-b.position).map(i=>i.id);
       const from=ids.indexOf(dragged),to=ids.indexOf(target);
-      if(from>=0&&to>=0&&from!==to){ids.splice(from,1);ids.splice(to,0,dragged);persistPlaylistOrder(ids);}
+      if(from>=0&&to>=0&&from!==to){ids.splice(from,1);ids.splice(to,0,dragged);persistPlaylistOrder(ids, playlistId);}
       state.draggingPlaylistItemId=null;
-      $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over'));
+      $$('[data-playlist-drag-item]').forEach(el=>el.classList.remove('dragging','drag-over'));
     });
-    document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('.playlist-item-row').forEach(el=>el.classList.remove('dragging','drag-over')); });
+    document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('[data-playlist-drag-item]').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
     $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; tvViewerResizeObserver?.disconnect?.(); tvViewerResizeObserver = null; });
     $('#playlist-items-dialog').addEventListener('close', () => {
