@@ -4190,14 +4190,21 @@
   async function openMedia(id) {
     const media = state.media.find(m => m.id === id);
     if (!media) return;
+    if (media.media_type === 'url' && media.source_url) {
+      window.open(resolveOnlineMediaUrl(media.source_url), '_blank', 'noopener,noreferrer');
+      return;
+    }
+    // Safari requires the tab to be opened directly during the user's tap.
+    const preview = window.open('about:blank', '_blank');
+    if (!preview) return toast('Prévia bloqueada', 'Permita a abertura de abas para visualizar a mídia.', 'error');
+    preview.opener = null;
     try {
-      if (media.media_type === 'url' && media.source_url) {
-        window.open(resolveOnlineMediaUrl(media.source_url), '_blank', 'noopener,noreferrer');
-        return;
-      }
       const url = await getSignedMediaUrl(media.storage_path);
-      window.open(url, '_blank', 'noopener,noreferrer');
-    } catch (error) { toast('Não foi possível abrir a mídia', error.message, 'error'); }
+      preview.location.replace(url);
+    } catch (error) {
+      preview.close();
+      toast('Não foi possível abrir a mídia', error.message, 'error');
+    }
   }
 
   async function deleteMedia(id) {
