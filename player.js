@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.10';
+  const APP_VERSION = 'vision-player-web-1.5.11';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -1390,7 +1390,8 @@
 
   window.addEventListener('resize', () => {
     const mode = document.documentElement.dataset.playerOrientation || 'auto';
-    if (!window.VisionAndroid?.setOrientation) applyCssOrientationFallback(mode);
+    applyCssOrientationFallback(mode);
+    queueDeviceEvent('viewport_changed', 'info', 'Tamanho da tela recalculado.', {width:innerWidth,height:innerHeight,screen_width:screen.width,screen_height:screen.height,scale:window.visualViewport?.scale || 1,orientation:mode}, 1000);
   });
 
   setInterval(notifyNativePlayerAlive, 20_000);

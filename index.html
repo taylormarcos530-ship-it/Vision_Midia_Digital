@@ -690,6 +690,15 @@
     <p id="media-preview-status" role="status">Carregando mídia…</p>
     <div id="media-preview-content"></div>
   </dialog>
+  <dialog id="media-duration-dialog" class="app-dialog">
+    <form id="media-duration-form">
+      <div class="dialog-header"><h3>Tempo na TV</h3><button type="button" data-close-dialog="media-duration-dialog" aria-label="Fechar">×</button></div>
+      <p id="media-duration-name"></p>
+      <label>Duração em segundos<input id="media-duration-seconds" type="number" min="1" max="86400" step="1" required></label>
+      <p>Aplica somente à playlist escolhida. O vídeo pode terminar antes deste tempo.</p>
+      <button type="submit" class="primary-button">Salvar tempo</button>
+    </form>
+  </dialog>
   <dialog id="online-media-dialog" class="dialog">
     <form id="online-media-form" method="dialog" class="dialog-card">
       <div class="dialog-header"><div><span class="eyebrow">CONTEÚDO ONLINE</span><h3>Adicionar ao vivo</h3></div><button type="button" class="icon-button" data-close-dialog="online-media-dialog">×</button></div>

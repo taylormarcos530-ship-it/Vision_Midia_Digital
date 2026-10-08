@@ -2514,7 +2514,7 @@
     const linkedIds = new Set(orderedItems.map(i => i.media_id));
     const entries = orderedItems.map(item => ({media:state.media.find(m => m.id === item.media_id),item})).filter(e => e.media);
     entries.push(...state.media.filter(m => !linkedIds.has(m.id)).map(media => ({media,item:null})));
-    const signature = currentMediaRenderSignature() + ':' + orderPlaylist + ':' + orderedItems.map(i => i.id + ':' + i.position).join('|');
+    const signature = currentMediaRenderSignature() + ':' + orderPlaylist + ':' + orderedItems.map(i => i.id + ':' + i.position + ':' + i.duration_override_seconds).join('|');
     if (signature === state.mediaRenderSignature && grid.children.length === entries.length) {
       hydrateMediaPreviews();
       return;
@@ -2550,6 +2550,7 @@
         <div class="media-actions media-actions-pro">
           <button class="small-icon-button media-link-button" type="button" data-link-media-playlist="${media.id}" ${state.playlists.length ? '' : 'disabled'}>+ Vincular</button>
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
+          <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
         </div>
       </article>`;
@@ -4451,9 +4452,22 @@
     } catch (error) { toast('Erro ao adicionar mídia', error.message, 'error'); }
   }
 
-  async function savePlaylistItemDuration(itemId) {
+  function openMediaDuration(mediaId, row) {
+    const playlistId = row?.querySelector('[data-media-playlist-select]')?.value;
+    const rowItem = state.playlistItems.find(i => i.id === row?.dataset.playlistDragItem && i.playlist_id === playlistId);
+    const item = rowItem || state.playlistItems.find(i => i.media_id === mediaId && i.playlist_id === playlistId);
+    if (!item) return toast('Vincule primeiro', 'Escolha uma playlist e vincule a mídia para ajustar o tempo.', 'info');
+    const media = state.media.find(m => m.id === mediaId);
+    const dialog = $('#media-duration-dialog');
+    dialog.dataset.itemId = item.id;
+    $('#media-duration-name').textContent = media?.name || 'Mídia';
+    $('#media-duration-seconds').value = item.duration_override_seconds || media?.duration_seconds || 10;
+    openDialog('media-duration-dialog');
+  }
+
+  async function savePlaylistItemDuration(itemId, suppliedSeconds) {
     const input = $(`[data-item-duration-input="${CSS.escape(itemId)}"]`);
-    const seconds = Number(input?.value || 0);
+    const seconds = Number(suppliedSeconds ?? input?.value ?? 0);
     if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) return toast('Tempo inválido', 'Use de 1 a 86400 segundos.', 'error');
     try {
       await restRequest('playlist_items', {
@@ -4464,9 +4478,13 @@
       });
       const local = state.playlistItems.find(item => item.id === itemId);
       if (local) local.duration_override_seconds = Math.round(seconds);
-      toast('Tempo atualizado', `A imagem ficará ${Math.round(seconds)} segundo(s) na tela.`);
-      renderPlaylistEditor();
-    } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); }
+      toast('Tempo atualizado', `A mídia ficará ${Math.round(seconds)} segundo(s) na tela.`);
+      if (state.editingPlaylistId === local?.playlist_id) renderPlaylistEditor();
+      state.mediaRenderSignature = '';
+      renderMedia();
+      if (local) await syncPlaylistDevices(local.playlist_id);
+      return true;
+    } catch (error) { toast('Erro ao salvar tempo', error.message, 'error'); return false; }
   }
 
   function playlistScheduleStatus(message='', type='') {
@@ -4977,6 +4995,17 @@
     $('#media-file-input').addEventListener('change', event => handleMediaUpload(event.target.files?.[0]));
     $('#add-online-media-button')?.addEventListener('click', () => openOnlineMediaDialog());
     $('#online-media-form')?.addEventListener('submit', handleOnlineMediaSave);
+    $('#media-duration-form')?.addEventListener('submit', async event => {
+      event.preventDefault();
+      const seconds = Number($('#media-duration-seconds').value);
+      if (!Number.isFinite(seconds) || seconds < 1 || seconds > 86400) return toast('Tempo inválido', 'Use de 1 a 86400 segundos.', 'error');
+      const button = event.target.querySelector('[type="submit"]');
+      if (button.disabled) return;
+      button.disabled = true;
+      try {
+        if (await savePlaylistItemDuration($('#media-duration-dialog').dataset.itemId, seconds)) $('#media-duration-dialog').close();
+      } finally { button.disabled = false; }
+    });
     $$('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
 
     $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
@@ -5044,6 +5073,8 @@
       if (deleteCampaignButton) return deleteCampaign(deleteCampaignButton.dataset.deleteCampaign);
       const addMedia = event.target.closest('[data-add-media-to-playlist]');
       if (addMedia) return addMediaToPlaylist(addMedia.dataset.addMediaToPlaylist);
+      const mediaDuration = event.target.closest('[data-media-duration]');
+      if (mediaDuration) return openMediaDuration(mediaDuration.dataset.mediaDuration, mediaDuration.closest('[data-media-card]'));
       const saveDuration = event.target.closest('[data-save-item-duration]');
       if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
       const editItemSchedule = event.target.closest('[data-edit-item-schedule]');
