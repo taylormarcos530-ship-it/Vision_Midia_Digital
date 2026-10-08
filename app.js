@@ -2792,11 +2792,11 @@
       return `
         <div class="sortable-row playlist-item-row" draggable="true" data-playlist-drag-item="${item.id}">
           <input class="playlist-select-box" type="checkbox" data-select-playlist-item="${item.id}" ${checked ? 'checked' : ''} aria-label="Selecionar ${escapeHtml(media?.name || 'mídia')}" />
-          <span class="drag-handle" title="Arrastar para ordenar">⋮⋮</span>
+          <button type="button" class="drag-handle" aria-label="Segure e arraste para mudar a ordem" title="Segure e arraste para ordenar">⋮⋮</button>
           <div class="playlist-thumb" data-playlist-media-preview="${media?.id || ''}"><span>${media?.media_type === 'video' ? '▶' : '▧'}</span></div>
           <div class="playlist-item-copy"><strong>${index + 1}. ${escapeHtml(media?.name || 'Mídia removida')}</strong><small>${escapeHtml(media?.media_type || '')}${media?.width && media?.height ? ` • ${media.width}×${media.height}` : ''}</small><div class="playlist-item-meta"><span class="enabled-chip ${item.enabled ? '' : 'off'}">${item.enabled ? 'Ativa' : 'Desativada'}</span><span class="schedule-chip ${item.schedule_enabled ? 'active' : ''}">${escapeHtml(playlistItemScheduleLabel(item))}</span>${item.is_essential ? '<span class="schedule-chip active" title="Se esta mídia não puder ser carregada, o Player pode ativar a playlist de emergência.">Essencial</span>' : ''}</div></div>
           ${isImage ? `<label class="playlist-duration-mini">Tempo <input type="number" min="1" max="86400" step="1" value="${seconds}" data-item-duration-input="${item.id}" /> s <button class="small-icon-button" type="button" data-save-item-duration="${item.id}">Salvar</button></label>` : `<span class="playlist-video-duration">${media?.duration_seconds ? escapeHtml(formatDuration(media.duration_seconds)) : 'Vídeo'}</span>`}
-          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como mídia essencial'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
+          <div class="playlist-inline-actions"><button class="small-icon-button" type="button" data-edit-item-schedule="${item.id}">◷ Programar</button><button class="small-icon-button" type="button" data-toggle-item-essential="${item.id}" title="${item.is_essential ? 'Deixar de considerar essencial' : 'Marcar como mídia essencial'}">${item.is_essential ? '★ Essencial' : '☆ Essencial'}</button><button class="small-icon-button" type="button" data-toggle-item-enabled="${item.id}" title="${item.enabled ? 'Desativar' : 'Ativar'}">${item.enabled ? '⏸' : '▶'}</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="up" aria-label="Mover mídia para cima" ${index===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-direction="down" aria-label="Mover mídia para baixo" ${index===items.length-1?'disabled':''}>↓</button><button class="small-icon-button" type="button" data-remove-item="${item.id}">×</button></div>
         </div>`;
     }).join('');
 
@@ -4653,13 +4653,17 @@
   }
 
   async function persistPlaylistOrder(orderedIds) {
-    if (!orderedIds?.length) return;
+    if (!orderedIds?.length || state.playlistOrderSaving) return;
+    const playlistId = state.editingPlaylistId;
+    state.playlistOrderSaving = true;
     try {
       await Promise.all(orderedIds.map((id,index) => restRequest('playlist_items',{method:'PATCH',query:`id=eq.${encodeURIComponent(id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{position:index},prefer:'return=minimal'})));
       orderedIds.forEach((id,index)=>{const item=state.playlistItems.find(row=>row.id===id);if(item)item.position=index;});
       renderPlaylistEditor();
       toast('Ordem atualizada');
+      await syncPlaylistDevices(playlistId);
     } catch (error) { toast('Erro ao reordenar', error.message, 'error'); await loadAllData().catch(()=>{}); }
+    finally { state.playlistOrderSaving = false; }
   }
 
   async function removePlaylistItem(itemId) {
@@ -4680,24 +4684,10 @@
     const index = items.findIndex(i => i.id === itemId);
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
     if (index < 0 || targetIndex < 0 || targetIndex >= items.length) return;
-    const current = items[index];
-    const target = items[targetIndex];
-    try {
-      await Promise.all([
-        restRequest('playlist_items', {
-          method: 'PATCH',
-          query: `id=eq.${encodeURIComponent(current.id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
-          body: { position: target.position },
-        }),
-        restRequest('playlist_items', {
-          method: 'PATCH',
-          query: `id=eq.${encodeURIComponent(target.id)}&company_id=eq.${encodeURIComponent(state.company.id)}`,
-          body: { position: current.position },
-        }),
-      ]);
-      await loadAllData();
-      renderPlaylistEditor();
-    } catch (error) { toast('Erro ao reordenar', error.message, 'error'); }
+    const ids = items.map(item => item.id);
+    ids.splice(index, 1);
+    ids.splice(targetIndex, 0, itemId);
+    await persistPlaylistOrder(ids);
   }
 
   async function logout() {
@@ -5035,9 +5025,51 @@
     });
 
 
+    // Pointer events support holding the handle on phones as well as a mouse.
+    let playlistPointerDrag = null;
+    document.addEventListener('pointerdown', event => {
+      const handle = event.target.closest('.playlist-item-row .drag-handle');
+      if (!handle || event.button !== 0 || state.playlistOrderSaving) return;
+      const row = handle.closest('[data-playlist-drag-item]');
+      event.preventDefault();
+      handle.setPointerCapture(event.pointerId);
+      playlistPointerDrag = { pointerId:event.pointerId, row, target:row, playlistId:state.editingPlaylistId };
+      row.classList.add('dragging');
+    });
+    document.addEventListener('pointermove', event => {
+      const drag = playlistPointerDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      const row = document.elementFromPoint(event.clientX, event.clientY)?.closest('[data-playlist-drag-item]');
+      if (!row || row.parentElement !== drag.row.parentElement) return;
+      $$('.playlist-item-row.drag-over').forEach(el => el.classList.remove('drag-over'));
+      drag.target = row;
+      if (row !== drag.row) row.classList.add('drag-over');
+      const scroller = row.closest('dialog');
+      if (scroller) {
+        const rect = scroller.getBoundingClientRect();
+        if (event.clientY < rect.top + 70) scroller.scrollTop -= 18;
+        else if (event.clientY > rect.bottom - 70) scroller.scrollTop += 18;
+      }
+    });
+    const finishPlaylistPointerDrag = event => {
+      const drag = playlistPointerDrag;
+      if (!drag || drag.pointerId !== event.pointerId) return;
+      playlistPointerDrag = null;
+      $$('.playlist-item-row').forEach(el => el.classList.remove('dragging', 'drag-over'));
+      if (event.type !== 'pointerup' || drag.playlistId !== state.editingPlaylistId) return;
+      const ids = state.playlistItems.filter(i => i.playlist_id === drag.playlistId).sort((a,b) => a.position-b.position).map(i => i.id);
+      const from = ids.indexOf(drag.row.dataset.playlistDragItem), to = ids.indexOf(drag.target.dataset.playlistDragItem);
+      if (from < 0 || to < 0 || from === to) return;
+      const [id] = ids.splice(from, 1);
+      ids.splice(to, 0, id);
+      persistPlaylistOrder(ids);
+    };
+    document.addEventListener('pointerup', finishPlaylistPointerDrag);
+    document.addEventListener('pointercancel', finishPlaylistPointerDrag);
+
     document.addEventListener('dragstart', event => {
       const row = event.target.closest('[data-playlist-drag-item]');
-      if (!row) return;
+      if (!row || playlistPointerDrag || state.playlistOrderSaving) { event.preventDefault(); return; }
       state.draggingPlaylistItemId = row.dataset.playlistDragItem;
       row.classList.add('dragging');
       if (event.dataTransfer) { event.dataTransfer.effectAllowed='move'; event.dataTransfer.setData('text/plain', state.draggingPlaylistItemId); }

@@ -2352,3 +2352,7 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 
 .device-settings-box .switch-line { display:flex; align-items:center; gap:12px; cursor:pointer; line-height:1.4; padding:8px 0; }
 .device-settings-box input[type="checkbox"] { width:22px; height:22px; min-width:22px; min-height:0; padding:0; flex:0 0 22px; accent-color:var(--primary); }
+
+/* Playlist ordering: dedicated touch handle keeps the rest of each row scrollable. */
+.playlist-item-row .drag-handle{touch-action:none;min-width:44px;min-height:44px;border:1px solid #31445f;border-radius:9px;background:#16263c;flex-shrink:0}
+.playlist-inline-actions [data-move-item]{min-width:44px;min-height:44px;font-size:20px}
