@@ -4001,6 +4001,10 @@
       $('#online-media-name').value = 'Hora certa';
       $('#online-media-url').value = clockMediaUrl();
       $('#online-media-duration').value = '30';
+    } else if (['verse', 'horoscope'].includes(preset)) {
+      $('#online-media-name').value = preset === 'verse' ? 'Versículo e reflexão do dia' : 'Horóscopo do dia';
+      $('#online-media-url').value = 'https://vision-midia-digital.vercel.app/daily-content.html?type=' + preset;
+      $('#online-media-duration').value = '30';
     } else if (['soccer', 'news_br', 'cinema_br'].includes(preset)) {
       $('#online-media-name').value = {news_br:'Notícias — G1', soccer:'Futebol brasileiro — ge', cinema_br:'Cinema e séries — CinePOP'}[preset];
       $('#online-media-url').value = newsMediaUrl(preset);
