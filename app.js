@@ -2546,9 +2546,9 @@
           <select data-media-playlist-select="${media.id}" ${state.playlists.length ? '' : 'disabled'}>
             ${mediaPlaylistOptions(media.id)}
           </select>
-          <button class="small-icon-button media-link-button" type="button" data-link-media-playlist="${media.id}" ${state.playlists.length ? '' : 'disabled'}>+ Vincular</button>
         </div>
         <div class="media-actions media-actions-pro">
+          <button class="small-icon-button media-link-button" type="button" data-link-media-playlist="${media.id}" ${state.playlists.length ? '' : 'disabled'}>+ Vincular</button>
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
         </div>
