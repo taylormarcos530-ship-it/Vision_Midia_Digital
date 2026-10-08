@@ -8,7 +8,7 @@
     return;
   }
 
-  const APP_VERSION = 'vision-player-web-1.5.8';
+  const APP_VERSION = 'vision-player-web-1.5.9';
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
@@ -299,6 +299,10 @@
   function showAccessBlocked(errorOrData = {}) {
     const data = errorOrData?.data || errorOrData || {};
     const code = String(data.error || '');
+    if (code === 'account_suspended' || code === 'device_access_blocked' || code === 'device_access_pending') {
+      state.manifest = null;
+      writeJson(MANIFEST_KEY, null);
+    }
     let title = 'Acesso desta TV bloqueado';
     let message = data.message || 'Entre em contato com o administrador.';
     let expiry = 'O pareamento desta TV foi preservado.';
@@ -335,7 +339,10 @@
 
   function localAccessExpired() {
     const expiresAt = state.manifest?.device?.access_expires_at;
-    return Boolean(expiresAt && new Date(expiresAt).getTime() <= Date.now());
+    const deadline = new Date(expiresAt || '').getTime();
+    const issuedAt = new Date(state.manifest?.generated_at || '').getTime();
+    return !Number.isFinite(deadline) || deadline <= Date.now()
+      || (Number.isFinite(issuedAt) && Date.now() < issuedAt - 60_000);
   }
 
   function enforceLocalAccess() {
@@ -839,6 +846,7 @@
       void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
+      if (enforceLocalAccess()) return;
       showPlayback();
       if (state.syncHadError) {
         queueDeviceEvent('sync_recovered', 'info', 'Sincronização com o servidor restabelecida.', {}, 60_000);
@@ -1260,6 +1268,7 @@
     state.running = true;
     try {
       while (state.deviceToken) {
+        if (enforceLocalAccess()) { await sleep(1000); continue; }
         const manifest = state.manifest;
         const nonce = state.playlistNonce;
         const playlist = manifest?.playlist;
@@ -1310,6 +1319,7 @@
   }
 
   function ensurePlaybackLoop() {
+    if (enforceLocalAccess()) return;
     if (!state.running) playbackLoop().catch(error => console.error('playback loop', error));
   }
 
@@ -1336,7 +1346,7 @@
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
-    state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
+    state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
     pollDeviceCommands().catch(() => {});
   }
 

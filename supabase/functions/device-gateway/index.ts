@@ -360,7 +360,8 @@ function accountSubscriptionBlock(company, subscription) {
 
   const status = String(subscription.status || '')
   if (status === 'trialing') {
-    if (subscription.trial_ends_at && new Date(subscription.trial_ends_at).getTime() <= Date.now()) {
+    const trialDeadline = new Date(subscription.trial_ends_at || '').getTime();
+    if (!Number.isFinite(trialDeadline) || trialDeadline <= Date.now()) {
       return {
         reason:'trial_expired',
         message:'O período de teste desta conta terminou.',
@@ -389,6 +390,17 @@ function accountSubscriptionBlock(company, subscription) {
   if (status === 'suspended') return { reason:'subscription_suspended', message:'A assinatura desta conta está suspensa.' }
   if (status === 'cancelled') return { reason:'subscription_cancelled', message:'A assinatura desta conta foi cancelada.' }
   return { reason:'subscription_inactive', message:'Esta conta não está liberada para reprodução.' }
+}
+
+function offlineAccessDeadline(device, subscription, now = Date.now()) {
+  const deadlines = [now + 24 * 60 * 60 * 1000];
+  for (const value of [device.access_expires_at,
+    subscription.status === 'trialing' ? subscription.trial_ends_at : subscription.current_period_end]) {
+    if (!value) continue;
+    const deadline = new Date(value).getTime();
+    deadlines.push(Number.isFinite(deadline) ? deadline : now);
+  }
+  return new Date(Math.min(...deadlines)).toISOString();
 }
 
 async function authenticateDevice(admin, req) {
@@ -434,7 +446,7 @@ async function authenticateDevice(admin, req) {
     .eq('device_id', device.id)
     .eq('status', 'issued')
 
-  return device
+  return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
 
 Deno.serve(async (req) => {
@@ -669,7 +681,7 @@ Deno.serve(async (req) => {
           orientation: device.orientation,
           settings: device.settings || {},
           access_status: device.access_status || 'active',
-          access_expires_at: device.access_expires_at || null,
+          access_expires_at: device.offline_access_expires_at,
         },
         program,
         playlist: primary?.playlist || null,
