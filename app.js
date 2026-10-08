@@ -4190,20 +4190,37 @@
   async function openMedia(id) {
     const media = state.media.find(m => m.id === id);
     if (!media) return;
-    if (media.media_type === 'url' && media.source_url) {
-      window.open(resolveOnlineMediaUrl(media.source_url), '_blank', 'noopener,noreferrer');
-      return;
-    }
-    // Safari requires the tab to be opened directly during the user's tap.
-    const preview = window.open('about:blank', '_blank');
-    if (!preview) return toast('Prévia bloqueada', 'Permita a abertura de abas para visualizar a mídia.', 'error');
-    preview.opener = null;
+    const dialog = $('#media-preview-dialog');
+    const content = $('#media-preview-content');
+    const status = $('#media-preview-status');
+    dialog.dataset.mediaId = id;
+    $('#media-preview-title').textContent = media.name || 'Visualizar mídia';
+    content.replaceChildren();
+    status.textContent = 'Carregando mídia…';
+    status.hidden = false;
+    openDialog('media-preview-dialog');
     try {
-      const url = await getSignedMediaUrl(media.storage_path);
-      preview.location.replace(url);
+      const url = media.media_type === 'url' ? resolveOnlineMediaUrl(media.source_url) : await getSignedMediaUrl(media.storage_path);
+      if (!dialog.open || dialog.dataset.mediaId !== id) return;
+      const element = document.createElement(media.media_type === 'video' ? 'video' : media.media_type === 'url' ? 'iframe' : 'img');
+      if (media.media_type === 'video') {
+        element.controls = true; element.playsInline = true; element.preload = 'metadata';
+      } else if (media.media_type === 'url') {
+        element.title = media.name || 'Prévia';
+        element.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      } else element.alt = media.name || 'Mídia';
+      const ready = () => { if (dialog.dataset.mediaId === id) status.hidden = true; };
+      element.addEventListener(media.media_type === 'video' ? 'loadedmetadata' : 'load', ready, {once:true});
+      element.addEventListener('error', () => {
+        if (dialog.dataset.mediaId !== id) return;
+        status.hidden = false;
+        status.textContent = 'Não foi possível visualizar este arquivo. Verifique o formato ou tente novamente.';
+      }, {once:true});
+      element.src = url;
+      content.replaceChildren(element);
     } catch (error) {
-      preview.close();
-      toast('Não foi possível abrir a mídia', error.message, 'error');
+      if (dialog.dataset.mediaId !== id) return;
+      status.textContent = 'Não foi possível carregar a mídia: ' + error.message;
     }
   }
 
@@ -5117,6 +5134,7 @@
     });
     document.addEventListener('dragend', () => { state.draggingPlaylistItemId=null; $$('[data-playlist-drag-item]').forEach(el=>el.classList.remove('dragging','drag-over')); });
 
+    $('#media-preview-dialog').addEventListener('close', () => { delete $('#media-preview-dialog').dataset.mediaId; $('#media-preview-content').replaceChildren(); });
     $('#view-tv-dialog').addEventListener('close', () => { state.viewingDeviceId = null; tvViewerResizeObserver?.disconnect?.(); tvViewerResizeObserver = null; });
     $('#playlist-items-dialog').addEventListener('close', () => {
       state.editingPlaylistId = null;
