@@ -1,0 +1,1 @@
+{"name":"vision-midia-panel","private":true,"scripts":{"test":"node --test tests/*.test.cjs","test:pwa-icon":"node --test tests/pwa-icon.test.cjs"},"dependencies":{"@netlify/blobs":"11.1.4","pngjs":"7.0.0"}}
