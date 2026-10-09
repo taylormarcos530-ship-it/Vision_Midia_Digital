@@ -13,6 +13,6 @@ Implementação:
 - Sem persistência local (modo privado/restrições/limpeza dos dados), o limite diário pode ser reiniciado; não prometer detecção universal entre navegadores.
 - Iframes não mostram convites duplicados. Player, service worker, app.js, master.js, APK e APIs anteriores intactos.
 
-Verificação: 80/80 testes passaram, incluindo 7 novos cenários de convite, diário, instalação e iPhone. git diff --check e comparação dos arquivos preservados passaram.
+Verificação: 81/81 testes passaram, incluindo 8 novos cenários de convite, diário, instalação, Android alternativo e iPhone. git diff --check e comparação dos arquivos preservados passaram.
 Pendências: publicação Vercel, HTTP final e testes físicos em Android/iPhone.
 Nenhuma migration ou Edge Function Supabase alterada/publicada.

@@ -41,5 +41,5 @@
    if(apps.some(app=>app.platform==='webapp'&&app.url&&new URL(app.url,location.origin).href===url)){installed();return;}
    clearInstalled();show();
   }).catch(()=>{if(ios&&read(INSTALLED)!=='1')show();});
- }else if(ios)show();
+ }else if(ios||/Android/.test(navigator.userAgent))show();
 })();
