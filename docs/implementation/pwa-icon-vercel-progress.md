@@ -22,3 +22,13 @@ Botão também inserido no menu SaaS Master do index.html, pois o iframe Master 
 Pendente: deploy de produção e verificação HTTP final, troca autenticada real e celular instalado.
 Navegadores podem pedir aceitação da nova imagem; iOS pode precisar adicionar novamente à Tela de Início.
 Notificações fechadas e testes físicos anteriores ainda não comprovados por esta alteração.
+
+## Publicação concluída
+
+Deployment de produção dpl_8q7KSw2EcMw6Pr7gY6SfwfpxjKfY READY, código d5bdde616c062e2671fd3c75cd7b0d87a1621127.
+Alias vision-midia-digital.vercel.app confirmado apontando para esse deployment em 09/10/2026.
+Verificação no endereço principal: index, master, script, configuração, manifesto e três PNGs retornaram HTTP 200 com os tipos esperados. Manifesto e configuração sem cache.
+Script confirmado no index e Master; menu SaaS Master do app instalado incluído.
+Comparação Git do commit publicado com a versão anterior confirmou Player, APK/Android, service worker, app.js, master.js e APIs news-feed/player-proxy sem alterações.
+Ainda falta a troca autenticada real pelo usuário e observar a atualização no launcher do celular; testes locais e HTTP não comprovam essa etapa física.
+Próxima etapa: entrar como Master, abrir Trocar ícone / favicon, selecionar uma imagem e salvar; validar nova revisão no manifesto e aceitação no Android/iPhone. Não retomar APK nativo nem modificar Supabase sem novo escopo.
