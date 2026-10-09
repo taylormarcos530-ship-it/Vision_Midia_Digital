@@ -1,0 +1,1 @@
+{"name":"vision-midia-panel","private":true,"scripts":{"test":"node --test tests/*.test.cjs"},"dependencies":{"@vercel/blob":"2.8.1","pngjs":"7.0.0"}}

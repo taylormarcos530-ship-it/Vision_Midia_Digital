@@ -3,6 +3,22 @@
   "trailingSlash": false,
   "rewrites": [
     {
+      "source": "/manifest.webmanifest",
+      "destination": "/api/pwa-branding?route=manifest"
+    },
+    {
+      "source": "/app-icon-config",
+      "destination": "/api/pwa-branding?route=config"
+    },
+    {
+      "source": "/api/app-icon",
+      "destination": "/api/pwa-branding?route=save"
+    },
+    {
+      "source": "/app-icons/:revision/:size.png",
+      "destination": "/api/pwa-branding?route=icon&revision=:revision&size=:size"
+    },
+    {
       "source": "/player",
       "destination": "/player.html"
     },
