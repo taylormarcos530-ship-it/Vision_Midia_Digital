@@ -14,5 +14,8 @@ Implementação:
 - Iframes não mostram convites duplicados. Player, service worker, app.js, master.js, APK e APIs anteriores intactos.
 
 Verificação: 81/81 testes passaram, incluindo 8 novos cenários de convite, diário, instalação, Android alternativo e iPhone. git diff --check e comparação dos arquivos preservados passaram.
-Pendências: publicação Vercel, HTTP final e testes físicos em Android/iPhone.
+Publicado em produção em 09/10/2026: https://vision-midia-digital.vercel.app/index.html
+Deployment: dpl_3ZhCfbaqcCoiLxmVpPjDD6WdYPK7 (READY), código 921f365b7f1ee5c7da7c96b74b3cdf1462e180c3, branch fix/pwa-install-invite.
+HTTP final: index.html, master.html, pwa-install.js, pwa-install.css, manifest.webmanifest e app-icon-config retornaram 200 com tipos corretos. Index e Master carregam CSS/JS do convite; manifesto relaciona o próprio app e preserva ícone atual d4441b62-de01-4758-bc1e-971509279b03.
+Pendências: testes físicos em Android/iPhone, incluindo navegador fora do app, instalação e visita no dia seguinte.
 Nenhuma migration ou Edge Function Supabase alterada/publicada.
