@@ -9,8 +9,9 @@
   }catch{}
  }
  update();window.addEventListener('focus',update);document.addEventListener('visibilitychange',()=>{if(!document.hidden)update();});
- const nav=document.querySelector('.master-sidebar nav');if(!nav)return;
- const button=document.createElement('button');button.type='button';button.className='nav-button';button.textContent='▧ Trocar ícone / favicon';nav.append(button);
+ const masterNav=document.querySelector('.master-sidebar nav');
+ const nav=masterNav||document.querySelector('#saas-admin-nav');if(!nav)return;
+ const button=document.createElement('button');button.type='button';button.className=masterNav?'nav-button':'nav-item';button.textContent='▧ Trocar ícone / favicon';nav.append(button);
  const dialog=document.createElement('dialog');dialog.setAttribute('aria-label','Trocar ícone do aplicativo');dialog.style.cssText='max-width:480px;width:calc(100% - 40px);border:0;border-radius:16px;padding:24px';
  dialog.innerHTML='<h2>Ícone do aplicativo</h2><p>A imagem será usada no favicon e nas novas instalações do Vision Mídia.</p><label>Escolher imagem<input type="file" accept="image/png,image/jpeg,image/webp" style="display:block;margin:12px 0"></label><img alt="Prévia do ícone" width="160" height="160" hidden><p>Em celulares já instalados, abra o app e aceite a atualização de imagem quando o navegador oferecer. A mudança pode levar algum tempo. No iPhone, pode ser necessário adicionar novamente à Tela de Início.</p><p role="status" aria-live="polite"></p><button type="button" data-save>Salvar ícone</button> <button type="button" data-close>Cancelar</button>';
  document.body.append(dialog);let draft=null;
