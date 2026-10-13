@@ -7,5 +7,5 @@ $('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;
 $('#logout').onclick=async()=>{closeView();try{await api.logout()}catch{}message('Você saiu do painel.');};
 $('#refresh').onclick=()=>show();
 $('#password-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return message('As senhas devem ser iguais.',true);e.submitter.disabled=true;try{await api.request('/auth/v1/user',{method:'PUT',body:{password:f.get('password')}});e.target.reset();message('Senha alterada.');}catch(error){message(error.message,true)}finally{e.submitter.disabled=false}};
-if(demo){$('#demo-banner').hidden=false;$('#password-section').hidden=true;show()}else if(api.session())show();
+if(demo){$('#demo-banner').hidden=false;$('#password-section').hidden=true;show()}else if(api.session())show();else if(!api.config?.enabled)message('Login real ainda não habilitado neste preview. A homologação será conectada a um ambiente isolado, sem usar a produção.');
 setInterval(()=>{if(!demo&&!document.hidden&&!$('#dashboard').hidden)show()},30000);
