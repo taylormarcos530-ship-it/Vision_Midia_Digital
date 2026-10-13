@@ -1,4 +1,5 @@
 import {CommercialAPI,renderCampaigns,demoData,loadThumbnails} from './commercial-ui.mjs';
+import {demoAdvertiserData,demoAdvertiserOptions} from './commercial-advertiser-demo.mjs';
 const api=new CommercialAPI(),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1';let loading=false,requestId=0;
 function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
 function closeView(){ requestId++;loading=false; $('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#advertiser-name').textContent='';$('#login').hidden=false;$('#logout').hidden=true;}
