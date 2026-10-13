@@ -33,10 +33,21 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  // Existing non-advertiser identities still work in the operational tables.
  await db.exec(`insert into company_members(user_id) values('${id(1)}');update companies set owner_user_id='${id(4)}' where id='${id(10)}'`);
 
- const save=async(advertiser,name,media=id(30),campaign=null)=> (await db.query('select public.vision_commercial_save_campaign($1,$2::jsonb) as data',[id(1),JSON.stringify({id:campaign,advertiser_id:advertiser,name,media_id:media,start_date:'2026-01-01',end_date:'2027-12-31',device_ids:[id(20)],status:'active'})])).rows[0].data;
+ let snapshotIndex=100;
+ const save=async(advertiser,name,media=id(30),campaign=null)=>{
+  // Simulate the isolated Master Storage copy; SQL itself must verify it exists.
+  const commercial_copy_path='commercial-ads/'+id(++snapshotIndex)+'.webp';
+  await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',['vision-media',commercial_copy_path]);
+  return (await db.query('select public.vision_commercial_save_campaign($1,$2::jsonb) as data',[id(1),JSON.stringify({id:campaign,advertiser_id:advertiser,name,media_id:media,start_date:'2026-01-01',end_date:'2027-12-31',device_ids:[id(20)],status:'active',commercial_copy_path})])).rows[0].data;
+ };
  const a=await save(id(40),'Campanha A'),b=await save(id(41),'Campanha B');
  const rev=(await db.query('select id from vision_commercial_revisions where campaign_id=$1',[a.id])).rows[0].id;
  const revB=(await db.query('select id from vision_commercial_revisions where campaign_id=$1',[b.id])).rows[0].id;
+ const isolated=(await db.query('select storage_path,source_storage_path from vision_commercial_revisions where id=$1',[rev])).rows[0];
+ assert.match(isolated.storage_path,/^commercial-ads\//);
+ assert.equal(isolated.source_storage_path,'media/test.webp');
+ await assert.rejects(()=>db.query('select vision_commercial_save_campaign($1,$2::jsonb)',[id(1),JSON.stringify({advertiser_id:id(40),name:'No copy',media_id:id(30),start_date:'2026-01-01',end_date:'2027-12-31',device_ids:[id(20)],status:'active'})]),/commercial_snapshot_required/);
+
  await db.exec(`insert into playback_logs(device_id,client_event_id,media_id,started_at,ended_at,completed) values
  ('${id(20)}','real','${rev}',now()-interval '30 seconds',now()-interval '20 seconds',true),
  ('${id(20)}','failed','${rev}',now()-interval '20 seconds',now()-interval '19 seconds',false),
@@ -64,6 +75,10 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  await db.exec(`update vision_advertisers set status='active' where id='${id(40)}';update media_assets set checksum_sha256='new'`);
  await save(id(40),'Campanha A',id(30),a.id);
  assert.equal((await db.query('select * from vision_commercial_revisions where campaign_id=$1',[a.id])).rows.length,2);
+ const stored=await db.query('select storage_path from vision_commercial_revisions where campaign_id=$1',[a.id]);
+ assert.notEqual(stored.rows[0].storage_path,stored.rows[1].storage_path,'media change must keep old and new independent snapshots');
+ assert.equal((await db.query('select count(*)::int as n from storage.objects where name=$1',[isolated.storage_path])).rows[0].n,1,'original commercial revision remains available');
+
  assert.equal((await asUser(2,'select vision_advertiser_portal() as data')).rows[0].data.daily[0].completed_count,1,'media swap retains historical totals');
  await assert.rejects(()=>db.exec(`update vision_commercial_revisions set name='changed'`),/immutable_revision/);
  await db.exec('set role anon');await assert.rejects(()=>db.query('select vision_advertiser_portal()'),/permission denied/);await db.exec('reset role');
