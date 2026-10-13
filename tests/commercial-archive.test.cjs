@@ -68,7 +68,7 @@ test('Exclusion is Master-only, fails on unknown IDs and does not write to Auth'
  assert.equal(advertiser.archived_at,null);assert.equal(log.length,0);
 });
 
-test('Master UI exposes Excluir + restore; demo cannot invoke deletion; JavaScript parses',()=>{
+test('Master UI exposes Excluir + restore; demo runs only local simulation; JavaScript parses',()=>{
  const fs=require('node:fs'),{execFileSync}=require('node:child_process');
  const html=fs.readFileSync('master-advertisers.html','utf8');
  const js=fs.readFileSync('master-advertisers.mjs','utf8');
@@ -78,8 +78,8 @@ test('Master UI exposes Excluir + restore; demo cannot invoke deletion; JavaScri
  assert.match(js,/data-restore=/);
  assert.match(js,/commercial_archive_advertiser/);
  assert.match(js,/commercial_restore_advertiser/);
- assert.match(js,/if\(demo&&!b\.dataset\.report\)return/);
- assert.match(js,/querySelectorAll\('button:not\(\[data-report\]\)'\)/);
+ assert.match(js,/if\(demo&&!b\.dataset\.report&&!b\.dataset\.archive&&!b\.dataset\.restore\)return/);
+ assert.match(js,/querySelectorAll\('button:not\(\[data-report\]\):not\(\[data-archive\]\):not\(\[data-restore\]\)'\)/);
  assert.match(js,/if\(confirm\(/);
  assert.doesNotThrow(()=>execFileSync(process.execPath,['--check','master-advertisers.mjs']));
  assert.doesNotThrow(()=>execFileSync(process.execPath,['--check','supabase/functions/_shared/commercial-master.mjs']));
