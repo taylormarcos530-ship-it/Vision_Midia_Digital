@@ -67,3 +67,20 @@ test('Exclusion is Master-only, fails on unknown IDs and does not write to Auth'
  await assert.rejects(()=>commercialMaster(admin,{id:'master'},'admin',{action:'commercial_archive_advertiser',id:'missing'}),/advertiser_not_found/);
  assert.equal(advertiser.archived_at,null);assert.equal(log.length,0);
 });
+
+test('Master UI exposes Excluir + restore; demo cannot invoke deletion; JavaScript parses',()=>{
+ const fs=require('node:fs'),{execFileSync}=require('node:child_process');
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ const js=fs.readFileSync('master-advertisers.mjs','utf8');
+ assert.match(html,/id="show-archived"/);
+ assert.match(js,/Excluir anunciante/);
+ assert.match(js,/data-archive=/);
+ assert.match(js,/data-restore=/);
+ assert.match(js,/commercial_archive_advertiser/);
+ assert.match(js,/commercial_restore_advertiser/);
+ assert.match(js,/if\(demo&&!b\.dataset\.report\)return/);
+ assert.match(js,/querySelectorAll\('button:not\(\[data-report\]\)'\)/);
+ assert.match(js,/if\(confirm\(/);
+ assert.doesNotThrow(()=>execFileSync(process.execPath,['--check','master-advertisers.mjs']));
+ assert.doesNotThrow(()=>execFileSync(process.execPath,['--check','supabase/functions/_shared/commercial-master.mjs']));
+});
