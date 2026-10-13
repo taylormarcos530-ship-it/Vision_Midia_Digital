@@ -17,6 +17,7 @@ function simulatedMaster(){
     },
     is(field,value){if(field==='archived_at'){filterArchive=value;hasArchiveFilter=true;}return query},
     update(fields){op='update';payload=fields;return query},
+    async single(){return query.maybeSingle()},
     async maybeSingle(){
      const matches=filterId===advertiser.id&&(!hasArchiveFilter||advertiser.archived_at===filterArchive);
      if(!matches)return {data:null,error:null};
