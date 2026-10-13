@@ -18,6 +18,27 @@ jobs:
         uses: actions/checkout@v4
         with:
           persist-credentials: false
+          fetch-depth: 0
+
+      - name: Protect live player, APK and operational APIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=87d907010db614d5459b6af9c7b421328e64f225
+          git cat-file -e "${BASE}^{commit}"
+          if ! git diff --quiet "${BASE}" HEAD -- \
+            player.js player.html player.css player.webmanifest \
+            android-player/ config.js sw.js \
+            index.html app.js master.html master.js \
+            supabase/functions/device-gateway/index.ts \
+            supabase/functions/device-control/ \
+            supabase/functions/device-monitoring/ \
+            supabase/functions/master-admin/index.ts \
+            netlify.toml vercel.json; then
+            echo "::error::Protected player or production file changed. Stop and review before any deployment."
+            exit 1
+          fi
+          echo "Protected files unchanged from isolated feature baseline."
 
       - name: Node 22
         uses: actions/setup-node@v4
