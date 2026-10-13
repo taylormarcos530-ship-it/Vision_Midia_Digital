@@ -32,8 +32,32 @@ export async function commercialMaster(admin,user,role,body){
    return {ok:true,advertiser,temporary_password};
   }catch(error){await admin.auth.admin.deleteUser(account.id);throw error;}
  }
+ if(action==='commercial_archive_advertiser'||action==='commercial_restore_advertiser'){
+  const id=clean(body.id,80);
+  if(!id)throw fail('advertiser_required');
+  const advertiser=requireData(await admin.from('vision_advertisers').select('id,archived_at').eq('id',id).maybeSingle());
+  if(!advertiser)throw fail('advertiser_not_found',404);
+  if(action==='commercial_archive_advertiser'){
+   if(advertiser.archived_at)throw fail('advertiser_already_archived',409);
+   // One atomic update: archive revokes portal RLS access and manifest eligibility.
+   // Do not delete Auth users, media, campaign revisions, targets or playback history.
+   const changed=requireData(await admin.from('vision_advertisers')
+    .update({status:'disabled',archived_at:new Date().toISOString()}).eq('id',id).is('archived_at',null)
+    .select('id').maybeSingle());
+   if(!changed)throw fail('advertiser_conflict',409);
+   return {ok:true,archived:true};
+  }
+  if(!advertiser.archived_at)throw fail('advertiser_not_archived',409);
+  // Restoration never reactivates commercial playback or advertiser login.
+  const restored=requireData(await admin.from('vision_advertisers')
+   .update({archived_at:null,status:'disabled'}).eq('id',id).eq('archived_at',advertiser.archived_at)
+   .select('id').maybeSingle());
+  if(!restored)throw fail('advertiser_conflict',409);
+  return {ok:true,restored:true,status:'disabled'};
+ }
  if(action==='commercial_update_advertiser'||action==='commercial_reset_access'){
   const advertiser=requireData(await admin.from('vision_advertisers').select('*').eq('id',body.id).single());
+  if(advertiser.archived_at)throw fail('advertiser_archived',409);
   await independentAccount(admin,advertiser.user_id);
   if(action==='commercial_reset_access'){
    if(advertiser.status!=='active')throw fail('activate_advertiser_first',409);
