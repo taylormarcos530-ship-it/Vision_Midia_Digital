@@ -80,6 +80,22 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  assert.equal((await db.query('select count(*)::int as n from storage.objects where name=$1',[isolated.storage_path])).rows[0].n,1,'original commercial revision remains available');
 
  assert.equal((await asUser(2,'select vision_advertiser_portal() as data')).rows[0].data.daily[0].completed_count,1,'media swap retains historical totals');
+
+ // "Excluir" is a reversible archive: no Auth deletion, no Storage deletion, no log deletion.
+ const beforeArchive=(await db.query(`select vision_commercial_manifest('${id(20)}') as ads`)).rows[0].ads;
+ assert.ok(beforeArchive.some(x=>x.campaign_id===a.id),'active advertiser is eligible for future manifests');
+ await db.exec(`update vision_advertisers set status='disabled',archived_at=now() where id='${id(40)}'`);
+ await assert.rejects(()=>asUser(2,'select vision_advertiser_portal()'),/advertiser_unavailable/);
+ const afterArchive=(await db.query(`select vision_commercial_manifest('${id(20)}') as ads`)).rows[0].ads;
+ assert.equal(afterArchive.some(x=>x.campaign_id===a.id),false,'archived advertiser must not enter new manifests');
+ assert.equal(Number((await db.query('select sum(completed_count) n from vision_commercial_daily where campaign_id=$1',[a.id])).rows[0].n),1,'archive preserves play history');
+ assert.equal((await db.query('select count(*)::int n from vision_commercial_revisions where campaign_id=$1',[a.id])).rows[0].n,2,'archive keeps media revisions');
+ assert.equal((await db.query('select count(*)::int n from storage.objects where name=$1',[isolated.storage_path])).rows[0].n,1,'archive keeps creative copy');
+ await assert.rejects(()=>db.query('select vision_commercial_save_campaign($1,$2::jsonb)',[id(1),JSON.stringify({advertiser_id:id(40),name:'Should not save',media_id:id(30),start_date:'2026-01-01',end_date:'2027-12-31',device_ids:[id(20)],status:'active'})]),/advertiser_not_found/);
+ await db.exec(`update vision_advertisers set archived_at=null,status='disabled' where id='${id(40)}'`);
+ await assert.rejects(()=>asUser(2,'select vision_advertiser_portal()'),/advertiser_unavailable/);
+ assert.equal((await db.query(`select vision_commercial_manifest('${id(20)}') as ads`)).rows[0].ads.some(x=>x.campaign_id===a.id),false,'restoring disabled does not resume commercials');
+
  await assert.rejects(()=>db.exec(`update vision_commercial_revisions set name='changed'`),/immutable_revision/);
  await db.exec('set role anon');await assert.rejects(()=>db.query('select vision_advertiser_portal()'),/permission denied/);await db.exec('reset role');
  }finally{await db.close()}
