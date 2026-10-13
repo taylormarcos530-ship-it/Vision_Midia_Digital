@@ -14,8 +14,8 @@ create table public.vision_commercial_campaigns (
 );
 create table public.vision_commercial_revisions (
  id uuid primary key default gen_random_uuid(), campaign_id uuid not null references public.vision_commercial_campaigns(id) on delete restrict,
- source_media_id uuid not null, name text not null, media_type text not null check(media_type in ('image','video')),
- storage_path text not null, duration_seconds numeric not null check(duration_seconds>0 and duration_seconds<=3600),
+ source_media_id uuid not null, source_storage_path text not null, source_updated_at timestamptz not null, name text not null, media_type text not null check(media_type in ('image','video')),
+ storage_path text not null unique, duration_seconds numeric not null check(duration_seconds>0 and duration_seconds<=3600),
  size_bytes bigint, checksum text not null, width int,height int, created_at timestamptz not null default now(), unique(id,campaign_id)
 );
 alter table public.vision_commercial_campaigns add constraint commercial_current_revision_fk foreign key(current_revision_id,id) references public.vision_commercial_revisions(id,campaign_id);
@@ -96,7 +96,7 @@ end$$;
 revoke all on function private.vision_require_master(uuid) from public,anon,authenticated;
 
 create function public.vision_commercial_save_campaign(p_actor uuid,p_data jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
-declare cid uuid; aid uuid; rid uuid; asset public.media_assets; prev public.vision_commercial_revisions; target uuid; n int;
+declare cid uuid; aid uuid; rid uuid; asset public.media_assets; prev public.vision_commercial_revisions; target uuid; n int; snapshot_path text; snapshot_used boolean:=false;
 begin
  perform private.vision_require_master(p_actor);
  perform pg_catalog.pg_advisory_xact_lock(7162026); -- Serialize commercial saves, never operational playlists.
@@ -113,8 +113,16 @@ begin
  select * into asset from public.media_assets where id=(p_data->>'media_id')::uuid and processing_status='ready' and media_type in ('image','video') and storage_path is not null;
  if not found then raise exception 'ready_image_or_video_required';end if;
  select r.* into prev from public.vision_commercial_revisions r join public.vision_commercial_campaigns c on c.current_revision_id=r.id where c.id=cid;
- if prev.id is null or prev.source_media_id<>asset.id or prev.checksum<>coalesce(asset.checksum_sha256,asset.updated_at::text,'') or prev.storage_path<>asset.storage_path then
- insert into public.vision_commercial_revisions(campaign_id,source_media_id,name,media_type,storage_path,duration_seconds,size_bytes,checksum,width,height) values(cid,asset.id,asset.name,asset.media_type,asset.storage_path,coalesce(asset.duration_seconds,10),asset.size_bytes,coalesce(asset.checksum_sha256,asset.updated_at::text,''),asset.width,asset.height) returning id into rid;
+ if prev.id is null or prev.source_media_id<>asset.id or prev.checksum<>coalesce(asset.checksum_sha256,'') or prev.source_storage_path<>asset.storage_path or prev.source_updated_at is distinct from asset.updated_at then
+ snapshot_path:=nullif(p_data->>'commercial_copy_path','');
+ -- The commercial revision must point to its own immutable, already copied Storage object.
+ -- No operational media is moved, overwritten, locked or deleted.
+ if snapshot_path is null or snapshot_path !~ '^commercial-ads/[a-f0-9-]{36}(\\.[a-z0-9]{2,5})?$'
+   or snapshot_path=asset.storage_path
+   or not exists(select 1 from storage.objects where bucket_id='vision-media' and name=snapshot_path)
+ then raise exception 'commercial_snapshot_required';end if;
+ insert into public.vision_commercial_revisions(campaign_id,source_media_id,source_storage_path,source_updated_at,name,media_type,storage_path,duration_seconds,size_bytes,checksum,width,height) values(cid,asset.id,asset.storage_path,asset.updated_at,asset.name,asset.media_type,snapshot_path,coalesce(asset.duration_seconds,10),asset.size_bytes,coalesce(asset.checksum_sha256,''),asset.width,asset.height) returning id into rid;
+ snapshot_used:=true;
  update public.vision_commercial_campaigns set current_revision_id=rid where id=cid;
  end if;
  update public.vision_commercial_targets set active=false,delivery_status='pending_player_check',delivery_checked_at=null where campaign_id=cid;
@@ -124,7 +132,7 @@ begin
  on conflict(campaign_id,device_id) do update set active=true;
  get diagnostics n=row_count;if n=0 then raise exception 'device_unavailable';end if;
  end loop;
- return jsonb_build_object('id',cid);
+ return jsonb_build_object('id',cid,'snapshot_used',snapshot_used);
 end$$;
 revoke all on function public.vision_commercial_save_campaign(uuid,jsonb) from public,anon,authenticated;
 grant execute on function public.vision_commercial_save_campaign(uuid,jsonb) to service_role;
