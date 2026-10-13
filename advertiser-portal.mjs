@@ -1,0 +1,11 @@
+import {CommercialAPI,renderCampaigns,demoData,loadThumbnails} from './commercial-ui.mjs';
+const api=new CommercialAPI(),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1';let loading=false,requestId=0;
+function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
+function closeView(){ requestId++;loading=false; $('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#advertiser-name').textContent='';$('#login').hidden=false;$('#logout').hidden=true;}
+async function show(){if(loading)return;loading=true;const ownRequest=++requestId;try{const data=demo?demoData():await api.rpc('vision_advertiser_portal');if(ownRequest!==requestId)return;$('#login').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=demo;$('#advertiser-name').textContent=data.advertiser.name;$('#campaigns').innerHTML=renderCampaigns(data);message(demo?'Nenhum dado real conectado. As contagens começam em zero.':'Atualizado agora.');if(!demo)await loadThumbnails($('#campaigns'),data,api);}catch(e){if(ownRequest!==requestId)return;if(e.status===401||e.status===403){api.clear();closeView()}message(e.message,true);}finally{if(ownRequest===requestId)loading=false}}
+$('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const f=new FormData(e.target);await api.login(f.get('email'),f.get('password'));e.target.reset();await show();}catch(error){message(error.message,true)}finally{button.disabled=false}};
+$('#logout').onclick=async()=>{closeView();try{await api.logout()}catch{}message('Você saiu do painel.');};
+$('#refresh').onclick=()=>show();
+$('#password-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return message('As senhas devem ser iguais.',true);e.submitter.disabled=true;try{await api.request('/auth/v1/user',{method:'PUT',body:{password:f.get('password')}});e.target.reset();message('Senha alterada.');}catch(error){message(error.message,true)}finally{e.submitter.disabled=false}};
+if(demo){$('#demo-banner').hidden=false;$('#password-section').hidden=true;show()}else if(api.session())show();
+setInterval(()=>{if(!demo&&!document.hidden&&!$('#dashboard').hidden)show()},30000);
