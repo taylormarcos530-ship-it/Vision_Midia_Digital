@@ -1,3 +1,4 @@
+import {saveCommercialWithSnapshot} from './commercial-media.mjs';
 const fail=(message,status=400)=>Object.assign(new Error(message),{status});
 const requireData=result=>{if(result.error)throw result.error;return result.data;};
 const clean=(value,max)=>String(value??'').trim().slice(0,max);
@@ -44,7 +45,7 @@ export async function commercialMaster(admin,user,role,body){
   requireData(await admin.from('vision_advertisers').update({name,status}).eq('id',advertiser.id));
   return {ok:true};
  }
- if(action==='commercial_save_campaign')return {ok:true,...requireData(await admin.rpc('vision_commercial_save_campaign',{p_actor:user.id,p_data:body.campaign}))};
+ if(action==='commercial_save_campaign')return saveCommercialWithSnapshot(admin,user.id,body.campaign);
  if(action==='commercial_report')return {ok:true,...requireData(await admin.rpc('vision_commercial_master_report',{p_actor:user.id,p_advertiser:body.id}))};
  throw fail('unknown_commercial_action');
 }
