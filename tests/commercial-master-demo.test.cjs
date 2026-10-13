@@ -1,0 +1,31 @@
+const {test}=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+test('Master demonstration uses fictional accounts, no real device and zero playback events',async()=>{
+ const {masterDemoList,masterDemoReport}=await import('../commercial-master-demo.mjs');
+ const listed=masterDemoList();
+ assert.equal(listed.advertisers.length,1);
+ assert.match(listed.advertisers[0].name,/demonstração/);
+ assert.match(listed.advertisers[0].email,/@anunciante\.test$/);
+ assert.equal(listed.devices[0].last_seen_at,null);
+ const report=masterDemoReport(listed.advertisers[0].id);
+ assert.deepEqual(report.daily,[]);
+ assert.equal(report.targets[0].online,false);
+ assert.equal(report.campaigns[0].advertiser_id,listed.advertisers[0].id);
+ assert.throws(()=>masterDemoReport('real-account'),/não encontrado/);
+});
+test('both previews remain disconnected, prevent Master mutations and disclose demo mode',()=>{
+ const cfg=fs.readFileSync('commercial-config.js','utf8');
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ const js=fs.readFileSync('master-advertisers.mjs','utf8');
+ assert.match(cfg,/enabled:false/);
+ assert.match(cfg,/supabaseUrl:''/);
+ assert.match(cfg,/supabasePublishableKey:''/);
+ assert.match(html,/DEMONSTRAÇÃO VISUAL/);
+ assert.match(js,/masterDemoList\(\)/);
+ assert.match(js,/if\(demo&&!b\.dataset\.report\)return/);
+ assert.match(js,/if\(!demo\)await loadThumbnails/);
+ assert.match(js,/if\(!demo\)advertiser\(\)/);
+ assert.match(js,/masterDemoReport\(b\.dataset\.report\)/);
+ for(const p of ['player.js','android-player/app/src/main/java'])assert.ok(!js.includes(p));
+});
