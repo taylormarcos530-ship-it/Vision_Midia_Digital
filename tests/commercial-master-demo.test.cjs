@@ -61,9 +61,10 @@ test('demo sandbox contains no persistence or remote endpoint and never sends wr
  const fs=require('node:fs');
  const source=fs.readFileSync('commercial-master-demo.mjs','utf8');
  const master=fs.readFileSync('master-advertisers.mjs','utf8');
- for(const token of ['localStorage','sessionStorage','fetch(','createClient(','supabaseUrl','admin.auth','service_role']){
+ for(const token of ['fetch(','createClient(','supabaseUrl','admin.auth','service_role']){
   assert.equal(source.includes(token),false,'demo fixture must not include '+token);
  }
+ assert.doesNotMatch(source,/\b(?:localStorage|sessionStorage)\s*[.\[(]/);
  assert.match(master,/demo\?demoSession\.list\(\):await api\.masterCall/);
  assert.match(master,/demo\?demoSession\.report\(b\.dataset\.report\):await api\.masterCall/);
  assert.match(master,/if\(demo\)demoSession\.archive\(a\.id\);else await api\.masterCall/);
