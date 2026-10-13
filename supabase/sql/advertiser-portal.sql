@@ -117,7 +117,7 @@ begin
  snapshot_path:=nullif(p_data->>'commercial_copy_path','');
  -- The commercial revision must point to its own immutable, already copied Storage object.
  -- No operational media is moved, overwritten, locked or deleted.
- if snapshot_path is null or snapshot_path !~ '^commercial-ads/[a-f0-9-]{36}([.][a-z0-9]{2,5})?
+ if snapshot_path is null or snapshot_path !~ '^commercial-ads/[a-f0-9-]{36}([.][a-z0-9]{2,5})?$'
    or snapshot_path=asset.storage_path
    or not exists(select 1 from storage.objects where bucket_id='vision-media' and name=snapshot_path)
  then raise exception 'commercial_snapshot_required';end if;
