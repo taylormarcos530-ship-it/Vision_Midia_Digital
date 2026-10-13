@@ -1,0 +1,34 @@
+name: Advertiser Portal Safety Tests
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies without install scripts
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Run regression and isolated PostgreSQL tests
+        run: npm test
+
+# No secrets, APK build, remote SQL, Edge Function release, or production deploy.
