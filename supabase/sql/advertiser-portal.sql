@@ -4,7 +4,7 @@ begin;
 create table public.vision_advertisers (
  id uuid primary key default gen_random_uuid(), user_id uuid not null unique references auth.users(id) on delete restrict,
  name text not null check(length(trim(name)) between 2 and 140), email text not null,
- status text not null default 'active' check(status in ('active','disabled')), created_at timestamptz not null default now()
+ status text not null default 'active' check(status in ('active','disabled')), archived_at timestamptz, created_at timestamptz not null default now()
 );
 create table public.vision_commercial_campaigns (
  id uuid primary key default gen_random_uuid(), advertiser_id uuid not null references public.vision_advertisers(id) on delete restrict,
@@ -101,7 +101,7 @@ begin
  perform private.vision_require_master(p_actor);
  perform pg_catalog.pg_advisory_xact_lock(7162026); -- Serialize commercial saves, never operational playlists.
  aid:=(p_data->>'advertiser_id')::uuid;cid:=nullif(p_data->>'id','')::uuid;
- if not exists(select 1 from public.vision_advertisers where id=aid) then raise exception 'advertiser_not_found'; end if;
+ if not exists(select 1 from public.vision_advertisers where id=aid and archived_at is null) then raise exception 'advertiser_not_found'; end if;
  if jsonb_typeof(p_data->'device_ids') is distinct from 'array' or jsonb_array_length(p_data->'device_ids') not between 1 and 100 then raise exception 'select_1_to_100_devices';end if;
  if cid is null then
  insert into public.vision_commercial_campaigns(advertiser_id,name,start_date,end_date,status) values(aid,trim(p_data->>'name'),(p_data->>'start_date')::date,(p_data->>'end_date')::date,coalesce(p_data->>'status','draft')) returning id into cid;
