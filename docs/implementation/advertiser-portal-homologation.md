@@ -58,3 +58,12 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Cadastro, edição, campanhas e senhas continuam desativados no modo demo. Apenas exibição de resultados, Excluir/Restaurar fictícios, busca e filtro são interativos.
 - **105/105 testes Node/PGlite aprovados** em https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38486971160 . CI validou novamente que player, APK e rotas operacionais não foram alterados.
 - Nenhum SQL remoto, Edge Function, deploy de produção, cliente ou TV sofreu alteração. A interação é uma simulação, não uma exclusão real.
+
+## Etapa: dois anunciantes fictícios e acesso suspenso — 13/10/2026
+
+- Nova simulação independente em `anunciante.html?demo=1`, com seletor de **Loja A**, **Empresa B** e **Acesso suspenso**. Os dois exemplos usam identificadores distintos de anunciante, campanha, versão de mídia e TV; `daily=[]`, ambos offline e sem arquivos de clientes.
+- O exemplo suspenso não entrega campanha e esvazia a tela. Alternar os exemplos **não representa autenticação real**, não envolve cadastro, senha nem Supabase.
+- O seletor é um componente isolado em `commercial-advertiser-demo-ui.mjs` e utiliza `commercial-advertiser-demo.mjs`. Continua indisponível quando não há `?demo=1`.
+- A lógica real de Auth, RLS e os dados de produção não foram alterados. A homologação com credenciais verdadeiras continua bloqueada até haver um Supabase de testes distinto.
+- Resultado local de CI: **108/108 testes aprovados**, inclusive a bateria que verifica não haver mudanças no player, APK e APIs operacionais; execução https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38487488565 .
+- **Próxima etapa:** obter escolha/autorização da organização para uma instância independente de homologação e testar os logins reais de duas contas fictícias com RLS nesse ambiente, sem publicações em produção.
