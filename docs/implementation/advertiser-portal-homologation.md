@@ -49,3 +49,12 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Pipeline atualizado: **103/103 testes aprovados, zero falhas**; inclui arquivamento, recuperação, RLS, manutenção dos dados e gate que protege o APK/player. GitHub Actions: https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38486410691
 
 **Próxima etapa:** somente com Supabase de homologação distinto e dispositivos fictícios, testar Auth, exclusão/restauração, propagação do manifesto e reprodução cacheada antes de qualquer ativação operacional.
+
+## Etapa: demonstração interativa de exclusão/restauração (13/10/2026)
+
+- Rota de demonstração: `master-advertisers.html?demo=1`. **Excluir anunciante** pede confirmação, altera somente um objeto local em memória e oculta o cartão da lista padrão; `Mostrar anunciantes excluídos (recuperáveis)` permite visualizar o histórico e usar **Restaurar anunciante**.
+- Após restaurar, o anunciante demonstrativo permanece **desativado**; atualizar a página reinicia os exemplos ficcionais. Contagens de exibição permanecem zeradas.
+- `commercial-master-demo.mjs` fornece uma sessão isolada sem rede, Auth, banco, localStorage ou sessionStorage. O Master real mantém as chamadas administrativas para a homologação futura, mas sua configuração segue desligada no preview.
+- Cadastro, edição, campanhas e senhas continuam desativados no modo demo. Apenas exibição de resultados, Excluir/Restaurar fictícios, busca e filtro são interativos.
+- **105/105 testes Node/PGlite aprovados** em https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38486971160 . CI validou novamente que player, APK e rotas operacionais não foram alterados.
+- Nenhum SQL remoto, Edge Function, deploy de produção, cliente ou TV sofreu alteração. A interação é uma simulação, não uma exclusão real.
