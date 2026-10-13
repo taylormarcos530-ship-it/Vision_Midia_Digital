@@ -67,3 +67,11 @@
 ## Checkpoint de 12/10/2026
 
 Desenho e plano preparados; implementação, compilação e testes físicos ainda pendentes. Próximo bloco após revisão deste plano: executar Task 1 e preparar APK separado da Task 2. O vídeo ao vivo no painel ainda não existe.
+
+
+## Retomada final de 12/10/2026
+
+Fontes persistidos em `feat/tv-live-probe` antes da compilação final. Tasks 1 e 2
+implementadas; build/lint e assinatura verificados. Consultar `tv-live-probe-results.md`
+para evidências, decisões e avisos remanescentes. Task 3 exige aparelho físico e
+continua pendente; não há integração ao vivo nem mudança em produção.
