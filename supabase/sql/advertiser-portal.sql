@@ -52,7 +52,7 @@ create trigger commercial_account_guard before insert or update on public.vision
 
 -- Prevent an advertiser identity from being assigned to operational roles later.
 -- Existing point owners and Master accounts are unaffected. This script is staging-only.
-create function private.vision_reject_advertiser_role() returns trigger language plpgsql security definer set search_path='' as $
+create function private.vision_reject_advertiser_role() returns trigger language plpgsql security definer set search_path='' as $$
 declare candidate uuid;
 begin
  candidate:=nullif(to_jsonb(new)->>tg_argv[0],'')::uuid;
@@ -60,7 +60,7 @@ begin
   raise exception 'separate_advertiser_account' using errcode='23514';
  end if;
  return new;
-end $;
+end $$;
 revoke all on function private.vision_reject_advertiser_role() from public,anon,authenticated;
 create trigger commercial_guard_company_member before insert or update of user_id on public.company_members
  for each row execute function private.vision_reject_advertiser_role('user_id');
@@ -132,7 +132,7 @@ grant execute on function public.vision_commercial_save_campaign(uuid,jsonb) to 
 -- No trigger on playback_logs: consolidation failure cannot reject a normal playback batch.
 -- Existing raw logs are not deleted. Reconcile every recorded commercial day for this TV,
 -- so a rollup outage cannot silently discard older or delayed offline events. Idempotent.
-create function public.vision_commercial_refresh_daily(p_device uuid) returns void language plpgsql security definer set search_path='' as $
+create function public.vision_commercial_refresh_daily(p_device uuid) returns void language plpgsql security definer set search_path='' as $$
 begin
  -- TVs with no commercial targets never need to scan playback history.
  if not exists(select 1 from public.vision_commercial_targets where device_id=p_device) then return; end if;
