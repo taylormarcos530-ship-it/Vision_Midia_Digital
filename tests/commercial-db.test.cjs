@@ -9,7 +9,7 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  create table auth.users(id uuid primary key);
  create table public.platform_admins(user_id uuid,role text,status text);
  create table public.company_members(user_id uuid);
- create table public.companies(id uuid primary key,name text);
+ create table public.companies(id uuid primary key,name text,owner_user_id uuid);
  create table public.devices(id uuid primary key,company_id uuid,name text,last_seen_at timestamptz,retired_at timestamptz);
  create table public.media_assets(id uuid primary key,name text,media_type text,storage_path text,source_url text,duration_seconds numeric,size_bytes bigint,checksum_sha256 text,width int,height int,processing_status text,updated_at timestamptz);
  create table public.playback_logs(id uuid primary key default gen_random_uuid(),device_id uuid,client_event_id text,media_id uuid,started_at timestamptz,ended_at timestamptz,completed boolean,created_at timestamptz default now(),unique(device_id,client_event_id));
@@ -22,6 +22,17 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  await db.exec(fs.readFileSync('supabase/sql/advertiser-portal.sql','utf8'));
  await db.exec(`insert into vision_advertisers(id,user_id,name,email) values('${id(40)}','${id(2)}','Loja A','a@example.test'),('${id(41)}','${id(3)}','Loja B','b@example.test');`);
  await assert.rejects(()=>db.exec(`insert into vision_advertisers(user_id,name,email) values('${id(4)}','Ponto','p@example.test')`),/separate_advertiser_account/);
+
+ // An account created as an advertiser must never acquire client or Master privileges later.
+ await assert.rejects(()=>db.exec(`insert into company_members(user_id) values('${id(2)}')`),/separate_advertiser_account/);
+ await assert.rejects(()=>db.exec(`update company_members set user_id='${id(2)}' where user_id='${id(4)}'`),/separate_advertiser_account/);
+ await assert.rejects(()=>db.exec(`insert into platform_admins(user_id,role,status) values('${id(2)}','admin','active')`),/separate_advertiser_account/);
+ await assert.rejects(()=>db.exec(`update platform_admins set user_id='${id(2)}' where user_id='${id(1)}'`),/separate_advertiser_account/);
+ await assert.rejects(()=>db.exec(`insert into companies(id,name,owner_user_id) values('${id(11)}','Outro ponto','${id(2)}')`),/separate_advertiser_account/);
+ await assert.rejects(()=>db.exec(`update companies set owner_user_id='${id(2)}' where id='${id(10)}'`),/separate_advertiser_account/);
+ // Existing non-advertiser identities still work in the operational tables.
+ await db.exec(`insert into company_members(user_id) values('${id(1)}');update companies set owner_user_id='${id(4)}' where id='${id(10)}'`);
+
  const save=async(advertiser,name,media=id(30),campaign=null)=> (await db.query('select public.vision_commercial_save_campaign($1,$2::jsonb) as data',[id(1),JSON.stringify({id:campaign,advertiser_id:advertiser,name,media_id:media,start_date:'2026-01-01',end_date:'2027-12-31',device_ids:[id(20)],status:'active'})])).rows[0].data;
  const a=await save(id(40),'Campanha A'),b=await save(id(41),'Campanha B');
  const rev=(await db.query('select id from vision_commercial_revisions where campaign_id=$1',[a.id])).rows[0].id;
@@ -31,7 +42,7 @@ test('PostgreSQL: isolated advertiser reads, immutable revisions and real daily 
  ('${id(20)}','failed','${rev}',now()-interval '20 seconds',now()-interval '19 seconds',false),
  ('${id(20)}','other','${revB}',now()-interval '20 seconds',now()-interval '10 seconds',true);
  update playback_logs set created_at=now()-interval '3 days';
- select vision_commercial_refresh_daily('${id(20)}');select vision_commercial_refresh_daily('${id(20)}');`);
+ select vision_commercial_refresh_daily('${id(20)}');select vision_commercial_refresh_daily('${id(20)}');select vision_commercial_refresh_daily('${id(99)}');`);
  assert.equal(Number((await db.query('select sum(completed_count) as n from vision_commercial_daily where campaign_id=$1',[a.id])).rows[0].n),1,'idempotent totals, failed attempts excluded');
  const asUser=async(n,sql)=>{await db.exec(`set role authenticated;select set_config('request.jwt.claim.sub','${id(n)}',false)`);try{return await db.query(sql)}finally{await db.exec('reset role')}};
  const portal=(await asUser(2,'select vision_advertiser_portal() as data')).rows[0].data;
