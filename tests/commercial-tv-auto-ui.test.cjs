@@ -64,6 +64,9 @@ test('clicking auto starts timed mock media completions and switches advertisers
  const h=await browserHarness();
  assert.deepEqual(h.campaignNames(),['Loja do João','Empresa B']);
  assert.equal(h.timers.size,0,'default state never auto-runs');
+ assert.equal(h.widget('auto-reconnect').disabled,true);
+ assert.equal(h.widget('auto-reconnect').textContent,'Conectado ✓');
+ assert.match(h.widget('auto-reconnect').title,/já está ativa/);
  h.click('auto-mode');
  assert.equal(h.timers.size,1);
  assert.match(h.widget('auto-mode').textContent,/Pausar/);
@@ -137,11 +140,15 @@ test('offline pause reconnects automatically after 3s and resumes exactly the sa
  assert.equal(h.timers.size,1);
  assert.equal([...h.timers.values()][0].delay,3000);
  assert.equal(h.widget('auto-complete').disabled,true);
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ assert.equal(h.widget('auto-reconnect').textContent,'Reconectar agora');
  assert.match(h.widget('auto-feedback').textContent,/SEM CONEXÃO/);
  assert.equal(h.widget('auto-round').textContent,checkpoint);
  h.tick(3000);
  assert.equal(h.widget('auto-round').textContent,checkpoint);
  assert.match(h.widget('auto-health').textContent,/ativa/);
+ assert.equal(h.widget('auto-reconnect').disabled,true);
+ assert.equal(h.widget('auto-reconnect').textContent,'Conectado ✓');
  assert.match(h.widget('auto-mode').textContent,/Pausar/);
  assert.equal([...h.timers.values()][0].delay,1600);
  h.tick(1600);
