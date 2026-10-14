@@ -9,7 +9,7 @@ async function browserHarness(){
  let timerId=0;
  function widget(id){
   if(!widgets.has(id))widgets.set(id,{
-   id,hidden:false,disabled:false,textContent:'',className:'',listeners:{},children:[],
+   id,hidden:false,disabled:false,textContent:'',className:'',dataset:{},listeners:{},children:[],
    addEventListener(type,callback){this.listeners[type]=callback},
    replaceChildren(){this.children=[]},
    append(...values){this.children.push(...values)}
