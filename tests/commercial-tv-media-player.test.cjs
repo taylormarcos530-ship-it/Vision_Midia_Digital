@@ -140,3 +140,45 @@ test('source, HTML and browser logic are only local and never call production AP
  }
  for(const str of [module,core])assert.doesNotMatch(str,/\bfetch\(|XMLHttpRequest|WebSocket|localStorage|sessionStorage/);
 });
+
+test('opt-in reconnect restores prior media only when explicitly requested',async()=>{
+ const {createMediaTestPlayer,mediaTestEvent,mediaTestView}=await load();
+ let p=mediaTestEvent(createMediaTestPlayer(),{type:'start'}).player;
+ p=mediaTestEvent(p,{type:'ended',key:mediaTestView(p).key}).player;
+ const old=mediaTestView(p).key;
+ p=mediaTestEvent(p,{type:'disconnect'}).player;
+ assert.equal(p.playing,false);
+ assert.equal(mediaTestEvent(p,{type:'ended',key:old}).accepted,false);
+ p=mediaTestEvent(p,{type:'reconnect',resume:true}).player;
+ assert.equal(p.playing,true);
+ assert.equal(p.state.position,1);
+ assert.equal(p.state.cycle,0);
+ assert.notEqual(mediaTestView(p).key,old);
+ assert.equal(mediaTestEvent(p,{type:'ended',key:old}).accepted,false);
+ p=mediaTestEvent(p,{type:'ended',key:mediaTestView(p).key}).player;
+ assert.equal(p.state.position,2);
+ assert.equal(p.state.completedItems,2);
+});
+test('opt-in reboot preserves item and continues only if compatible and connected',async()=>{
+ const {createMediaTestPlayer,mediaTestEvent,mediaTestView}=await load();
+ let p=mediaTestEvent(createMediaTestPlayer(),{type:'start'}).player;
+ for(let i=0;i<9;i++)
+  p=mediaTestEvent(p,{type:'ended',key:mediaTestView(p).key}).player;
+ assert.equal(p.state.cycle,1);
+ assert.equal(p.state.position,1);
+ const old=mediaTestView(p).key;
+ p=mediaTestEvent(p,{type:'restart',resume:true}).player;
+ assert.equal(p.playing,true);
+ assert.equal(p.state.cycle,1);
+ assert.equal(p.state.position,1);
+ assert.equal(mediaTestEvent(p,{type:'ended',key:old}).accepted,false);
+ assert.equal(mediaTestEvent(p,{type:'ended',key:mediaTestView(p).key}).accepted,true);
+});
+test('resume never starts playback without a playlist or without connection',async()=>{
+ const {createMediaTestPlayer,mediaTestEvent}=await load();
+ const empty=createMediaTestPlayer({baseCount:0,adCount:5});
+ const disconnected=mediaTestEvent(createMediaTestPlayer(),{type:'disconnect'}).player;
+ assert.equal(mediaTestEvent(empty,{type:'restart',resume:true}).player.playing,false);
+ assert.equal(mediaTestEvent(disconnected,{type:'restart',resume:true}).player.playing,false);
+ assert.equal(mediaTestEvent(disconnected,{type:'reconnect',resume:true}).player.playing,true);
+});
