@@ -2,7 +2,7 @@
 
 **Branch isolada:** `fix/advertiser-portal-safety-20261013`
 **Base da feature preservada:** `87d907010db614d5459b6af9c7b421328e64f225`
-**Estado atual:** duas contas de homologação confirmadas e vinculadas; uma campanha ilustrativa em rascunho para cada conta; isolamento RLS confirmado no banco; sem dispositivos, sem reprodução, sem mídia; login HTTP com senha ainda depende de verificação manual. Produção e player intocados.
+**Estado atual:** login HTTP real de A e B comprovado por prints; duas campanhas ilustrativas em rascunho no Supabase de homologação; RLS A/B confirmado; TV fictícia simulada inteiramente offline com playlist e anúncios, sem dispositivos, reprodução ou mídias reais. Produção e player intocados.
 
 ## Concluído nesta etapa
 
@@ -175,3 +175,15 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Os testes do diagnóstico também verificam descarte do resultado após logout/troca de conta. A verificação final de CI: **133/133 testes, zero falhas**, https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38495007223 . Os arquivos protegidos de player/APK/APIs operacionais permaneceram iguais à baseline.
 - **Não confundir testes automatizados com teste manual:** o operador já comprovou por print os logins A e B e o logout A; o **logout B na interface real** ainda pode ser confirmado com um print, mas a rotina de logout B está coberta por teste automatizado.
 - **Estado de produção:** intacto, sem merge, nenhum novo APK, sem campanhas comerciais ativadas, sem TV real vinculada. Nenhum SQL remoto foi executado nesta etapa. O ambiente de homologação segue independente.
+
+## TV fictícia e intercalação de anúncios em simulação offline — 14/10/2026
+
+- Página **`commercial-tv-bench.html`** e módulo `commercial-tv-bench.mjs` criados apenas na branch `fix/advertiser-portal-safety-20261013`. Simulam uma TV fictícia de Auto Center, **sem criar nenhuma linha no Supabase, autenticar, gerar evento ou executar o player**. A página não carrega chave Supabase.
+- O simulador importa a implementação comercial real **da branch isolada** (`supabase/functions/_shared/commercial.mjs`) e permite testar 0, 1, 3 ou 6 mídias da playlist, 0, 1, 2 ou 5 anúncios, além de modo aleatório, mídia única, agenda por item e desligamento da camada.
+- Corrigido comportamento perigoso na função isolada `interleave()`: anteriormente `items.push(...ads.slice(cursor))` adicionava comerciais excedentes em sequência ao final. Agora insere **no máximo um anúncio por oportunidade entre mídias do ponto**, sem retirar ou reordenar as mídias originais e **sem colocar os excedentes em bloco**. Quando a playlist acaba antes do intervalo completo, uma única inserção pode ocorrer após a última mídia.
+- Exemplo com seis mídias + dois anúncios: **Auto 1 → Auto 2 → Auto 3 → anúncio 1 → Auto 4 → Auto 5 → Auto 6 → anúncio 2**. Com seis mídias e cinco anúncios, apenas dois anúncios cabem com este intervalo: os demais ficam fora **do ciclo simulado**, não são marcados como exibidos.
+- **Pendência deliberada antes de ativar:** definir rodízio e equidade de múltiplos anunciantes quando há mais anúncios elegíveis que posições por ciclo. A atual lógica limitada não inclui os excedentes, logo **não garante rodízio** em chamadas seguintes. Não liberar campanhas comerciais reais antes de completar e testar essa política.
+- TVs sem playlist continuam em **Aguardando playlist**, sem publicidade isolada. `shuffle`, mídia única e agendas da base continuam preservados; a feature flag comercial de produção permanece desabilitada.
+- Testes com a integração de `augmentCommercial()` usam Admin RPC/Storage totalmente simulados em Node, sem chamadas reais ou aparelhos conectados. **141/141 testes aprovados, zero falhas**, execução https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38495868400 .
+- **Nenhum player.js, APK, device-gateway/index.ts, Supabase de produção, funções operacionais, Netlify ou Vercel production foi alterado/deployado**. O único helper de gateway modificado pertence à camada comercial opcional da branch, ainda não publicada.
+- Próxima etapa segura: testar estratégia de rodízio dos anúncios excedentes por ciclos, manter a prioridade da playlist do estabelecimento e validar seu comportamento em bancada; somente depois integrar uma TV de testes cadastrada no Supabase isolado se necessário.
