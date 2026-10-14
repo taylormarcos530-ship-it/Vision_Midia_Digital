@@ -203,6 +203,12 @@ test('invalid checkpoint and duplicate media item IDs fail closed',async()=>{
  const invalid=program();invalid.primary.items[1].id=invalid.primary.items[0].id;
  assert.equal(api.describeRoundProgram(invalid).valid,false);
  assert.equal(api.createRoundContract(invalid).model.items.length,0);
+ const invalidCommercial=program();
+ invalidCommercial.ads[1].id=invalidCommercial.ads[0].id;
+ assert.equal(api.describeRoundProgram(invalidCommercial).valid,false);
+ const commercialFallback=api.createRoundContract(invalidCommercial);
+ assert.deepEqual(commercialFallback.model.items,invalidCommercial.primary.items);
+ assert.equal(commercialFallback.model.items.filter(item=>item.commercial).length,0);
 });
 test('callback cannot issue arbitrary inventory updates or revalidate from a player event',async()=>{
  const api=await load();let s=api.createRoundContract(program());
