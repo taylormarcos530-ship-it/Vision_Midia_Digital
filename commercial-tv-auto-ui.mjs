@@ -122,11 +122,13 @@ if(typeof document!=='undefined'&&document.getElementById('auto-bench-form')){
   $('auto-mode').disabled=rebooting||!view.current||!view.connected;
   $('auto-complete').disabled=rebooting||!view.current||!view.connected;
   $('auto-disconnect').disabled=rebooting||!view.connected;
-  $('auto-reconnect').disabled=rebooting||view.connected;
+  // Keep this control tappable while connected: explain why reconnection isn't needed.
+  // A status check must not reset the timer, playlist position or round.
+  $('auto-reconnect').disabled=rebooting;
   $('auto-reconnect').textContent=rebooting?'Aguarde o reinício…':
-   view.connected?'Conectado ✓':'Reconectar agora';
+   view.connected?'Verificar conexão ✓':'Reconectar agora';
   $('auto-reconnect').title=view.connected?
-   'A conexão da bancada já está ativa. Para testar novamente, use Simular queda da conexão.':
+   'Consultar a conexão da bancada sem alterar a rodada, o item ou o avanço automático.':
    'Restabelecer agora a conexão fictícia, sem mudar a rodada ou o item.';
   $('auto-refresh').disabled=rebooting;
   $('auto-restart').disabled=rebooting;
@@ -156,7 +158,16 @@ if(typeof document!=='undefined'&&document.getElementById('auto-bench-form')){
  $('auto-complete').addEventListener('click',()=>runCompletion());
  $('auto-refresh').addEventListener('click',()=>move({type:'refresh'}));
  $('auto-disconnect').addEventListener('click',beginDisconnect);
- $('auto-reconnect').addEventListener('click',resumeConnection);
+ $('auto-reconnect').addEventListener('click',()=>{
+  if(rebooting)return;
+  if(!state.connected){resumeConnection();return;}
+  const notice='Conexão fictícia já ativa. Não é necessário reconectar. Para testar a queda, use Simular queda da conexão.';
+  state={...state,lastAction:notice};
+  $('auto-feedback').textContent=notice;
+  $('auto-feedback').dataset.state='ready';
+  $('auto-message').textContent=notice;
+  // Intentionally do NOT call render(): that would reschedule the media timer.
+ });
  $('auto-restart').addEventListener('click',beginRestart);
  $('auto-compatible').addEventListener('click',()=>{
   clearTick();clearRecovery();clearReboot();rebooting=false;auto=false;resumeAfterRecovery=false;
