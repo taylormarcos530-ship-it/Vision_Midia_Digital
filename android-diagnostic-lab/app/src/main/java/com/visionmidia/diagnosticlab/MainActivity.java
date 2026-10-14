@@ -227,7 +227,7 @@ public final class MainActivity extends Activity {
         pair(controls,button("Tela cheia",this::fullscreen),
                       button("Escolher MP4 (opcional)",this::pickVideo));
         pair(controls,button("▶ INTERCALAR MP4 + IMAGENS",this::openMediaRotation),
-                      button("← Diagnóstico atual",() -> showProgram("Você está no diagnóstico básico.")));
+                      button("↑ Voltar ao topo",() -> scroll.smoothScrollTo(0,0)));
 
         info = text("", 13, Color.LTGRAY);
         root.addView(info);
