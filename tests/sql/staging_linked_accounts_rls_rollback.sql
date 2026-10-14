@@ -20,8 +20,14 @@ do $test_a$ declare d jsonb;begin
  then raise exception 'A portal ownership failed'; end if;
  if (select count(*) from public.vision_advertisers)<>1
  then raise exception 'A sees another advertiser via RLS'; end if;
- if (select count(*) from public.vision_commercial_campaigns)<>0
- then raise exception 'unexpected production campaign in staging'; end if;
+ if (select count(*) from public.vision_commercial_campaigns)<>1
+ then raise exception 'A campaign isolation failure'; end if;
+ if jsonb_array_length(d->'campaigns')<>1
+    or d->'campaigns'->0->>'name'<>'HOMOLOGACAO A - Campanha ilustrativa (NAO VEICULAR)'
+    or d->'campaigns'->0->>'status'<>'draft'
+ then raise exception 'A portal returned incorrect campaign';end if;
+ if jsonb_array_length(d->'daily')<>0 or jsonb_array_length(d->'targets')<>0
+ then raise exception 'A received fictitious playback or TV records';end if;
 end $test_a$;
 reset role;
 
@@ -33,8 +39,14 @@ do $test_b$ declare d jsonb;begin
  then raise exception 'B portal ownership failed'; end if;
  if (select count(*) from public.vision_advertisers)<>1
  then raise exception 'B sees another advertiser via RLS'; end if;
- if (select count(*) from public.vision_commercial_campaigns)<>0
- then raise exception 'unexpected production campaign in staging'; end if;
+ if (select count(*) from public.vision_commercial_campaigns)<>1
+ then raise exception 'B campaign isolation failure'; end if;
+ if jsonb_array_length(d->'campaigns')<>1
+    or d->'campaigns'->0->>'name'<>'HOMOLOGACAO B - Campanha ilustrativa (NAO VEICULAR)'
+    or d->'campaigns'->0->>'status'<>'draft'
+ then raise exception 'B portal returned incorrect campaign';end if;
+ if jsonb_array_length(d->'daily')<>0 or jsonb_array_length(d->'targets')<>0
+ then raise exception 'B received fictitious playback or TV records';end if;
 end $test_b$;
 reset role;
 
