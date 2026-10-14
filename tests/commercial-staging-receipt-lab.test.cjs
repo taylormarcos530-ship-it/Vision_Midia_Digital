@@ -109,6 +109,23 @@ test('client timestamp cannot be before issue, beyond server clock, beyond expir
   assert.equal(x.state,s);
  }
 });
+test('completed claim without RFC3339 end time is rejected, incomplete final can omit it',async()=>{
+ const api=await apiPromise;let s=api.createStagingReceiptLab(program());
+ const a=issued(api,s);s=a.state;
+ for(const ended_at of [undefined,'2026-10-14',1234]){
+  const ev={...endEvent(a.occurrence,'event-no-end'),ended_at};
+  const result=receive(api,s,ev);
+  assert.equal(result.accepted,false);
+  assert.equal(result.state,s);
+ }
+ const event={...endEvent(a.occurrence,'event-incomplete'),completed:false};
+ delete event.ended_at;
+ const report=receive(api,s,event);
+ assert.equal(report.accepted,true);
+ const totals=api.recalculateStagingDaily(report.state);
+ assert.equal(totals[0].attempt_count,1);
+ assert.equal(totals[0].completed_count,0);
+});
 test('republish revokes all unused old occurrences after campaign removal and old playlist assignment',async()=>{
  const api=await apiPromise;
  for(const edit of [p=>{p.ads[0].status='paused';p.inventoryRevision='ads-revision-2';},
