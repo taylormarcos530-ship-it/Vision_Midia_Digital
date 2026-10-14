@@ -38,6 +38,37 @@ test('tiny bundled H264 mp4 is valid binary base64 and does not depend on intern
  assert.match(buf.toString('ascii'),/avc1/);
  assert.doesNotMatch(src(),/http:\/\/|https:\/\//);
 });
+test('v0.2 full-screen command moves the original stage and restores it without altering playback state',()=>{
+ const code=src();
+ assert.match(code,/private void fullscreen\(\)/);
+ assert.match(code,/stageParent\.removeView\(frame\)/);
+ assert.match(code,/overlay\.addView\(frame,new FrameLayout\.LayoutParams/);
+ assert.match(code,/ViewGroup\.LayoutParams\.MATCH_PARENT,ViewGroup\.LayoutParams\.MATCH_PARENT/);
+ assert.match(code,/Theme_Black_NoTitleBar_Fullscreen/);
+ assert.match(code,/SAIR DA TELA CHEIA/);
+ assert.match(code,/dialog\.setOnDismissListener/);
+ assert.match(code,/stageParent\.addView\(frame,/);
+ assert.match(code,/dialog\.show\(\)/);
+ assert.doesNotMatch(code,/root\.getSystemUiVisibility\(\)==flags/);
+});
+test('H.264 decoder outcome remains visible after short blue sample returns to normal program',()=>{
+ const code=src();
+ assert.match(code,/if \(!videoMode\) return true/);
+ assert.match(code,/MP4 CONCLUÍDO/);
+ assert.match(code,/ERRO DE VÍDEO/);
+ assert.match(code,/videoIndicator\.setVisibility\(View\.VISIBLE\)/);
+ assert.match(code,/video\.setOnCompletionListener/);
+ assert.match(code,/video\.setOnErrorListener/);
+ assert.match(code,/if \(!videoMode\) return;/);
+});
+test('revised test APK installs alongside older debug signer and production player',()=>{
+ const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v02'/);
+ assert.match(gradle,/versionCode 2/);
+ assert.match(gradle,/versionName '0\.2-laboratorio'/);
+ assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'\s*$/m);
+ assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
+});
 test('Android lab project does not depend on the original Android player',()=>{
  const build=fs.readFileSync(path.join(dir,'build.gradle'),'utf8');
  const app=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
