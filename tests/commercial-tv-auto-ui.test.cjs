@@ -64,9 +64,9 @@ test('clicking auto starts timed mock media completions and switches advertisers
  const h=await browserHarness();
  assert.deepEqual(h.campaignNames(),['Loja do João','Empresa B']);
  assert.equal(h.timers.size,0,'default state never auto-runs');
- assert.equal(h.widget('auto-reconnect').disabled,true);
- assert.equal(h.widget('auto-reconnect').textContent,'Conectado ✓');
- assert.match(h.widget('auto-reconnect').title,/já está ativa/);
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ assert.equal(h.widget('auto-reconnect').textContent,'Verificar conexão ✓');
+ assert.match(h.widget('auto-reconnect').title,/sem alterar a rodada/);
  h.click('auto-mode');
  assert.equal(h.timers.size,1);
  assert.match(h.widget('auto-mode').textContent,/Pausar/);
@@ -147,8 +147,8 @@ test('offline pause reconnects automatically after 3s and resumes exactly the sa
  h.tick(3000);
  assert.equal(h.widget('auto-round').textContent,checkpoint);
  assert.match(h.widget('auto-health').textContent,/ativa/);
- assert.equal(h.widget('auto-reconnect').disabled,true);
- assert.equal(h.widget('auto-reconnect').textContent,'Conectado ✓');
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ assert.equal(h.widget('auto-reconnect').textContent,'Verificar conexão ✓');
  assert.match(h.widget('auto-mode').textContent,/Pausar/);
  assert.equal([...h.timers.values()][0].delay,1600);
  h.tick(1600);
@@ -198,4 +198,38 @@ test('new recovery notices stay beside the buttons and are not real player opera
  assert.match(js,/rebootTimer=setTimeout/);
  assert.match(js,/resumeAfterRecovery/);
  assert.doesNotMatch(js,/fetch\(|createClient\(|localStorage|sessionStorage|\.supabase\.co|service_role/);
+});
+
+test('tapping connection check while already connected responds without restarting media timer',async()=>{
+ const h=await browserHarness();
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ assert.equal(h.widget('auto-reconnect').textContent,'Verificar conexão ✓');
+ h.click('auto-mode');
+ h.tick(1600);
+ const positionBefore=h.widget('auto-round').textContent;
+ const [idBefore,pendingBefore]=[...h.timers.entries()][0];
+ assert.equal(pendingBefore.delay,1600);
+ h.click('auto-reconnect');
+ assert.equal(h.widget('auto-round').textContent,positionBefore);
+ assert.match(h.widget('auto-feedback').textContent,/Conexão fictícia já ativa/);
+ assert.match(h.widget('auto-message').textContent,/Não é necessário reconectar/);
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ assert.equal(h.timers.size,1);
+ assert.equal([...h.timers.keys()][0],idBefore,'status check must not reset media timer');
+ h.tick(1600);
+ assert.match(h.widget('auto-round').textContent,/item 3 de 8/);
+});
+
+test('tap-to-check status does not modify simulated offline recovery behavior',async()=>{
+ const h=await browserHarness();
+ h.click('auto-reconnect');
+ assert.match(h.widget('auto-feedback').textContent,/já ativa/);
+ h.click('auto-disconnect');
+ assert.equal(h.widget('auto-reconnect').textContent,'Reconectar agora');
+ assert.equal(h.widget('auto-reconnect').disabled,false);
+ const before=h.widget('auto-round').textContent;
+ h.click('auto-reconnect');
+ assert.equal(h.widget('auto-round').textContent,before);
+ assert.equal(h.widget('auto-reconnect').textContent,'Verificar conexão ✓');
+ assert.equal(h.timers.size,0,'manual reconnect stays paused when auto mode was off');
 });
