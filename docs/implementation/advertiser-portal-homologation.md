@@ -291,3 +291,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Esse teste diz respeito exclusivamente ao laboratório offline `commercial-tv-auto-bench.html`. **Não confirma reconexão de uma TV física, persistência do APK, contabilização de exibições nem operação do gateway produtivo.**
 - **Pendente:** verificação visual de **Simular reinício** com restauração da rodada e do item no mesmo navegador; depois planejar homologação em player exclusivo de testes antes de qualquer ativação operacional.
 - Nenhum arquivo operacional, Supabase, device-gateway ou TV de cliente foi modificado neste registro.
+
+## Reinício simulado confirmado pelo operador no Android
+
+- O operador informou que ao acionar **Simular reinício** no laboratório automático a mensagem de reinício foi exibida e a programação **continuou avançando automaticamente** após a recuperação. Essa observação confirma visualmente o fluxo de retomada no navegador.
+- Juntamente com a evidência anterior da queda fictícia na Rodada 4 seguida de reconexão e continuidade, ficam **aprovados pelo operador na bancada offline** os fluxos básicos de intercalação por rodadas, pausa, reconexão e continuidade após reinício simulado.
+- Limitação explícita: a resposta verbal comprova a continuidade, mas não contém um par de capturas antes/depois para verificar o **número exato do item e da rodada** imediatamente após o reinício. Não afirmar persistência real em disco, após fechamento do navegador, falta de energia, atualização de APK, nem execução no player Android.
+- **Próxima etapa bloqueada até validação própria**: ensaiar em player exclusivamente de homologação, com TV e playlist fictícias, autorização separada para qualquer integração, mantendo a feature comercial desativada em produção. Nenhuma mudança operacional deve ser feita a partir desta evidência isoladamente.
+- Registro documental apenas; nenhuma alteração em arquivo operacional protegido, banco, Edge Functions, APK, TVs, distribuição ou produção.
