@@ -44,21 +44,23 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
   $('media-placeholder').hidden=true;
   if(item.type==='video'){
    video.hidden=false;video.muted=true;video.playsInline=true;video.loop=false;
-   video.src=item.url;
    video.onended=()=>onFinish(key);
    video.onerror=()=>apply({type:'media-error',key});
+   video.src=item.url;
    const promise=video.play();
    if(promise?.catch)promise.catch(()=>{if(mediaTestView(player).key===key){
     stopMedia();player=mediaTestEvent(player,{type:'pause'}).player;
     render();output('Vídeo impedido pelo navegador. Toque em Iniciar novamente.');
    }});
   }else{
-   photo.hidden=false;photo.src=item.url;
+   photo.hidden=false;
    photo.onerror=()=>apply({type:'media-error',key});
    photo.onload=()=>{
     if(mediaTestView(player).key===key)
      clock=setTimeout(()=>{clock=null;onFinish(key)},2500);
    };
+   // Attach handlers before src: cached images can load very quickly on Android.
+   photo.src=item.url;
   }
  }
  function render(){
