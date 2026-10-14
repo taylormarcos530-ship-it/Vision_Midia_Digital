@@ -2,7 +2,7 @@
 
 **Branch isolada:** `fix/advertiser-portal-safety-20261013`
 **Base da feature preservada:** `87d907010db614d5459b6af9c7b421328e64f225`
-**Estado:** preview ilustrativo disponível, produção intocada, homologação remota bloqueada até haver Supabase de teste independente.
+**Estado atualizado:** projeto de homologação independente criado e esquema instalado; segurança RLS validada no banco de teste; login HTTP preparado em página exclusiva, aguardando contas fictícias no Supabase Auth. Produção intocada.
 
 ## Concluído nesta etapa
 
@@ -94,3 +94,13 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - O Security Advisor de homologação mostrou somente avisos conhecidos: seis tabelas operacionais mínimas sem políticas de acesso (propositalmente inacessíveis por cliente neste ambiente isolado) e a RPC `vision_advertiser_portal` com `SECURITY DEFINER` executável por autenticados, intencional e verificada quanto à identidade. Revisar novamente antes de qualquer integração real. Referência do linter: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable .
 - **Não houve criação de contas Auth com senhas reais**, publicação de Edge Functions, conexão de preview a Supabase, teste em TV física, merge ou deploy de produção. O teste de identidades foi transacional, sem login HTTP.
 - **Próxima etapa segura:** usar a API Admin Auth no próprio ambiente de homologação para criar duas contas de teste e um Master fictício; testar login real, bloqueio e revogação. Preparar permissões de Edge Function apenas no projeto de testes, sem função nova ou ativação em produção. Depois validar Storage/relatórios com dados fictícios.
+
+## Prévia de login real isolada — 13/10/2026
+
+- Página nova **somente para homologação**: `anunciante-homologacao.html`, na branch `fix/advertiser-portal-safety-20261013`.
+- Configuração exclusiva `commercial-staging-config.js`, apontando apenas para `https://jmiuitrrhtaeyrpuyohk.supabase.co` e utilizando a chave **publishable** pública do projeto de testes; sem chave secreta, sem `service_role`. Uma verificação de hostname só libera essa configuração em previews Vercel da equipe `vision-5529` e localhost; demais domínios ficam desabilitados.
+- **Portal normal inalterado**: `commercial-config.js` continua `enabled:false`, sem URL ou chave de Supabase. A rota de demonstração `anunciante.html?demo=1` mantém seus dados fictícios e nenhuma API remota.
+- Sessões isoladas: token de homologação fica em `sessionStorage` sob `vision_advertiser_session_v1_staging_v1`, separado da chave anterior. Uma resposta de login atrasada após logout/limpeza da sessão não consegue reabrir o acesso.
+- Testes com requisições Auth **simuladas em Node**, cobrindo escopo de origem, credenciais inválidas, headers sem segredo, escrita separada da sessão e corrida de logout. **115/115 testes CI PASS**, execução https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38489770482 .
+- Consultado o Supabase isolado: `auth.users=0`, `vision_advertisers=0`, `vision_commercial_campaigns=0` e marcador `private.vision_staging_guard` presente. Por isso a interface de login está preparada mas **não houve autenticação HTTP real concluída** e não se devem compartilhar credenciais de produção.
+- **Próximo bloco:** criar duas contas fictícias usando a API Admin Auth oficial ou o Dashboard **do projeto de homologação** (nunca inserindo senhas em SQL nem copiando pessoas reais); inserir apenas os vínculos fictícios nas tabelas `vision_advertisers` do novo projeto; testar login real, expiração, RLS de A e B, bloqueio e restauração. Nenhum deploy de Edge Functions nem interação com TVs reais até autorização posterior.
