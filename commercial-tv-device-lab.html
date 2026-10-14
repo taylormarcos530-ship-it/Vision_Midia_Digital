@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; media-src blob:; img-src 'self' data:; connect-src 'none'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Diagnóstico da TV de laboratório — Vision</title>
+<link rel="stylesheet" href="./commercial.css">
+<style>
+.diag-wrap{max-width:1100px;margin:0 auto}
+.diag-note{background:#182842;border:1px solid #405a78;border-radius:12px;padding:14px 16px;margin:15px 0;line-height:1.6}
+.diag-stage{position:relative;width:100%;max-height:68vh;aspect-ratio:16/9;box-sizing:border-box;border:3px solid #f1bb56;background:#101c2f;color:#f8fbff;border-radius:16px;overflow:hidden;margin:18px auto;display:grid;place-items:center}
+.diag-stage.portrait{width:min(100%,calc(68vh * 9 / 16));aspect-ratio:9/16}
+.diag-stage:fullscreen,.diag-stage:-webkit-full-screen{width:100%;height:100%;max-height:none;aspect-ratio:auto;border:0;border-radius:0}
+.diag-pattern{position:absolute;inset:0;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;pointer-events:none}
+.diag-corner{padding:10px;font-size:clamp(11px,1.7vw,21px);font-weight:800;background:linear-gradient(125deg,#1b4263aa,#1b426310);border:1px dashed #ffda8c}
+.diag-corner:nth-child(2),.diag-corner:nth-child(4){text-align:right}
+.diag-corner:nth-child(3),.diag-corner:nth-child(4){display:flex;align-items:end}
+.diag-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#050a12}
+.diag-stage video.cover{object-fit:cover}
+.diag-stage video[hidden],.diag-stage .diag-pattern[hidden]{display:none}
+.diag-stage-title{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);background:#081221bb;border-radius:12px;text-align:center;padding:14px;pointer-events:none;max-width:85%;font-weight:800;font-size:clamp(14px,3vw,26px)}
+.diag-controls{display:grid;grid-template-columns:repeat(auto-fit,minmax(175px,1fr));gap:9px;margin:12px 0 20px}
+.diag-controls button{min-height:50px;width:100%}
+.diag-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.diag-card{background:#14253e;border:1px solid #36526d;border-radius:14px;padding:14px 17px;line-height:1.65;font-size:14px}
+.diag-card h2{font-size:16px;margin:0 0 8px}
+.diag-card p{margin:7px 0}
+.diag-status{font-weight:700;color:#f7d28b}
+.diag-file{display:block;width:100%;max-width:100%;font-size:14px;padding:12px 0}
+.diag-muted{color:#c6d0dd;font-size:13px}
+.diag-procedure{margin:20px 0;border-radius:14px;border:1px solid #36526d;padding:18px 24px;background:#13233b}
+.diag-procedure li{margin:10px 0}
+@media(max-width:680px){.diag-grid{grid-template-columns:1fr}.diag-card{padding:12px}.diag-stage{border-radius:9px}.diag-controls{grid-template-columns:repeat(2,minmax(0,1fr))}.diag-controls button{font-size:13px}}
+</style>
+<script type="module" src="./commercial-tv-device-lab.mjs"></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="./commercial-tv-media-player.html">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Diagnóstico isolado de dispositivo</span></header>
+<main id="device-lab" class="diag-wrap">
+<div class="notice"><strong>LABORATÓRIO, NÃO PRODUÇÃO</strong> · Use somente um navegador/TV Box de testes. Sem login, emparelhamento, instalação de APK, gravação de impressões, banco de dados ou conexão com TVs de clientes.</div>
+<h1>Diagnóstico de tela e vídeo</h1>
+<p>Confira a compatibilidade do navegador do aparelho, a área visível e um arquivo de vídeo local. Os controles de retrato/horizontal abaixo <strong>simulam o formato da tela nesta página</strong>; não giram fisicamente a TV nem alteram o sistema Android.</p>
+<div id="diag-stage" class="diag-stage" aria-label="Quadro visual de referência">
+ <div id="diag-pattern" class="diag-pattern">
+  <span class="diag-corner">CANTO 1<br>SUPERIOR ESQUERDO</span>
+  <span class="diag-corner">CANTO 2<br>SUPERIOR DIREITO</span>
+  <span class="diag-corner">CANTO 3<br>INFERIOR ESQUERDO</span>
+  <span class="diag-corner">CANTO 4<br>INFERIOR DIREITO</span>
+ </div>
+ <video id="diag-video" muted playsinline controls preload="metadata" hidden></video>
+ <div id="diag-pattern-title" class="diag-stage-title">Todos os quatro cantos devem estar visíveis</div>
+</div>
+<div class="diag-controls">
+ <button type="button" id="diag-landscape">Simular horizontal 16:9</button>
+ <button type="button" id="diag-portrait">Simular vertical 9:16</button>
+ <button type="button" id="diag-fit">Preencher / Mostrar inteiro</button>
+ <button type="button" id="diag-fullscreen">Tela cheia</button>
+ <button type="button" id="diag-play">Iniciar vídeo local</button>
+ <button type="button" id="diag-pause">Pausar vídeo</button>
+ <button type="button" id="diag-interrupt">Simular interrupção (2 s)</button>
+</div>
+<div class="diag-grid">
+<section class="diag-card">
+ <h2>Visor e navegador</h2>
+ <p id="diag-viewport">Aguardando JavaScript. Se não atualizar, o navegador pode ser antigo.</p>
+ <p id="diag-screen">Orientação física não verificada.</p>
+ <p id="diag-fullscreen-state">Tela cheia: não solicitada.</p>
+ <p id="diag-fit-state">Preenchimento: mostrar inteiro (contain).</p>
+ <p class="diag-muted">Medidas são da janela do navegador; não comprovam rotação real do hardware.</p>
+</section>
+<section class="diag-card">
+ <h2>Compatibilidade de vídeo</h2>
+ <p id="diag-codecs">Verificando codecs declarados pelo navegador…</p>
+ <p class="diag-muted">“Provável” não prova decodificação; teste reproduzindo um arquivo neste aparelho.</p>
+</section>
+<section class="diag-card">
+ <h2>Arquivo de teste (somente local)</h2>
+ <label for="diag-file">Escolha um MP4 ou WebM com até 100 MB:</label>
+ <input id="diag-file" class="diag-file" type="file" accept="video/mp4,video/webm">
+ <p id="diag-file-status">Nenhum arquivo carregado.</p>
+ <p class="diag-muted">Arquivo mantido somente em memória local via blob:. Não é enviado ao servidor.</p>
+</section>
+<section class="diag-card">
+ <h2>Execução e controle remoto</h2>
+ <p id="diag-video-state" class="diag-status" role="status" aria-live="polite">Nenhum vídeo iniciado.</p>
+ <p id="diag-position">Posição de vídeo: —</p>
+ <p id="diag-events">Vídeos concluídos neste teste: 0 · Interrupções: 0 · Erros: 0</p>
+ <p id="diag-key">Última tecla de controle: nenhuma</p>
+ <p class="diag-muted">Pressione setas/Enter no controle da TV Box; a página somente mostra a tecla recebida, sem controlar o dispositivo.</p>
+</section>
+</div>
+<section class="diag-procedure">
+ <h2>Roteiro de homologação em aparelho separado</h2>
+ <ol>
+  <li>Abra esta URL no navegador de uma TV Box <strong>sem cliente vinculado</strong>. Verifique se os quatro cantos do quadro aparecem inteiros.</li>
+  <li>Teste o modo horizontal e vertical; depois, toque em Tela cheia. Registre se o navegador permite preencher a tela e se corta alguma borda.</li>
+  <li>Escolha um vídeo local e toque em Iniciar. Observe fluidez, término real, áudio silenciado intencionalmente e mensagem de erro, se houver.</li>
+  <li>Durante o vídeo, toque em Simular interrupção (2 s). A posição deve ser preservada e a retomada deve ocorrer somente com a página visível.</li>
+  <li>Teste as teclas do controle remoto e anote o navegador/modelo da TV Box. Não instale o APK de clientes nem altere qualquer emparelhamento.</li>
+ </ol>
+ <p class="diag-muted">Se algum diagnóstico não aparecer, a página não foi validada nesse navegador. Esse laboratório não substitui teste posterior de WebView do APK, rede real, modo quiosque ou atualização do player.</p>
+</section>
+</main>
+<footer>VISION MÍDIA DIGITAL <span>Somente laboratório — não publica programação</span></footer>
+</body></html>
