@@ -50,7 +50,7 @@ public final class MediaRotationActivity extends Activity {
     private int clipPosition=0;
     private boolean running=false,prepared=false,disconnected=false,rebooting=false;
     private boolean adVisitCounted=false;
-    private boolean resumeAfterDrop=false,failed=false,videoReady=false;
+    private boolean resumeAfterDrop=false,failed=false;
     private File clip;
     private Bitmap adA,adB;
 
@@ -202,10 +202,11 @@ public final class MediaRotationActivity extends Activity {
             File asset=localVideo();
             prepared=false;
             video.setOnPreparedListener(mp->{
-                if(token!=generation||failed)return;
+                if(token!=generation||failed||!running||disconnected||rebooting)return;
                 mp.setVolume(0f,0f);
                 prepared=true;
-                if(running&&!disconnected&&!rebooting)video.start();
+                if(clipPosition>0)mp.seekTo(clipPosition);
+                video.start();
             });
             video.setOnCompletionListener(mp->{
                 if(token!=generation||!running||!prepared||failed)return;
@@ -228,13 +229,14 @@ public final class MediaRotationActivity extends Activity {
         adVisitCounted=false;
         itemIndex++;
         if(itemIndex==SEQUENCE.length){itemIndex=0;round++;}
+        prepared=false;
         video.stopPlayback();
         clipPosition=0;
         startCurrent();
     }
     private void fail(String message){
         invalidateCallbacks();
-        running=false;failed=true;prepared=false;
+        running=false;failed=true;prepared=false;resumeAfterDrop=false;
         video.stopPlayback();
         writeStatus(message);
     }
@@ -243,20 +245,21 @@ public final class MediaRotationActivity extends Activity {
         if(disconnected||rebooting){writeStatus("Aguarde o retorno da simulação.");return;}
         if(running){writeStatus("Rodízio já em andamento.");return;}
         running=true;
-        if(isAd()){
-            startCurrent();
-        }else if(prepared){
-            video.start();
-            writeStatus("MP4 retomado da posição pausada.");
-        }else{
-            startCurrent();
-        }
+        // Always rearm decoder completion/error callbacks after the token is invalidated.
+        // Reopening the SAME clip and seeking preserves item/approximate video position.
+        startCurrent();
     }
     private void pausePlayback(){
-        boolean wasRunning=running;running=false;resumeAfterDrop=false;
+        boolean wasRunning=running;
+        running=false;resumeAfterDrop=false;
+        disconnected=false;rebooting=false;
         invalidateCallbacks();
-        if(!isAd()&&wasRunning&&prepared){
-            clipPosition=video.getCurrentPosition();video.pause();
+        if(!isAd()){
+            if(wasRunning&&prepared)clipPosition=Math.max(0,video.getCurrentPosition());
+            // Release the previous decoder to avoid stale completion callbacks and
+            // guarantee a fresh onPrepared/onCompletion listener after recovery.
+            prepared=false;
+            video.stopPlayback();
         }
         writeStatus("Pausado, item preservado.");
     }
