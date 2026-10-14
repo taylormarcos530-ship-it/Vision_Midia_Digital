@@ -142,3 +142,11 @@ test('native lab recovery simulates outage without writing playback logs',()=>{
  assert.match(java,/void onDestroy\(\)/);
  assert.doesNotMatch(java,/SharedPreferences|localStorage|System\.out\.println|Log\.d|sendBeacon/);
 });
+
+test('pausing the same raster advertisement never counts it as a second visit',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ assert.match(java,/private boolean adVisitCounted=false;/);
+ assert.match(java,/if\(!adVisitCounted\)\{commercialsShown\+\+;adVisitCounted=true;\}/);
+ assert.match(java,/concluded\+\+;\s*adVisitCounted=false;\s*itemIndex\+\+;/);
+ assert.match(java,/itemIndex=0;round=1;concluded=0;commercialsShown=0;clipPosition=0;\s*adVisitCounted=false;/);
+});
