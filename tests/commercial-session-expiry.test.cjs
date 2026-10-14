@@ -114,6 +114,7 @@ test('a failed token refresh removes the previous advertiser dashboard and reque
   logout:async()=>{}
  };
  const {element}=renderUI(api);
+ element('#staging-check-output').textContent='Conta autorizada: Anunciante B';
  // Failed token rotation already clears the shared session in CommercialAPI.refresh().
  active=false;
  reject(Object.assign(new Error('invalid_grant'),{status:400}));
@@ -121,6 +122,7 @@ test('a failed token refresh removes the previous advertiser dashboard and reque
  assert.equal(cleared,1);
  assert.equal(element('#dashboard').hidden,true);
  assert.equal(element('#campaigns').innerHTML,'');
+ assert.equal(element('#staging-check-output').textContent,'');
  assert.equal(element('#login').hidden,false);
  assert.equal(element('#logout').hidden,true);
  assert.match(element('#status').textContent,/sessão expirou/i);
@@ -137,11 +139,13 @@ test('revoked advertiser access fails closed; B logout removes data before pendi
  };
  const {element}=renderUI(api);
  element('#campaigns').innerHTML='<div>Old B campaign</div>';
+ element('#staging-check-output').textContent='Conta autorizada: Anunciante B';
  element('#dashboard').hidden=false;
  await element('#logout').onclick();
  assert.equal(element('#dashboard').hidden,true);
  assert.equal(element('#campaigns').innerHTML,'');
  assert.equal(element('#advertiser-name').textContent,'');
+ assert.equal(element('#staging-check-output').textContent,'');
  assert.equal(element('#login').hidden,false);
  resolve({advertiser:{name:'A'},campaigns:[]});
  await new Promise(r=>setImmediate(r));
