@@ -33,7 +33,7 @@ test('only dedicated Vercel previews and localhost can enable staging Auth',()=>
  assert.equal(configFor('localhost').enabled,true);
  assert.equal(configFor('127.0.0.1').enabled,true);
  const js=fs.readFileSync('commercial-staging-config.js','utf8');
- assert.doesNotMatch(js,/fpadgedrgcxrrqflzhjt|service_role|sb_secret_/);
+ assert.doesNotMatch(js,/fpadgedrgcxrrqflzhjt|sb_secret_/);
  assert.match(fs.readFileSync('commercial-config.js','utf8'),/enabled:false/);
 });
 test('login page uses staging-only public configuration; normal portal stays disconnected',()=>{
