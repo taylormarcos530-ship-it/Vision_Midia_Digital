@@ -38,7 +38,7 @@ function validateAds(ads){
 }
 export function describeRoundProgram(input){
  if(!input||!validateBase(input.primary)||!validateAds(input.ads||[])||
-  !safeId(input.assignmentRevision)||!safeId(input.inventoryRevision))
+  !safeId(input.deviceId)||!safeId(input.assignmentRevision)||!safeId(input.inventoryRevision))
   return {valid:false,reason:'invalid_program',baseKey:null,adKey:null,key:null};
  const capabilities=input.capabilities||{};
  const supported=capabilities.supportsItemSchedules===true&&
@@ -49,7 +49,7 @@ export function describeRoundProgram(input){
   playlist:base?.playlist?[
    base.playlist.id,text(base.playlist.updated_at),base.playlist.shuffle===true,
    text(base.playlist.repeat_mode)]:null,
-  assignmentRevision:input.assignmentRevision,
+  deviceId:input.deviceId,assignmentRevision:input.assignmentRevision,
   media:(base?.items||[]).map(item=>[
    item.id,item.media.id,text(item.media.checksum),text(item.media.name),
    text(item.media.type),text(item.duration_seconds),item.essential===true,
