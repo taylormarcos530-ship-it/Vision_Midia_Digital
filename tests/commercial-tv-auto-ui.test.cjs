@@ -35,13 +35,13 @@ async function browserHarness(){
  const code=fs.readFileSync('commercial-tv-auto-ui.mjs','utf8').replace(/^import[^\n]+\n/gm,'');
  vm.runInNewContext(code,{
   document,createAutoBench,autoBenchView,advanceAutoBench,
-  setTimeout(fn,delay){assert.equal(delay,1600);const id=++timerId;timers.set(id,fn);return id},
+  setTimeout(fn,delay){assert.ok([1600,2000,3000].includes(delay));const id=++timerId;timers.set(id,{callback:fn,delay});return id},
   clearTimeout(id){timers.delete(id)}
  });
  return {
   widget,inputs,document,timers,events,
   click(id){const handler=widget(id).listeners.click;assert.equal(typeof handler,'function');handler()},
-  tick(){const [id,callback]=timers.entries().next().value||[];assert.ok(callback,'expected a pending simulated completion');timers.delete(id);callback()},
+  tick(delay){const [id,entry]=[...timers.entries()].find(([_,t])=>delay===undefined||t.delay===delay)||[];assert.ok(entry,'expected a pending simulated completion'+(delay?' at '+delay+' ms':''));timers.delete(id);entry.callback()},
   campaignNames(){return widget('auto-sequence').children.filter(row=>row.className.includes('auto-ad')).map(row=>row.children[2].textContent)}
  };
 }
@@ -81,14 +81,23 @@ test('disconnect stops timer, reconnect preserves progress, refresh and reboot d
  h.click('auto-mode');h.tick();h.tick();
  const before=h.widget('auto-round').textContent;
  h.click('auto-disconnect');
- assert.equal(h.timers.size,0);
+ assert.equal(h.timers.size,1,'the only remaining timer simulates reconnection');
+ assert.equal([...h.timers.values()][0].delay,3000);
  assert.match(h.widget('auto-health').textContent,/interrompida/);
+ assert.match(h.widget('auto-feedback').textContent,/reconexão|retorno automático|SEM CONEXÃO/i);
  assert.equal(h.widget('auto-complete').disabled,true);
  h.click('auto-reconnect');
+ assert.equal(h.timers.size,1,'auto resumes from the preserved item');
+ assert.equal([...h.timers.values()][0].delay,1600);
  assert.equal(h.widget('auto-round').textContent,before);
  h.click('auto-refresh');
  assert.equal(h.widget('auto-round').textContent,before);
  h.click('auto-restart');
+ assert.match(h.widget('auto-feedback').textContent,/REINICIANDO/);
+ assert.equal(h.widget('auto-restart').disabled,true);
+ assert.equal(h.widget('auto-round').textContent,before);
+ h.tick(2000);
+ assert.match(h.widget('auto-message').textContent,/Reinício simulado concluído/);
  assert.equal(h.widget('auto-round').textContent,before);
  h.click('auto-complete');
  assert.match(h.widget('auto-round').textContent,/item 4 de 8/);
@@ -117,4 +126,69 @@ test('backgrounding tab stops simulated clock instead of allowing silent playbac
  assert.equal(h.timers.size,0);
  assert.match(h.widget('auto-mode').textContent,/Iniciar/);
  assert.match(h.widget('auto-round').textContent,/Rodada 1/);
+});
+
+test('offline pause reconnects automatically after 3s and resumes exactly the same step',async()=>{
+ const h=await browserHarness();
+ h.click('auto-mode');
+ h.tick(1600);h.tick(1600);
+ const checkpoint=h.widget('auto-round').textContent;
+ h.click('auto-disconnect');
+ assert.equal(h.timers.size,1);
+ assert.equal([...h.timers.values()][0].delay,3000);
+ assert.equal(h.widget('auto-complete').disabled,true);
+ assert.match(h.widget('auto-feedback').textContent,/SEM CONEXÃO/);
+ assert.equal(h.widget('auto-round').textContent,checkpoint);
+ h.tick(3000);
+ assert.equal(h.widget('auto-round').textContent,checkpoint);
+ assert.match(h.widget('auto-health').textContent,/ativa/);
+ assert.match(h.widget('auto-mode').textContent,/Pausar/);
+ assert.equal([...h.timers.values()][0].delay,1600);
+ h.tick(1600);
+ assert.match(h.widget('auto-round').textContent,/item 4 de 8/);
+});
+
+test('reboot while disconnected shows 2s progress, returns online without skipping the current media',async()=>{
+ const h=await browserHarness();
+ h.click('auto-mode');h.tick(1600);h.tick(1600);
+ const checkpoint=h.widget('auto-round').textContent;
+ h.click('auto-disconnect');
+ assert.equal([...h.timers.values()][0].delay,3000);
+ h.click('auto-restart');
+ assert.equal(h.timers.size,1,'reboot replaces reconnect timer');
+ assert.equal([...h.timers.values()][0].delay,2000);
+ assert.match(h.widget('auto-status').textContent,/Reiniciando/);
+ assert.match(h.widget('auto-feedback').textContent,/REINICIANDO/);
+ assert.match(h.widget('auto-current').textContent,/Recuperando checkpoint/);
+ assert.equal(h.widget('auto-complete').disabled,true);
+ h.tick(2000);
+ assert.equal(h.widget('auto-round').textContent,checkpoint);
+ assert.match(h.widget('auto-health').textContent,/ativa/);
+ assert.match(h.widget('auto-message').textContent,/Reinício simulado concluído/);
+ assert.equal([...h.timers.values()][0].delay,1600);
+ h.tick(1600);
+ assert.match(h.widget('auto-round').textContent,/item 4 de 8/);
+});
+
+test('manual reconnection cancels delayed automatic reconnection and keeps paused mode paused',async()=>{
+ const h=await browserHarness();
+ h.click('auto-disconnect');
+ assert.equal([...h.timers.values()][0].delay,3000);
+ h.click('auto-reconnect');
+ assert.equal(h.timers.size,0);
+ assert.match(h.widget('auto-health').textContent,/ativa/);
+ assert.match(h.widget('auto-mode').textContent,/Iniciar/);
+ assert.match(h.widget('auto-round').textContent,/Rodada 1 · item 1 de 8/);
+});
+
+test('new recovery notices stay beside the buttons and are not real player operations',()=>{
+ const html=fs.readFileSync('commercial-tv-auto-bench.html','utf8');
+ const js=fs.readFileSync('commercial-tv-auto-ui.mjs','utf8');
+ assert.match(html,/id="auto-feedback"/);
+ assert.match(html,/role="status" aria-live="polite"/);
+ assert.match(html,/reconecta automaticamente após cerca de 3 segundos/);
+ assert.match(js,/reconnectTimer=setTimeout/);
+ assert.match(js,/rebootTimer=setTimeout/);
+ assert.match(js,/resumeAfterRecovery/);
+ assert.doesNotMatch(js,/fetch\(|createClient\(|localStorage|sessionStorage|\.supabase\.co|service_role/);
 });
