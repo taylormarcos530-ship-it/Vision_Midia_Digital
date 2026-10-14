@@ -7,9 +7,9 @@ const src=()=>fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/d
 const manifest=()=>fs.readFileSync(path.join(dir,'app/src/main/AndroidManifest.xml'),'utf8');
 test('diagnostic has a separate application ID and never replaces the production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v03'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v04'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
- assert.match(manifest(),/Vision Diagnóstico TESTE 0.3/);
+ assert.match(manifest(),/Vision Diagnóstico TESTE 0.4/);
  assert.match(manifest(),/LEANBACK_LAUNCHER/);
 });
 test('no Android privileges, boot receivers, services, or production network clients',()=>{
@@ -63,9 +63,9 @@ test('H.264 decoder outcome remains visible after short blue sample returns to n
 });
 test('revised test APK installs alongside older debug signer and production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v03'/);
- assert.match(gradle,/versionCode 3/);
- assert.match(gradle,/versionName '0\.3-laboratorio'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v04'/);
+ assert.match(gradle,/versionCode 4/);
+ assert.match(gradle,/versionName '0\.4-laboratorio'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'\s*$/m);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
 });
@@ -99,4 +99,46 @@ test('Android lab project does not depend on the original Android player',()=>{
  assert.match(build,/com\.android\.application/);
  assert.match(settings,/include ':app'/);
  assert.doesNotMatch(settings+app,/android-player|com\.visionmidia\.player|implementation /);
+});
+
+test('v0.4 isolated native mode maps six point videos and two raster ads at items 4 and 8',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ assert.match(java,/private static final int\[\] SEQUENCE = \{0,1,2,-1,3,4,5,-2\}/);
+ assert.match(java,/private static final String\[\] BASE/);
+ assert.match(java,/Bitmap\.createBitmap\(960,540,Bitmap\.Config\.ARGB_8888\)/);
+ assert.match(java,/ImageView\.ScaleType\.FIT_CENTER/);
+ assert.match(java,/PUBLICIDADE FICTÍCIA/);
+ assert.match(java,/EMPRESA A/);
+ assert.match(java,/EMPRESA B/);
+ const xml=manifest();
+ assert.match(xml,/<activity\s+android:name="\.MediaRotationActivity"\s+android:exported="false"/);
+ assert.match(src(),/startActivity\(new Intent\(this,MediaRotationActivity\.class\)\)/);
+ assert.match(src(),/INTERCALAR MP4 \+ IMAGENS/);
+});
+test('native video waits for real decoder completion and drops stale callbacks',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ assert.match(java,/video\.setOnPreparedListener\(mp->/);
+ assert.match(java,/video\.setOnCompletionListener\(mp->/);
+ assert.match(java,/video\.setOnErrorListener\(\(mp,what,extra\)->/);
+ assert.match(java,/if\(token!=generation\|\|!running\|\|!prepared\|\|failed\)return;/);
+ assert.match(java,/completeCurrent\(\); \/\/ NEVER a timer for MP4/);
+ assert.match(java,/void fail\(String message\)/);
+ assert.match(java,/running=false;failed=true;prepared=false;/);
+ assert.match(java,/video\.stopPlayback\(\)/);
+ assert.match(java,/handler\.postDelayed\(timer,2000\)/);
+ const onVideo=java.slice(java.indexOf('video.setOnCompletionListener'),java.indexOf('video.setOnErrorListener'));
+ assert.doesNotMatch(onVideo,/postDelayed|completed\+\+/);
+ assert.doesNotMatch(java,/\bfetch\(|HttpsURLConnection|OkHttpClient|WebView|Supabase/);
+});
+test('native lab recovery simulates outage without writing playback logs',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ assert.match(java,/handler\.postDelayed\(timer,3000\)/);
+ assert.match(java,/handler\.postDelayed\(timer,2000\)/);
+ assert.match(java,/private void pausePlayback\(\)/);
+ assert.match(java,/private void restart\(\)/);
+ assert.match(java,/private void drop\(\)/);
+ assert.match(java,/private void reset\(\)/);
+ assert.match(java,/void onPause\(\)/);
+ assert.match(java,/void onDestroy\(\)/);
+ assert.doesNotMatch(java,/SharedPreferences|localStorage|System\.out\.println|Log\.d|sendBeacon/);
 });
