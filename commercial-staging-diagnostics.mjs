@@ -14,7 +14,8 @@ export async function checkStagingAccess(config, api, fetcher){
    method:'GET',cache:'no-store',headers:{apikey:config.supabasePublishableKey}
   });
   if(!health.ok)throw new Error('Serviço de autenticação indisponível (HTTP '+health.status+').');
-  if(!api.session()?.access_token){
+  const sessionToken=api.session()?.access_token;
+  if(!sessionToken){
    return {ok:true,authenticated:false,lines:[
     'Conexão com o Supabase de homologação: OK.',
     'Login: ainda não efetuado neste navegador.',
@@ -22,6 +23,9 @@ export async function checkStagingAccess(config, api, fetcher){
    ]};
   }
   const data=await api.rpc('vision_advertiser_portal');
+  if(api.session()?.access_token!==sessionToken){
+   return {ok:false,authenticated:false,lines:['A sessão mudou durante a verificação. Verifique novamente após entrar.']};
+  }
   if(!data?.advertiser?.id||!Array.isArray(data.campaigns)
     ||!Array.isArray(data.targets)||!Array.isArray(data.daily)){
    throw new Error('Resposta do portal incompleta. Verifique a configuração de homologação.');
