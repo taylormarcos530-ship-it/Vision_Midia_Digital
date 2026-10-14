@@ -56,12 +56,23 @@ if(typeof document!=='undefined' && document.getElementById('staging-check-acces
  const button=document.getElementById('staging-check-access');
  const output=document.getElementById('staging-check-output');
  const api=new CommercialAPI();
+ let checkVersion=0;
+ const clearDiagnostic=()=>{
+  checkVersion++;
+  output.textContent='';
+  delete output.dataset.result;
+ };
+ // Never leave the previous advertiser's name visible after exit or account change.
+ document.getElementById('logout')?.addEventListener('click',clearDiagnostic,true);
+ document.getElementById('login-form')?.addEventListener('submit',clearDiagnostic,true);
  button.onclick=async()=>{
   if(button.disabled)return;
+  const currentVersion=++checkVersion;
   button.disabled=true;
   output.textContent='Verificando apenas o Supabase de homologação...';
   try{
    const result=await checkStagingAccess(api.config,api,fetch);
+   if(currentVersion!==checkVersion)return;
    output.textContent=result.lines.join('\n');
    output.dataset.result=result.ok?'ok':'error';
   }finally{button.disabled=false}
