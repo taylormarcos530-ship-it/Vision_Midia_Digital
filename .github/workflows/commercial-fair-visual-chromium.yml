@@ -1,0 +1,80 @@
+name: Commercial Fairness Visual Browser Lab
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+    paths:
+      - 'commercial-tv-fair-rotation-lab.html'
+      - 'commercial-tv-fair-rotation-ui.mjs'
+      - 'commercial-tv-fair-rotation-lab.mjs'
+      - 'tests/browser/commercial-fair-visual-browser.cjs'
+      - 'tests/commercial-tv-fair-rotation-*.test.cjs'
+      - '.github/workflows/commercial-fair-visual-chromium.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - name: Checkout isolated branch only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Ensure protected player and backend files remain untouched
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin 87d907010db614d5459b6af9c7b421328e64f225
+          if ! git diff --quiet 87d907010db614d5459b6af9c7b421328e64f225 HEAD --             player.js player.html player.css player.webmanifest android-player/             config.js sw.js index.html app.js master.html master.js             supabase/functions/device-gateway/index.ts             supabase/functions/device-control/             supabase/functions/device-monitoring/             supabase/functions/master-admin/index.ts             netlify.toml vercel.json; then
+            echo "::error::Operational code changed; refuse browser-lab run."
+            exit 1
+          fi
+          echo "Production/player files unchanged."
+
+      - name: Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked project dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install ephemeral browser driver only (no lockfile edits)
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright-core@1.55.0
+
+      - name: Use installed Chromium/Chrome from GitHub runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$BIN" ]]; then
+            echo "::error::No Chromium binary on the GitHub runner; no deployment fallback."
+            exit 1
+          fi
+          "$BIN" --version
+          echo "VISION_TEST_CHROMIUM=$BIN" >> "$GITHUB_ENV"
+
+      - name: Run deterministic local model and dashboard tests
+        run: node --test tests/commercial-tv-fair-rotation-lab.test.cjs tests/commercial-tv-fair-rotation-ui.test.cjs
+
+      - name: Render local lab and exercise mobile/desktop controls
+        run: node tests/browser/commercial-fair-visual-browser.cjs
+
+      - name: Store local screenshots for review
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: commercial-fair-visual-chromium
+          path: ${{ runner.temp }}/vision-fair-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+# Only loopback HTTP fixtures and in-memory simulated events. No secrets, remote
+# SQL, Supabase client, APK, Edge Function, Netlify/Vercel deploy or real advertising.
