@@ -2,7 +2,7 @@
 // It never creates a Supabase client, invokes the device gateway, or records playback.
 import {commercialEligibility,interleave} from './supabase/functions/_shared/commercial.mjs';
 
-export const benchDefaults=Object.freeze({baseCount:6,adCount:2,shuffle:false,single:false,scheduled:false,enabled:true});
+export const benchDefaults=Object.freeze({baseCount:6,adCount:2,cycle:0,shuffle:false,single:false,scheduled:false,enabled:true});
 const baseNames=['Troca de óleo','Suspensão','Escapamento','Freios','Motor','Revisão'];
 const adNames=['Loja do João','Empresa B','Publicidade C','Publicidade D','Publicidade E'];
 
@@ -35,7 +35,8 @@ export function simulateBench(options={}){
  const original=makeBenchPrimary(o);
  const adverts=makeBenchAds(o.adCount);
  const reason=!o.enabled?'disabled':commercialEligibility(original);
- const manifest=o.enabled?interleave(original,adverts,3):original;
+ const cycle=Number.isSafeInteger(o.cycle)&&o.cycle>=0?o.cycle:0;
+ const manifest=o.enabled?interleave(original,adverts,3,cycle):original;
  const items=manifest?.items||[];
  const included=items.filter(x=>x.commercial).length;
  const baseIDs=original?.items.map(x=>x.id)||[];
@@ -46,6 +47,9 @@ export function simulateBench(options={}){
   original,
   ads:adverts,
   items,
+  cycle,
+  selectedNames:items.filter(x=>x.commercial).map(x=>x.media.name),
+  waitingNames:adverts.filter(ad=>!items.some(item=>item.id===ad.id)).map(x=>x.media.name),
   reason,
   status:!original?'Aguardando playlist':reason&&reason!=='disabled'?'Playlist original preservada':reason==='disabled'?'Camada comercial desligada':'Programação simulada',
   included,
@@ -59,6 +63,12 @@ if(typeof document!=='undefined'&&document.getElementById('bench-form')){
  const sequence=document.getElementById('bench-sequence');
  const status=document.getElementById('bench-status');
  const detail=document.getElementById('bench-details');
+ const round=document.getElementById('bench-round');
+ const waiting=document.getElementById('bench-waiting');
+ const previous=document.getElementById('bench-prev-round');
+ const next=document.getElementById('bench-next-round');
+ const compatible=document.getElementById('bench-compatible');
+ let cycle=0;
  const explanations={
   no_base_playlist:'TV sem playlist: nenhum anúncio pode iniciar sozinho.',
   shuffle_preserved:'Modo aleatório preservado; nenhum comercial foi inserido.',
@@ -71,9 +81,13 @@ if(typeof document!=='undefined'&&document.getElementById('bench-form')){
   const result=simulateBench({
    baseCount:Number(val('baseCount').value),adCount:Number(val('adCount').value),
    shuffle:val('shuffle').checked,single:val('single').checked,
-   scheduled:val('scheduled').checked,enabled:val('enabled').checked
+   scheduled:val('scheduled').checked,enabled:val('enabled').checked,cycle
   });
   status.textContent=result.status;
+  round.textContent='Rodada '+(result.cycle+1)+' — sequência simulada';
+  previous.disabled=cycle===0;
+  waiting.textContent=result.reason? 'Rodízio suspenso enquanto esta proteção estiver ativa.' :
+   (result.waitingNames.length?'Aguardando próximas rodadas: '+result.waitingNames.join(', ')+'.':'Todos os anúncios elegíveis foram incluídos nesta rodada.');
   detail.textContent=(explanations[result.reason]||(
    'Mídias do estabelecimento: '+(result.original?.items.length||0)+
    ' · Comerciais incluídos: '+result.included+
@@ -101,6 +115,14 @@ if(typeof document!=='undefined'&&document.getElementById('bench-form')){
    sequence.append(card);
   });
  };
- form.addEventListener('change',render);
+ form.addEventListener('change',()=>{cycle=0;render()});
+ previous.addEventListener('click',()=>{cycle=Math.max(0,cycle-1);render()});
+ next.addEventListener('click',()=>{cycle=Math.min(100,cycle+1);render()});
+ compatible.addEventListener('click',()=>{
+  for(const name of ['shuffle','single','scheduled'])form.elements.namedItem(name).checked=false;
+  form.elements.namedItem('enabled').checked=true;
+  cycle=0;
+  render();
+ });
  render();
 }
