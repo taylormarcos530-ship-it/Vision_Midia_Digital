@@ -7,9 +7,9 @@ const src=()=>fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/d
 const manifest=()=>fs.readFileSync(path.join(dir,'app/src/main/AndroidManifest.xml'),'utf8');
 test('diagnostic has a separate application ID and never replaces the production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v02'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v03'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
- assert.match(manifest(),/Vision Diagnóstico TESTE 0.2/);
+ assert.match(manifest(),/Vision Diagnóstico TESTE 0.3/);
  assert.match(manifest(),/LEANBACK_LAUNCHER/);
 });
 test('no Android privileges, boot receivers, services, or production network clients',()=>{
@@ -38,7 +38,7 @@ test('tiny bundled H264 mp4 is valid binary base64 and does not depend on intern
  assert.match(buf.toString('ascii'),/avc1/);
  assert.doesNotMatch(src(),/http:\/\/|https:\/\//);
 });
-test('v0.2 full-screen command moves the original stage and restores it without altering playback state',()=>{
+test('v0.3 retains full-screen command moves the original stage and restores it without altering playback state',()=>{
  const code=src();
  assert.match(code,/private void fullscreen\(\)/);
  assert.match(code,/stageParent\.removeView\(frame\)/);
@@ -63,9 +63,9 @@ test('H.264 decoder outcome remains visible after short blue sample returns to n
 });
 test('revised test APK installs alongside older debug signer and production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v02'/);
- assert.match(gradle,/versionCode 2/);
- assert.match(gradle,/versionName '0\.2-laboratorio'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v03'/);
+ assert.match(gradle,/versionCode 3/);
+ assert.match(gradle,/versionName '0\.3-laboratorio'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'\s*$/m);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
 });
