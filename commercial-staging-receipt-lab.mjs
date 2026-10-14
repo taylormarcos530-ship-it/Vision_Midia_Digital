@@ -103,7 +103,11 @@ export function receiveStagingReceipt(state,context,receipt){
   x.campaignId===occurrence.campaignId&&x.mediaId===occurrence.mediaId&&
   x.status==='active'&&x.targeted===true);
  if(!active)return deny(state,'commercial_no_longer_targeted');
+ if(receipt.completed&&(typeof receipt.ended_at!=='string'||!receipt.ended_at))
+  return deny(state,'completion_requires_end_time');
  if(receipt.ended_at!==undefined&&receipt.ended_at!==null){
+  if(typeof receipt.ended_at!=='string'||!/^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(?:\.[0-9]+)?(?:Z|[+-][0-9]{2}:[0-9]{2})$/.test(receipt.ended_at))
+   return deny(state,'invalid_end_time_format');
   const value=Date.parse(receipt.ended_at);
   if(!Number.isFinite(value)||value<occurrence.issuedAt||
    value>context.serverNowMs||value>occurrence.expiresAt)
