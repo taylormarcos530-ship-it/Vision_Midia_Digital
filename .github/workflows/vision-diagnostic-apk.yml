@@ -40,7 +40,7 @@ jobs:
             echo "::error::Production files changed; do not build."
             exit 1
           fi
-          grep -Fq "applicationId 'com.visionmidia.diagnosticlab'" android-diagnostic-lab/app/build.gradle
+          grep -Fq "applicationId 'com.visionmidia.diagnosticlab.v02'" android-diagnostic-lab/app/build.gradle
           if grep -q 'uses-permission' android-diagnostic-lab/app/src/main/AndroidManifest.xml; then
             echo "::error::Diagnostic must never request privileged permissions."
             exit 1
