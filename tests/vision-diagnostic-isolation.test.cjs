@@ -69,6 +69,29 @@ test('revised test APK installs alongside older debug signer and production play
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'\s*$/m);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
 });
+test('MP4 completion or error banner automatically disappears after 3 seconds',()=>{
+ const java=src();
+ assert.match(java,/private Runnable videoMessageHideTask/);
+ assert.match(java,/private void scheduleVideoMessageHide\(\)/);
+ assert.match(java,/handler\.postDelayed\(videoMessageHideTask,3000\)/);
+ assert.match(java,/videoIndicator\.setVisibility\(View\.GONE\)/);
+ const occurrences=(java.match(/scheduleVideoMessageHide\(\);/g)||[]).length;
+ assert.equal(occurrences,3,'success, error, preparation failure must all dismiss');
+ assert.match(java,/mediaReport\.setText\("✓ MP4 H\.264 CONCLUÍDO/);
+ assert.match(java,/private void cancelVideoMessageHide\(\)/);
+ assert.match(java,/handler\.removeCallbacks\(videoMessageHideTask\)/);
+ assert.match(java,/private void stopVideo\(\) \{\s*cancelVideoMessageHide\(\)/);
+ assert.match(java,/@Override protected void onPause\(\) \{[\s\S]*?cancelVideoMessageHide\(\)/);
+});
+test('MP4 message timeout cannot affect playlist generation or simulated reconnect timers',()=>{
+ const java=src();
+ const timerBlock=java.slice(java.indexOf('private void scheduleVideoMessageHide()'),
+  java.indexOf('private void stopVideo()'));
+ assert.doesNotMatch(timerBlock,/\bgeneration\b|activeTask|completed\+\+|current\+\+|round\+\+|advanceLater\(/);
+ assert.match(timerBlock,/handler\.postDelayed\(videoMessageHideTask,3000\)/);
+ assert.match(java,/handler\.postDelayed\(activeTask,3000\)/);
+ assert.match(java,/handler\.postDelayed\(activeTask,2000\)/);
+});
 test('Android lab project does not depend on the original Android player',()=>{
  const build=fs.readFileSync(path.join(dir,'build.gradle'),'utf8');
  const app=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
