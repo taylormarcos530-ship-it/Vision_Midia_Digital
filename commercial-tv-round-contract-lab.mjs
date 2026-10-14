@@ -81,7 +81,8 @@ function baseOnlyModel(primary){return createFairRotationLab(primary,[]);}
 export function createRoundContract(input){
  const identity=describeRoundProgram(input);
  const model=identity.valid&&identity.allowed?
-  createFairRotationLab(input.primary,input.ads||[]):baseOnlyModel(input?.primary||null);
+  createFairRotationLab(input.primary,input.ads||[]):
+  baseOnlyModel(identity.valid?input.primary:null);
  return {version:LAB_CONTRACT_VERSION,identity,model,epoch:0,
   status:identity.reason||null};
 }
