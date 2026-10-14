@@ -7,9 +7,9 @@ const src=()=>fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/d
 const manifest=()=>fs.readFileSync(path.join(dir,'app/src/main/AndroidManifest.xml'),'utf8');
 test('diagnostic has a separate application ID and never replaces the production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v02'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
- assert.match(manifest(),/Vision Diagnóstico TESTE/);
+ assert.match(manifest(),/Vision Diagnóstico TESTE 0.2/);
  assert.match(manifest(),/LEANBACK_LAUNCHER/);
 });
 test('no Android privileges, boot receivers, services, or production network clients',()=>{
