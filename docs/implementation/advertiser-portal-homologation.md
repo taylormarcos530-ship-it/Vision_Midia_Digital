@@ -259,3 +259,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - O navegador em segundo plano cancela temporizadores de avanço/recuperação e não reproduz anúncios silenciosamente. Mensagens foram aproximadas dos botões com aviso acessível `role=status`, e as funções continuam limitadas a uma simulação offline sem acesso a Supabase, Storage, player ou TV real.
 - Foram adicionados quatro testes de interação à regressão `tests/commercial-tv-auto-ui.test.cjs`, para recuperação temporizada, reinício durante desconexão, reconexão manual e comunicação visual. **170/170 testes PASS**, zero falhas, GitHub Actions https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38581345774 .
 - A CI confirmou que os arquivos protegidos operacionais do player, APK, gateway e produção permaneceram intocados. O funcionamento pelo navegador do operador ainda depende de conferir o preview mais recente.
+
+## Validação visual Android: pausa e reconexão fictícia (14/10/2026)
+
+- O operador enviou dois prints do laboratório `commercial-tv-auto-bench.html`: o print durante a desconexão mostra o aviso **SEM CONEXÃO: simulação pausada**, o botão **Reconectar agora** disponível e os comandos de avanço desabilitados; o outro mostra a mensagem **Reconexão fictícia: mesma mídia e rodada, sem avanço**.
+- O estado após a reconexão mostra **Rodada 1 · item 5 de 8**. Os prints são coerentes com a regra de conservar posição e rodada sem saltos na interrupção.
+- **Limite da evidência:** as capturas não permitem cronometrar se a reconexão foi automática após três segundos ou acionada manualmente; não comprovam que o avanço automático continuou depois; tampouco mostram o botão **Simular reinício** em execução. Não afirmar essas três verificações como testes manuais concluídos.
+- Testes automatizados correspondentes: **170/170 aprovados**, CI https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38581562886 . Código e produção não modificados nesta etapa, apenas documentação.
+- **Próximo teste manual:** após a conexão retornar, iniciar/confirmar continuidade do avanço e acionar **Simular reinício** para visualizar estado REINICIANDO por 2 segundos e retorno à mesma rodada e posição.
