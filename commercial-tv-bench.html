@@ -22,6 +22,10 @@
  .bench-order{font-size:11px;opacity:.8}
  .bench-empty{grid-column:1/-1;padding:20px;border:1px dashed #465b70;border-radius:12px}
  .bench-foot{font-size:12px;color:#a4b2c7;margin-top:20px}
+ .bench-actions{display:flex;gap:10px;flex-wrap:wrap;margin:-4px 0 20px}
+ .bench-actions button{width:auto;max-width:100%;min-height:44px}
+ .bench-round{font-weight:700;color:#ffc04d;margin:10px 0}
+ .bench-waiting{font-size:14px;color:#d5dde9;margin:14px 0}
  @media(max-width:620px){.bench-controls{grid-template-columns:1fr;padding:16px}.bench-panel{padding:15px}.bench-sequence{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.bench-item{padding:11px;min-height:130px}}
  </style>
  <script type="module" src="./commercial-tv-bench.mjs"></script>
@@ -30,7 +34,7 @@
  <header class="top"><a class="brand" href="./anunciante.html?demo=1">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Bancada de testes da programação comercial</span></header>
  <main>
   <div class="notice"><strong>SIMULAÇÃO OFFLINE — SEM TV REAL</strong> · Este laboratório usa apenas itens fictícios e a lógica isolada de intercalação. Não conecta Supabase, não executa o APK, não registra exibições e não modifica a programação dos clientes.</div>
-  <div class="bench-title"><span class="bench-tag">TV FICTÍCIA · AUTO CENTER</span><h1>Como os anúncios entram entre as mídias</h1><p>Controle a playlist do estabelecimento e o número de comerciais. As mídias originais mantêm a ordem, e os anúncios excedentes não são colocados juntos no final.</p></div>
+  <div class="bench-title"><span class="bench-tag">TV FICTÍCIA · AUTO CENTER</span><h1>Como os anúncios entram entre as mídias</h1><p>Controle a playlist do estabelecimento e o número de comerciais. Use <strong>Próxima rodada</strong> para ver o rodízio entre anunciantes que aguardam. As mídias originais mantêm a ordem e os anúncios não ficam juntos no final.</p></div>
   <form id="bench-form" class="bench-controls">
    <label>Mídias do estabelecimento
     <select name="baseCount">
@@ -53,12 +57,19 @@
    <label class="bench-check"><input name="single" type="checkbox"> Modo mídia única</label>
    <label class="bench-check"><input name="scheduled" type="checkbox"> Mídias com agenda própria</label>
   </form>
+  <div class="bench-actions" aria-label="Controles da simulação">
+   <button id="bench-compatible" type="button">Testar intercalação (desmarcar proteções)</button>
+   <button id="bench-prev-round" type="button">Rodada anterior</button>
+   <button id="bench-next-round" type="button">Próxima rodada</button>
+  </div>
   <section class="bench-panel" aria-label="Sequência simulada">
    <span class="bench-tag">MANIFESTO FICTÍCIO</span>
    <h2 id="bench-status">Preparando simulação...</h2>
+   <p id="bench-round" class="bench-round" role="status" aria-live="polite"></p>
    <p id="bench-details" role="status" aria-live="polite"></p>
+   <p id="bench-waiting" class="bench-waiting"></p>
    <div id="bench-sequence" class="bench-sequence"></div>
-   <p class="bench-foot">A lista acima é uma simulação da ordem de reprodução, não uma transmissão ao vivo nem um relatório de anúncios. A camada comercial real permanece desativada em produção.</p>
+   <p class="bench-foot">A lista acima simula diferentes versões do manifesto e não conta reproduções reais. A passagem para a rodada seguinte é manual nesta bancada; ainda não foi implementada no gateway nem no APK. A camada comercial permanece desativada em produção.</p>
   </section>
  </main>
  <footer>VISION MÍDIA DIGITAL <span>Laboratório isolado — sem publicação na TV.</span></footer>
