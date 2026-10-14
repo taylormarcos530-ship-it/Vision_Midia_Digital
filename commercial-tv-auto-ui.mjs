@@ -104,6 +104,12 @@ if(typeof document!=='undefined'&&document.getElementById('auto-bench-form')){
   $('auto-health').textContent=rebooting?'Estado da simulação: REINICIANDO':
    state.connected?'Conexão simulada: ativa':
    'Conexão fictícia interrompida. Reconexão automática em cerca de 3 segundos.';
+  $('auto-feedback').textContent=rebooting?
+   'REINICIANDO: aguarde 2 segundos. A rodada e o item serão recuperados.':
+   !state.connected?
+   'SEM CONEXÃO: simulação pausada. Retorno automático em cerca de 3 segundos ou toque em Reconectar.':
+   state.lastAction;
+  $('auto-feedback').dataset.state=rebooting?'restarting':!state.connected?'offline':'ready';
   $('auto-message').textContent=rebooting?
    'Simulando reinício por 2 segundos; a rodada e o item serão preservados.':
    !state.connected?'A reprodução fictícia está pausada. Aguarde a reconexão automática ou toque em Reconectar.':
@@ -117,8 +123,10 @@ if(typeof document!=='undefined'&&document.getElementById('auto-bench-form')){
   $('auto-complete').disabled=rebooting||!view.current||!view.connected;
   $('auto-disconnect').disabled=rebooting||!view.connected;
   $('auto-reconnect').disabled=rebooting||view.connected;
+  $('auto-reconnect').textContent=!view.connected?'Reconectar agora':'Reconectar';
   $('auto-refresh').disabled=rebooting;
   $('auto-restart').disabled=rebooting;
+  $('auto-restart').textContent=rebooting?'Reiniciando…':'Simular reinício';
   $('auto-compatible').disabled=rebooting;
   const list=$('auto-sequence');list.replaceChildren();
   if(!view.items.length){
