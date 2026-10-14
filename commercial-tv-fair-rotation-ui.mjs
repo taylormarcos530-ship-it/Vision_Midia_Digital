@@ -1,5 +1,5 @@
 // OFFLINE LAB ONLY. UI visualises fictitious completed-item events, not real impressions.
-// No Supabase, fetch, localStorage, telemetry, timers, account, device or player access.
+// In-memory fixtures only. No external connections, persistence or device access.
 import {createFairRotationLab,fairRotationView,fairRotationEvent} from './commercial-tv-fair-rotation-lab.mjs';
 
 export const advertiserFixtures=Object.freeze([
@@ -31,7 +31,7 @@ export function makeLab(count=6,activeIds=advertiserFixtures.map(ad=>ad.id)){
 }
 export function labDashboard(state,activeIds=advertiserFixtures.map(ad=>ad.id)){
  const v=fairRotationView(state),active=new Set(activeIds),selected=new Set(v.selected);
- const queue=advertiserFixtures.filter(ad=>active.has(ad.id)&&!selected.has(ad.id)).map(ad=>ad.name);
+ const queue=state.primary?advertiserFixtures.filter(ad=>active.has(ad.id)&&!selected.has(ad.id)).map(ad=>ad.name):[];
  return {...v,queue,hasPending:state.pending!==null,
   currentLabel:v.current?.media?.name||'Aguardando playlist',
   currentIsAd:Boolean(v.current?.commercial),
@@ -71,7 +71,7 @@ function onBrowserLab(){
  let state=makeLab(baseCount,[...activeIds]),notice='Bancada pronta. Use Iniciar ou Simular 5 rodadas.';
  const controls={
   start:$('fair-start'),pause:$('fair-pause'),finish:$('fair-finish'),
-  next:$('fair-cycle'),five:$('fair-five'),disconnect:$('fair-disconnect'),
+  cycle:$('fair-cycle'),five:$('fair-five'),disconnect:$('fair-disconnect'),
   reconnect:$('fair-reconnect'),restart:$('fair-restart'),error:$('fair-error'),
   revalidate:$('fair-revalidate'),reset:$('fair-reset')
  };
@@ -140,7 +140,7 @@ function onBrowserLab(){
   controls.start.disabled=v.running||!v.connected||!v.current;
   controls.pause.disabled=!v.running;
   controls.finish.disabled=!v.running||!v.connected||!v.current;
-  controls.next.disabled=!v.connected||!v.current;
+  controls.cycle.disabled=!v.connected||!v.current;
   controls.five.disabled=!v.connected||!v.current;
   controls.disconnect.disabled=!v.connected;
   controls.reconnect.disabled=v.connected;
@@ -151,13 +151,21 @@ function onBrowserLab(){
  controls.start.addEventListener('click',()=>action({type:'start'}));
  controls.pause.addEventListener('click',()=>action({type:'pause'}));
  controls.finish.addEventListener('click',()=>action({type:'complete',token:fairRotationView(state).token}));
- controls.next.addEventListener('click',()=>update(completeLabCycles(state,1)));
+ controls.cycle.addEventListener('click',()=>update(completeLabCycles(state,1)));
  controls.five.addEventListener('click',()=>update(completeLabCycles(state,5)));
  controls.disconnect.addEventListener('click',()=>action({type:'disconnect'}));
  controls.reconnect.addEventListener('click',()=>action({type:'reconnect'}));
  controls.restart.addEventListener('click',()=>action({type:'restart'}));
  controls.error.addEventListener('click',()=>action({type:'media-error',token:fairRotationView(state).token}));
- controls.revalidate.addEventListener('click',()=>action({type:'revalidate'}));
+ controls.revalidate.addEventListener('click',()=>{
+  // Explicitly reload selected fictitious inventory before clearing the error gate.
+  // New ads still wait for the next completed cycle.
+  const staged=fairRotationEvent(state,{type:'inventory-changed',ads:labAds([...activeIds])});
+  if(!staged.accepted){update(staged);return;}
+  const result=fairRotationEvent(staged.state,{type:'revalidate'});
+  update({...result,reason:result.accepted?
+   'Anunciantes fictícios revalidados; anúncios só retornam na próxima rodada.':result.reason});
+ });
  controls.reset.addEventListener('click',()=>{
   state=makeLab(baseCount,[...activeIds]);
   notice='Bancada reiniciada apenas em memória. Nenhum sistema foi alterado.';
