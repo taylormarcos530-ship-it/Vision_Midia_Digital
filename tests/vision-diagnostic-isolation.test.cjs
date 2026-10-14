@@ -150,3 +150,48 @@ test('pausing the same raster advertisement never counts it as a second visit',(
  assert.match(java,/concluded\+\+;\s*adVisitCounted=false;\s*itemIndex\+\+;/);
  assert.match(java,/itemIndex=0;round=1;concluded=0;commercialsShown=0;clipPosition=0;\s*adVisitCounted=false;/);
 });
+
+test('v0.5 restart refreshes VideoView listeners after invalidating callbacks',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ const begin=java.slice(java.indexOf('private void begin()'),java.indexOf('private void pausePlayback()'));
+ assert.match(begin,/running=true;[\s\S]*?startCurrent\(\);/);
+ assert.doesNotMatch(begin,/else if\(prepared\)[\s\S]*?video\.start\(\)/);
+ const current=java.slice(java.indexOf('private void startCurrent()'),java.indexOf('private void completeCurrent()'));
+ assert.match(current,/invalidateCallbacks\(\)/);
+ assert.match(current,/final int token=generation/);
+ assert.match(current,/video\.setOnPreparedListener/);
+ assert.match(current,/video\.setOnCompletionListener/);
+ assert.match(current,/video\.setOnErrorListener/);
+ assert.match(current,/if\(clipPosition>0\)mp\.seekTo\(clipPosition\)/);
+ assert.match(current,/if\(token!=generation\|\|!running\|\|!prepared\|\|failed\)return;/);
+});
+test('pausing during simulated restart or reconnection leaves a resumable safe state',()=>{
+ const java=fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/diagnosticlab/MediaRotationActivity.java'),'utf8');
+ const pause=java.slice(java.indexOf('private void pausePlayback()'),java.indexOf('private void drop()'));
+ assert.match(pause,/running=false;resumeAfterDrop=false;\s*disconnected=false;rebooting=false;/);
+ assert.match(pause,/invalidateCallbacks\(\)/);
+ assert.match(pause,/if\(wasRunning&&prepared\)clipPosition=Math\.max\(0,video\.getCurrentPosition\(\)\)/);
+ assert.match(pause,/prepared=false;\s*video\.stopPlayback\(\);/);
+ const restart=java.slice(java.indexOf('private void restart()'),java.indexOf('private void reset()'));
+ assert.match(restart,/boolean resume=running\|\|resumeAfterDrop/);
+ assert.match(restart,/pausePlayback\(\);disconnected=false;rebooting=true;/);
+ assert.match(restart,/if\(resume\)begin\(\)/);
+ assert.match(java,/handler\.postDelayed\(timer,2000\)/);
+ const drop=java.slice(java.indexOf('private void drop()'),java.indexOf('private void restart()'));
+ assert.match(drop,/pausePlayback\(\)/);
+ assert.match(drop,/resumeAfterDrop=previouslyRunning;disconnected=true/);
+ assert.match(drop,/handler\.postDelayed\(timer,3000\)/);
+});
+test('TV emulator has an actual runtime smoke regression for four recovery scenarios',()=>{
+ const sh=fs.readFileSync('scripts/vision-diagnostic-tv-recovery-smoke.sh','utf8');
+ const workflow=fs.readFileSync('.github/workflows/vision-diagnostic-android-tv-emulator.yml','utf8');
+ assert.match(sh,/Simular reinício 2 s/);
+ assert.match(sh,/Simular queda 3 s/);
+ assert.match(sh,/pause-during-restart/);
+ assert.match(sh,/pause-during-disconnect/);
+ assert.match(sh,/check_progress 1/);
+ assert.match(sh,/adb shell pidof com\.visionmidia\.diagnosticlab\.v05/);
+ assert.match(workflow,/vision-diagnostic-tv-recovery-smoke\.sh/);
+ assert.match(workflow,/api-level: 29/);
+ assert.doesNotMatch(sh+workflow,/supabase\.co|NetlifyDeploy|deploy-production|adb connect/);
+});
