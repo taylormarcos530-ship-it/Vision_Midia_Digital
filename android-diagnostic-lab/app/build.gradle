@@ -7,11 +7,11 @@ android {
     compileSdk 35
 
     defaultConfig {
-        applicationId 'com.visionmidia.diagnosticlab.v02'
+        applicationId 'com.visionmidia.diagnosticlab.v03'
         minSdk 21
         targetSdk 32
-        versionCode 2
-        versionName '0.2-laboratorio'
+        versionCode 3
+        versionName '0.3-laboratorio'
     }
 
     buildTypes {
