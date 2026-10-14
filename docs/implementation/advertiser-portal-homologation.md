@@ -223,3 +223,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - CI de homologação **160/160 testes PASS**, 0 falhas; inclui 9 testes novos da máquina de estados e 5 de interação em interface simulada, além das 146 verificações anteriores. GitHub Actions https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38498683224 .
 - Proteção automatizada confirmou arquivos originais de player, Android APK, gateway operacional, páginas Master de produção e configuração de deploy **inalterados**; nenhum Supabase (nem mesmo homologação), Edge Function, Netlify/Vercel produção ou TV real foi modificado nesta etapa.
 - Próxima etapa: projetar o protocolo de mudança de ciclo e checkpoint persistido **em bancada real exclusiva de testes**. Antes de integrar ao gateway ou APK, validar reconhecimento de término da sequência, idempotência, respeito à playlist, política de rodízio por anunciante e recuperação de reconexão, com aprovação separada para qualquer ativação produtiva.
+
+## Limite de deploy preview Vercel — publicação pendente (14/10/2026)
+
+- O novo laboratório `commercial-tv-auto-bench.html` foi implementado na branch isolada e passou nos testes, mas **ainda não recebeu um preview Vercel confirmado para este commit**.
+- Tentativa explícita de deploy Git da branch com `target` preview (sem produção) retornou HTTP **402** com código `api-deployments-free-per-day`: limite de mais de 100 deploys/dia da equipe, orientação da Vercel para tentar novamente após aproximadamente **24 horas**.
+- Nenhuma tentativa de contornar a cota por outra conta, projeto novo ou promoção à produção; não foi alterado nenhum serviço operacional.
+- Preview mais recente confirmado até o momento pertence ao commit `be2d5d50b3c983c4010bb07acddcdebf81cac526`, anterior à criação da nova página. **Não apresentar essa URL como se tivesse o novo laboratório.**
+- Aguardar restabelecimento da cota ou autorização explícita do proprietário para nova tentativa de deploy preview. Código já com testes aprovados no GitHub e checkpoint atual independente do serviço de hospedagem.
