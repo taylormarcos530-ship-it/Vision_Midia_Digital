@@ -55,11 +55,17 @@ export function mediaTestEvent(player,event){
  if(event.type==='reconnect'){
   if(player.state.connected)return denied('Conexão de bancada já ativa.');
   const next=advanceAutoBench(player.state,{type:'reconnect'});
-  return done(next.state,false,'Reconectado. Toque em iniciar para retomar o mesmo item.');
+  const resume=event.resume===true&&next.accepted&&Boolean(now.current);
+  return done(next.state,resume,resume?
+   'Reconexão fictícia concluída: mesma rodada e item, reprodução retomada.':
+   'Reconectado. Rodada e item preservados; toque em iniciar para continuar.');
  }
  if(event.type==='restart'){
   const next=advanceAutoBench(player.state,{type:'restart'});
-  return done(next.state,false,next.accepted?'Reinício fictício: item preservado, aguarde início manual.':
+  const resume=next.accepted&&next.state.connected&&event.resume===true&&Boolean(now.current);
+  return done(next.state,resume,next.accepted?
+   (resume?'Reinício fictício concluído: mesma rodada e item, reprodução retomada.':
+    'Reinício fictício concluído: rodada e item preservados; pronto para iniciar.'):
    'Checkpoint inválido. Comerciais desativados.');
  }
  if(event.type==='refresh'){
