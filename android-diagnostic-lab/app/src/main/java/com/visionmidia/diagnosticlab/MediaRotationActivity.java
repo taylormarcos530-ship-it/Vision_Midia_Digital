@@ -49,6 +49,7 @@ public final class MediaRotationActivity extends Activity {
     private int generation=0, itemIndex=0, round=1, concluded=0, commercialsShown=0;
     private int clipPosition=0;
     private boolean running=false,prepared=false,disconnected=false,rebooting=false;
+    private boolean adVisitCounted=false;
     private boolean resumeAfterDrop=false,failed=false,videoReady=false;
     private File clip;
     private Bitmap adA,adB;
@@ -187,7 +188,7 @@ public final class MediaRotationActivity extends Activity {
         final int token=generation;
         if(isAd()){
             // Bitmap display is a real image; the 2 s expiration is simulated.
-            commercialsShown++;
+            if(!adVisitCounted){commercialsShown++;adVisitCounted=true;}
             writeStatus("Imagem comercial local fictícia visível por 2 segundos.");
             timer=()->{
                 timer=null;
@@ -224,6 +225,7 @@ public final class MediaRotationActivity extends Activity {
         invalidateCallbacks();
         if(!running||failed||disconnected||rebooting)return;
         concluded++;
+        adVisitCounted=false;
         itemIndex++;
         if(itemIndex==SEQUENCE.length){itemIndex=0;round++;}
         video.stopPlayback();
@@ -294,6 +296,7 @@ public final class MediaRotationActivity extends Activity {
         rebooting=false;prepared=false;resumeAfterDrop=false;
         video.stopPlayback();
         itemIndex=0;round=1;concluded=0;commercialsShown=0;clipPosition=0;
+        adVisitCounted=false;
         drawCurrent();writeStatus("Sequência de laboratório reiniciada no item 1.");
     }
     @Override protected void onPause(){
