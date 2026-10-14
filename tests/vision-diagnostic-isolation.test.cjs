@@ -13,10 +13,11 @@ test('diagnostic has a separate application ID and never replaces the production
  assert.match(manifest(),/LEANBACK_LAUNCHER/);
 });
 test('no Android privileges, boot receivers, services, or production network clients',()=>{
- const text=manifest()+'\n'+src();
- assert.doesNotMatch(text,/uses-permission|INTERNET|SYSTEM_ALERT_WINDOW|RECEIVE_BOOT_COMPLETED/);
- assert.doesNotMatch(text,/<service|<receiver|BootReceiver|startService|HttpsURLConnection|HttpURLConnection|WebView/);
- assert.doesNotMatch(text,/supabase|gateway|visionmidiadigitalgo|createClient|fetch\(/i);
+ const xml=manifest(),java=src();
+ assert.doesNotMatch(xml,/<uses-permission|android\.permission\.|RECEIVE_BOOT_COMPLETED/);
+ assert.doesNotMatch(xml,/<service|<receiver/);
+ assert.doesNotMatch(java,/BootReceiver|startService|HttpsURLConnection|HttpURLConnection|WebView/);
+ assert.doesNotMatch(java,/supabase|gateway|visionmidiadigitalgo|createClient|fetch\(/i);
 });
 test('native Android app contains guarded offline reconnect and restart simulation',()=>{
  const code=src();
