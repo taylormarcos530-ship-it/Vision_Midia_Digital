@@ -6,17 +6,30 @@ export function commercialEligibility(primary) {
  if (primary.items.some(item => item.schedule?.enabled)) return 'scheduled_base_preserved';
  return null;
 }
-export function interleave(primary, ads, every = 3) {
+// Cycle-based rotation is pure and opt-in. No device state, DB writes or timers.
+// Each completed manifest cycle advances by its number of commercial slots,
+// giving every eligible creative equal opportunity over repeated simulated cycles.
+// NOTE: actual players do not yet pass cycle indexes to the gateway.
+export function cycleCommercialSelection(ads,slots,cycle=0) {
+ if(!Array.isArray(ads)||!ads.length||!Number.isSafeInteger(slots)||slots<=0)return [];
+ const size=Math.min(slots,ads.length);
+ const index=Number.isSafeInteger(cycle)&&cycle>=0?cycle:0;
+ const offset= ((index%ads.length)*(size%ads.length))%ads.length;
+ return Array.from({length:size},(_,i)=>ads[(offset+i)%ads.length]);
+}
+export function interleave(primary, ads, every = 3, cycle = 0) {
  if (commercialEligibility(primary) || !ads?.length) return primary;
  const gap = Number.isInteger(every) && every >= 1 && every <= 20 ? every : 3;
+ const slots=Math.floor(primary.items.length/gap)+(primary.items.length%gap?1:0);
+ const selected=cycleCommercialSelection(ads,slots,cycle);
  const items=[]; let cursor=0;
  // At most one commercial insertion per eligible base-media boundary.
  // Never append surplus ads in a block or alter the customer's playlist.
  // The final boundary lets short playlists participate without replacing base media.
  primary.items.forEach((item,i)=>{
   items.push(item);
-  if(cursor<ads.length && ((i+1)%gap===0 || i===primary.items.length-1))
-   items.push(ads[cursor++]);
+  if(cursor<selected.length && ((i+1)%gap===0 || i===primary.items.length-1))
+   items.push(selected[cursor++]);
  });
  return {...primary,items};
 }
