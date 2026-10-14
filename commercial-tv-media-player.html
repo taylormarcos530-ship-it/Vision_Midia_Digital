@@ -27,6 +27,10 @@
 .media-description{font-size:13px;color:#c8d1e1;margin:10px 0}
 .media-warning{font-size:12px;color:#d6dfeb;margin-top:14px}
 .media-status{font-size:14px;line-height:1.6}
+.media-asset-state{display:block;font-weight:700;font-size:12px;color:#f9d37e;margin-top:8px;overflow-wrap:anywhere}
+.media-thumb{display:block;max-height:135px;width:100%;margin-top:8px;border-radius:9px;object-fit:contain;background:#080f1b}
+.media-thumb[hidden]{display:none}
+.media-order-hint{padding:12px 14px;background:#20324c;border:1px solid #476480;border-radius:10px;line-height:1.5;font-size:13px}
 @media(max-width:680px){.media-files{grid-template-columns:1fr}.media-info,.media-files{padding:14px}.media-stage{border-radius:10px}.media-screen-label span{font-size:9px}.media-controls button{flex:1 1 138px}}
 </style>
 <script type="module" src="./commercial-tv-media-ui.mjs"></script>
@@ -37,7 +41,7 @@
 <div class="notice"><strong>PLAYER DE TESTES — SEM TV REAL</strong> · Arquivos selecionados ficam somente neste navegador, não são enviados para o servidor. Esta tela não se conecta ao Supabase, não conta exibições e não usa o APK dos clientes.</div>
 <p class="media-kicker">LABORATÓRIO ISOLADO · AUTO CENTER FICTÍCIO</p>
 <h1>Reprodução de mídias com anúncios intercalados</h1>
-<p>Simule a sequência de seis mídias do estabelecimento e até cinco anúncios fictícios. Sem selecionar arquivos, a bancada exibe quadros com nomes; você também pode escolher uma imagem ou vídeo do próprio aparelho para testar reprodução.</p>
+<p>Simule a sequência de seis mídias do estabelecimento e até cinco anúncios fictícios. <strong>O anúncio aparece no item 4 de 8</strong>; os três primeiros itens são do estabelecimento. Ao selecionar dois arquivos, veja a prévia de cada um logo abaixo. Nenhum arquivo é enviado ao servidor.</p>
 <div id="media-screen" class="media-stage" aria-label="Visualização de teste 16 por 9">
  <div id="media-placeholder" class="media-placeholder">Pronto para iniciar</div>
  <img id="media-photo" alt="Imagem local de teste" hidden>
@@ -57,13 +61,15 @@
  <strong id="media-current">Preparando mídia fictícia...</strong>
  <p id="media-status" class="media-status" role="status" aria-live="polite"></p>
  <p id="media-count" class="media-description"></p>
+ <p id="media-file-count" class="media-description">Arquivos escolhidos: 0 mídia do estabelecimento · 0 comercial</p>
+ <p id="media-order-hint" class="media-order-hint">O anúncio comercial entra após as três primeiras mídias do estabelecimento.</p>
  <p id="media-notice" class="media-description">Toque em Iniciar para reproduzir apenas os itens da bancada.</p>
 </section>
 <section class="media-files" aria-label="Arquivos opcionais para testar mídia local">
- <label><strong>Imagem ou vídeo do estabelecimento</strong><input type="file" id="media-base-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-description">Aplica-se às mídias fictícias do Auto Center.</span></label>
- <label><strong>Imagem ou vídeo comercial</strong><input type="file" id="media-commercial-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-description">Aplica-se apenas aos anúncios fictícios intercalados.</span></label>
+ <label><strong>Imagem ou vídeo do estabelecimento</strong><input type="file" id="media-base-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-asset-state" id="media-base-loaded">Nenhum arquivo carregado.</span><img id="media-base-thumb-image" class="media-thumb" alt="Prévia da imagem local do estabelecimento" hidden><video id="media-base-thumb-video" class="media-thumb" preload="metadata" muted playsinline controls hidden></video><span class="media-description">Será reproduzido nos itens do estabelecimento. Prévia acima não conta como execução.</span></label>
+ <label><strong>Imagem ou vídeo comercial</strong><input type="file" id="media-commercial-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-asset-state" id="media-commercial-loaded">Nenhum arquivo carregado.</span><img id="media-commercial-thumb-image" class="media-thumb" alt="Prévia da imagem comercial local" hidden><video id="media-commercial-thumb-video" class="media-thumb" preload="metadata" muted playsinline controls hidden></video><span class="media-description">Entra somente nos intervalos comerciais indicados acima. Prévia acima não conta como execução.</span></label>
 </section>
-<p class="media-warning">As imagens locais aparecem por cerca de 2,5 segundos; vídeos avançam pelo evento real de término do arquivo. Os quadros fictícios sem arquivo avançam a cada 2 segundos. Erros de mídia pausam o teste; falhas comerciais desativam os anúncios. Tudo ocorre apenas enquanto a página está aberta e visível. A produção permanece intocada.</p>
+<p class="media-warning">As imagens locais aparecem por cerca de 2,5 segundos; vídeos avançam somente quando terminam de verdade. Portanto, um vídeo longo do estabelecimento poderá aparecer várias vezes antes do primeiro anúncio, no item 4. A conexão fictícia retorna em aproximadamente 3 segundos e o reinício simulado leva 2 segundos; se já estava reproduzindo, o teste retoma o mesmo item. O navegador pode impedir um vídeo de iniciar automaticamente; nesse caso a bancada pausa e avisa. Erros de mídia não contabilizam conclusão; falhas comerciais desativam os anúncios. Tudo acontece apenas com a página visível. A produção permanece intocada.</p>
 </main>
 <footer>VISION MÍDIA DIGITAL <span>Homologação local — nenhum cliente conectado</span></footer>
 </body></html>
