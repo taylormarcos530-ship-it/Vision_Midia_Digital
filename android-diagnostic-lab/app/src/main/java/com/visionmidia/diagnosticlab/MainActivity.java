@@ -1,6 +1,7 @@
 package com.visionmidia.diagnosticlab;
 
 import android.app.Activity;
+import android.app.Dialog;
 import android.content.ActivityNotFoundException;
 import android.content.Intent;
 import android.graphics.Color;
@@ -16,6 +17,8 @@ import android.util.Base64;
 import android.util.DisplayMetrics;
 import android.view.Gravity;
 import android.view.View;
+import android.view.ViewGroup;
+import android.view.Window;
 import android.view.WindowManager;
 import android.widget.Button;
 import android.widget.FrameLayout;
@@ -38,7 +41,7 @@ public final class MainActivity extends Activity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final int navy = Color.rgb(11, 23, 40);
     private final int amber = Color.rgb(255, 202, 83);
-    private TextView status, position, info, displayText, mediaReport, screenStatus;
+    private TextView status, position, info, displayText, mediaReport, screenStatus, videoIndicator;
     private FrameLayout frame;
     private VideoView video;
     private Runnable activeTask;
@@ -47,6 +50,10 @@ public final class MainActivity extends Activity {
     private boolean running = false, disconnected = false, rebooting = false;
     private boolean resumeOnConnection = false, portrait = false, videoMode = false;
     private File sampleFile;
+    private Dialog fullscreenDialog;
+    private ViewGroup stageParent;
+    private ViewGroup.LayoutParams stageLayout;
+    private int stageIndex;
 
     @Override public void onCreate(Bundle state) {
         super.onCreate(state);
@@ -151,25 +158,46 @@ public final class MainActivity extends Activity {
         video = new VideoView(this);
         video.setVisibility(View.GONE);
         frame.addView(video, new FrameLayout.LayoutParams(-1, -1));
+        videoIndicator = text("", 17, Color.WHITE);
+        videoIndicator.setGravity(Gravity.CENTER);
+        videoIndicator.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        videoIndicator.setBackground(background(Color.rgb(11, 57, 83), amber));
+        videoIndicator.setVisibility(View.GONE);
+        FrameLayout.LayoutParams indicatorLayout = new FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.WRAP_CONTENT, dp(52),
+            Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+        indicatorLayout.bottomMargin = dp(10);
+        frame.addView(videoIndicator, indicatorLayout);
         video.setOnPreparedListener(mp -> {
+            if (!videoMode) return;
             mp.setVolume(0f,0f);
+            int seconds = Math.max(1,(mp.getDuration()+500)/1000);
+            videoIndicator.setText("▶ MP4 H.264 · "+seconds+" s · áudio desligado");
+            videoIndicator.setVisibility(View.VISIBLE);
             video.start();
-            mediaReport.setText("MP4 H.264 incorporado: reproduzindo, áudio desligado.");
+            mediaReport.setText("MP4 H.264 iniciado pelo decodificador (vídeo azul curto, ~2 s).");
         });
         video.setOnCompletionListener(mp -> {
             if (!videoMode) return;
             decoded++;
             videoMode = false;
             video.setVisibility(View.GONE);
-            mediaReport.setText("MP4 H.264 concluído pelo decodificador. Testes concluídos: "+decoded);
-            showProgram("Vídeo encerrado normalmente. Nenhuma impressão registrada.");
+            mediaReport.setText("✓ MP4 H.264 CONCLUÍDO normalmente pelo Android. Êxitos: "+decoded);
+            videoIndicator.setText("✓ MP4 CONCLUÍDO · reprodução local aprovada");
+            videoIndicator.setBackground(background(Color.rgb(11, 78, 50), Color.GREEN));
+            videoIndicator.setVisibility(View.VISIBLE);
+            showProgram("MP4 de ~2 segundos encerrado normalmente; a tela volta à sequência.");
         });
         video.setOnErrorListener((mp,what,extra) -> {
+            if (!videoMode) return true;
             decodeErrors++;
             videoMode = false;
             video.setVisibility(View.GONE);
-            mediaReport.setText("Falha do decodificador neste aparelho. Código: "+what+
+            mediaReport.setText("FALHA no MP4. Código: "+what+
                                 " / "+extra+". Falhas: "+decodeErrors);
+            videoIndicator.setText("✕ ERRO DE VÍDEO · codec ou arquivo");
+            videoIndicator.setBackground(background(Color.rgb(110, 25, 25), Color.RED));
+            videoIndicator.setVisibility(View.VISIBLE);
             showProgram("Vídeo não reproduzido. Nenhuma conclusão contabilizada.");
             return true;
         });
@@ -247,6 +275,7 @@ public final class MainActivity extends Activity {
         videoMode=false;
         video.stopPlayback();
         video.setVisibility(View.GONE);
+        if(videoIndicator!=null)videoIndicator.setVisibility(View.GONE);
     }
 
     private void startSequence() {
@@ -320,13 +349,59 @@ public final class MainActivity extends Activity {
         showProgram("Formato do quadro simulado. A orientação física da TV não muda.");
     }
 
-    @SuppressWarnings("deprecation")
     private void fullscreen() {
-        View root=getWindow().getDecorView();
-        int flags=View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|
-                  View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY;
-        root.setSystemUiVisibility(root.getSystemUiVisibility()==flags?0:flags);
-        showProgram("Tela cheia do aplicativo solicitada. Navegação do Android pode variar.");
+        if(fullscreenDialog!=null){
+            fullscreenDialog.dismiss();
+            return;
+        }
+        // The 235dp preview never filled the screen with only system-bar flags.
+        // Move the SAME media frame into a full-screen dialog, then restore it.
+        stageParent=(ViewGroup)frame.getParent();
+        stageIndex=stageParent.indexOfChild(frame);
+        stageLayout=frame.getLayoutParams();
+        stageParent.removeView(frame);
+        FrameLayout overlay=new FrameLayout(this);
+        overlay.setBackgroundColor(navy);
+        overlay.addView(frame,new FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.MATCH_PARENT));
+        final Dialog dialog=new Dialog(this,android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+        fullscreenDialog=dialog;
+        Button exit=button("SAIR DA TELA CHEIA",dialog::dismiss);
+        FrameLayout.LayoutParams leave=new FrameLayout.LayoutParams(
+            dp(240),dp(56),Gravity.BOTTOM|Gravity.CENTER_HORIZONTAL);
+        leave.bottomMargin=dp(12);
+        overlay.addView(exit,leave);
+        dialog.setContentView(overlay);
+        dialog.setOnDismissListener(ignored -> {
+            ViewGroup currentParent=(ViewGroup)frame.getParent();
+            if(currentParent!=null)currentParent.removeView(frame);
+            if(stageParent!=null){
+                stageParent.addView(frame,Math.min(stageIndex,stageParent.getChildCount()),stageLayout);
+                stageParent=null;
+            }
+            fullscreenDialog=null;
+            if(status!=null)showProgram("Tela cheia encerrada. Rodada e mídia preservadas.");
+        });
+        try{
+            dialog.show();
+            Window window=dialog.getWindow();
+            if(window!=null){
+                window.setLayout(ViewGroup.LayoutParams.MATCH_PARENT,
+                                 ViewGroup.LayoutParams.MATCH_PARENT);
+                window.setFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN,
+                                WindowManager.LayoutParams.FLAG_FULLSCREEN);
+                int immersive=View.SYSTEM_UI_FLAG_FULLSCREEN|View.SYSTEM_UI_FLAG_HIDE_NAVIGATION|
+                              View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY|
+                              View.SYSTEM_UI_FLAG_LAYOUT_STABLE|
+                              View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN|
+                              View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION;
+                window.getDecorView().setSystemUiVisibility(immersive);
+            }
+            exit.requestFocus();
+        }catch(RuntimeException e){
+            dialog.dismiss();
+            showProgram("O Android não autorizou tela cheia: "+e.getClass().getSimpleName());
+        }
     }
 
     private File bundledFile() throws IOException {
@@ -351,6 +426,8 @@ public final class MainActivity extends Activity {
             startVideo(Uri.fromFile(f),"MP4 H.264 BASELINE embutido");
         }catch(Exception e){
             decodeErrors++;
+            videoIndicator.setText("✕ Falha ao preparar o arquivo MP4");
+            videoIndicator.setVisibility(View.VISIBLE);
             mediaReport.setText("Não foi possível preparar o MP4 local: "+e.getClass().getSimpleName());
         }
     }
@@ -360,7 +437,10 @@ public final class MainActivity extends Activity {
         stopVideo();
         videoMode=true;
         video.setVisibility(View.VISIBLE);
-        mediaReport.setText(label+": iniciando decoder nativo, sem internet.");
+        videoIndicator.setBackground(background(Color.rgb(11,57,83),amber));
+        videoIndicator.setText("TESTANDO MP4 · aguarde ~2 segundos");
+        videoIndicator.setVisibility(View.VISIBLE);
+        mediaReport.setText(label+": preparando teste de 2 segundos, sem internet.");
         showProgram("Aguardando reprodução local do vídeo.");
         video.setVideoURI(uri);
         video.requestFocus();
@@ -392,6 +472,7 @@ public final class MainActivity extends Activity {
     }
 
     @Override protected void onDestroy() {
+        if(fullscreenDialog!=null)fullscreenDialog.dismiss();
         cancelTimer();stopVideo();handler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
