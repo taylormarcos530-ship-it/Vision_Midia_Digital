@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run ONLY on a disposable Android TV emulator in CI, never a customer device.
 set -euo pipefail
-APP="com.visionmidia.diagnosticlab.v04"
+APP="com.visionmidia.diagnosticlab.v05"
 APK="android-diagnostic-lab/app/build/outputs/apk/debug/app-debug.apk"
 DIR="android-diagnostic-lab/emulator-evidence"
 mkdir -p "$DIR"
