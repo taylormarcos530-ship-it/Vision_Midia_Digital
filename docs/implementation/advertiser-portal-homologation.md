@@ -158,3 +158,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Status honesto da homologação: **A — entrada e saída visualmente confirmadas; B — login HTTP ainda não confirmado pelo operador**. Os testes automáticos e as verificações RLS A/B são evidências separadas e já aprovadas.
 - **Não publicar em produção, não habilitar comerciais e não vincular TVs reais.** A campanha A/B continua como rascunho e os dispositivos reais estão fora desta etapa.
 - Próximo teste manual: entrar como **Anunciante B** no mesmo preview, verificar `1 campanha em rascunho, 0 TVs, 0 exibições`, confirmar o nome B e realizar Sair, sem fornecer senha no chat.
+
+## Homologação visual concluída: login e consultas dos anunciantes A e B (13/10/2026, horário de Brasília)
+
+- O operador confirmou por **captura de tela de um navegador Android** o acesso HTTPS do **Anunciante B** à página `anunciante-homologacao.html`, com `Conexão com o Supabase de homologação: OK` e `Conta autorizada: Anunciante B - Homologacao`.
+- O diagnóstico autenticado exibiu precisamente `Campanhas da conta: 1 (rascunhos: 1)`, `Vínculos com TVs de teste: 0` e `Exibições registradas para esta conta: 0`. O painel também apresentou o título `Anunciante B - Homologacao` e `Atualizado agora.`.
+- **Evidência combinada:** operador confirmou **login e consulta real do A** em captura anterior, além de **logout visual do A**; agora confirmou **login e consulta real do B**. A separação A/B em PostgreSQL/RLS e bloqueio por arquivamento já haviam sido validados mediante `ROLLBACK`.
+- **Limites:** ainda não existe evidência visual do logout B, nem teste remoto de rotação/expiração de token ou de carga de propaganda em uma TV fictícia. Prints não provam revogação de token do lado servidor. **Nenhuma tela real foi conectada**, nenhuma campanha foi ativada e nenhum deploy de produção foi executado.
+- **Próxima etapa proposta:** teste de logout/retorno ao login da conta B, sessões vencidas e estado de erro amigável; depois preparar uma TV de bancada *com dados 100% isolados*, sem modificar o player ou os clientes em produção. Não publicar Edge Functions nem novas migrations de produção sem autorização.
