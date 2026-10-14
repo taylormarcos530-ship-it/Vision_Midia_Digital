@@ -267,3 +267,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - **Limite da evidência:** as capturas não permitem cronometrar se a reconexão foi automática após três segundos ou acionada manualmente; não comprovam que o avanço automático continuou depois; tampouco mostram o botão **Simular reinício** em execução. Não afirmar essas três verificações como testes manuais concluídos.
 - Testes automatizados correspondentes: **170/170 aprovados**, CI https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38581562886 . Código e produção não modificados nesta etapa, apenas documentação.
 - **Próximo teste manual:** após a conexão retornar, iniciar/confirmar continuidade do avanço e acionar **Simular reinício** para visualizar estado REINICIANDO por 2 segundos e retorno à mesma rodada e posição.
+
+## Botão de reconexão desativado com conexão já recuperada — UX do laboratório
+
+- Captura no Android mostra o botão **Reconectar** visualmente desabilitado, junto da mensagem **Reconexão fictícia: mesma mídia e rodada, sem avanço**. Verificado que a conexão fictícia já tinha retornado, portanto o botão estava desabilitado **por design**. Isso não indica falha de reconexão.
+- Para remover a ambiguidade, ajustado **somente** `commercial-tv-auto-ui.mjs`: quando a conexão está ativa, o controle mostra **Conectado ✓** e permanece indisponível; quando está desconectado, mostra **Reconectar agora** e fica habilitado; durante reinício mostra **Aguarde o reinício…**.
+- Os três estados continuam dependentes exclusivamente da memória da bancada; nenhuma chamada remota, Supabase, TV, APK, player, URL de produção ou regra de reprodução foi modificada.
+- Reforçados os testes de interação em `tests/commercial-tv-auto-ui.test.cjs`: verificam o estado conectado inicial, o botão durante a queda e o retorno à indicação **Conectado ✓** após reconexão automática.
+- A UI de código foi aprovada na execução CI https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38599395171 . Verificar o CI mais recente após a alteração dos testes antes de afirmar que os testes novos foram executados.
