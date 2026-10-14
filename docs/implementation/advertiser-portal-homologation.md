@@ -150,3 +150,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Estado remoto confirmado antes da alteração: **2 anunciantes ativos, 2 campanhas em rascunho, 0 vínculos com TVs, 0 registros diários**, trava do projeto exclusivo presente.
 - **128/128 testes aprovados** na CI, incluindo 6 novos testes do diagnóstico, erro de autorização, sessão invalidada e verificação de que não há acesso a recursos de produção. Registro da CI https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38493184820 .
 - O teste real de entrada com senha no navegador **ainda depende da confirmação do operador**; não afirmar que foi validado apenas pelos mocks e consultas SQL.
+
+## Confirmação visual do login HTTP do Anunciante A (outubro de 2026)
+
+- O operador enviou duas capturas de tela **da página exclusiva de homologação** no Android. A primeira mostra **Anunciante A - Homologacao** autenticado, diagnóstico `Conexão com o Supabase de homologação: OK`, `Campanhas da conta: 1 (rascunhos: 1)`, `Vínculos com TVs de teste: 0` e `Exibições registradas para esta conta: 0`.
+- A segunda captura, após a ação **Sair**, mostra `Você saiu do painel`, a tela de login visível e o diagnóstico `Login: ainda não efetuado neste navegador`. Isso fornece **evidência do fluxo real de login e logout na interface do Anunciante A**; não comprova, por si só, revogação do token no servidor nem o login de B.
+- Status honesto da homologação: **A — entrada e saída visualmente confirmadas; B — login HTTP ainda não confirmado pelo operador**. Os testes automáticos e as verificações RLS A/B são evidências separadas e já aprovadas.
+- **Não publicar em produção, não habilitar comerciais e não vincular TVs reais.** A campanha A/B continua como rascunho e os dispositivos reais estão fora desta etapa.
+- Próximo teste manual: entrar como **Anunciante B** no mesmo preview, verificar `1 campanha em rascunho, 0 TVs, 0 exibições`, confirmar o nome B e realizar Sair, sem fornecer senha no chat.
