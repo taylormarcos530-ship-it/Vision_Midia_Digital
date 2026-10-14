@@ -1,6 +1,11 @@
 -- STAGING ONLY: all synthetic Auth users, ads, devices and impressions ROLLBACK.
 -- Never run on production. Target: jmiuitrrhtaeyrpuyohk only.
 begin;
+do $staging_guard$ begin
+ if not exists(select 1 from private.vision_staging_guard where project_ref='jmiuitrrhtaeyrpuyohk') then
+  raise exception 'staging_only_guard_rejected';
+ end if;
+end $staging_guard$;
 set local statement_timeout='20s';
 insert into auth.users(id,email) values('00000000-0000-4000-8000-000000001101','isolated-a@vision-staging.test'),('00000000-0000-4000-8000-000000001102','isolated-b@vision-staging.test');
 insert into public.vision_advertisers(id,user_id,name,email) values
