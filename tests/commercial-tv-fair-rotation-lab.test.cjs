@@ -14,9 +14,14 @@ const base=(n=6)=>n===0?null:{
  }))
 };
 async function finishOneCycle(s,api){
- let result=api.fairRotationEvent(s,{type:'start'});
- assert.equal(result.accepted,true);
- s=result.state;const target=s.cycle+1;
+ let result;
+ // Completing a cycle advances automatically; only an interrupted/initial lab needs Start.
+ if(!s.running){
+  result=api.fairRotationEvent(s,{type:'start'});
+  assert.equal(result.accepted,true);
+  s=result.state;
+ }
+ const target=s.cycle+1;
  for(let i=0;i<25&&s.cycle<target;i++){
   const v=api.fairRotationView(s);
   assert.ok(v.current,'unexpected empty program');
