@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+ <meta charset="utf-8">
+ <meta name="viewport" content="width=device-width,initial-scale=1">
+ <meta name="robots" content="noindex,nofollow">
+ <title>TV fictícia — Laboratório Vision Mídia Digital</title>
+ <link rel="stylesheet" href="./commercial.css">
+ <style>
+ .bench-tag{font-size:12px;color:#ffc04d;font-weight:800;letter-spacing:1.5px}
+ .bench-title{max-width:800px}
+ .bench-controls{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 20px;margin:24px 0;padding:20px 24px;background:#111f34;border:1px solid #25354c;border-radius:18px}
+ .bench-check{display:flex;align-items:center;gap:10px;min-width:0;margin:10px 0}
+ .bench-check input{display:inline-block;width:20px;height:20px;min-width:20px;margin:0}
+ .bench-panel{padding:20px 24px;background:#111f34;border:1px solid #25354c;border-radius:18px}
+ .bench-panel h2{margin:10px 0 0}
+ .bench-sequence{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:20px 0}
+ .bench-item{display:flex;flex-direction:column;gap:8px;min-height:120px;border:1px solid #50657b;background:#1b3047;padding:17px;border-radius:12px}
+ .bench-item.commercial{border:2px solid #ffc04d;background:#362c21}
+ .bench-item small{font-size:10px;letter-spacing:1px;color:#a4b2c7}
+ .bench-item.commercial small{color:#ffd98a}
+ .bench-order{font-size:11px;opacity:.8}
+ .bench-empty{grid-column:1/-1;padding:20px;border:1px dashed #465b70;border-radius:12px}
+ .bench-foot{font-size:12px;color:#a4b2c7;margin-top:20px}
+ @media(max-width:620px){.bench-controls{grid-template-columns:1fr;padding:16px}.bench-panel{padding:15px}.bench-sequence{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.bench-item{padding:11px;min-height:130px}}
+ </style>
+ <script type="module" src="./commercial-tv-bench.mjs"></script>
+</head>
+<body>
+ <header class="top"><a class="brand" href="./anunciante.html?demo=1">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Bancada de testes da programação comercial</span></header>
+ <main>
+  <div class="notice"><strong>SIMULAÇÃO OFFLINE — SEM TV REAL</strong> · Este laboratório usa apenas itens fictícios e a lógica isolada de intercalação. Não conecta Supabase, não executa o APK, não registra exibições e não modifica a programação dos clientes.</div>
+  <div class="bench-title"><span class="bench-tag">TV FICTÍCIA · AUTO CENTER</span><h1>Como os anúncios entram entre as mídias</h1><p>Controle a playlist do estabelecimento e o número de comerciais. As mídias originais mantêm a ordem, e os anúncios excedentes não são colocados juntos no final.</p></div>
+  <form id="bench-form" class="bench-controls">
+   <label>Mídias do estabelecimento
+    <select name="baseCount">
+     <option value="0">0 — TV sem playlist</option>
+     <option value="1">1 mídia</option>
+     <option value="3">3 mídias</option>
+     <option value="6" selected>6 mídias</option>
+    </select>
+   </label>
+   <label>Anúncios comerciais disponíveis
+    <select name="adCount">
+     <option value="0">0 anúncios</option>
+     <option value="1">1 anúncio</option>
+     <option value="2" selected>2 anúncios</option>
+     <option value="5">5 anúncios (mais que os espaços)</option>
+    </select>
+   </label>
+   <label class="bench-check"><input name="enabled" type="checkbox" checked> Camada comercial habilitada (somente nesta simulação)</label>
+   <label class="bench-check"><input name="shuffle" type="checkbox"> Playlist em ordem aleatória</label>
+   <label class="bench-check"><input name="single" type="checkbox"> Modo mídia única</label>
+   <label class="bench-check"><input name="scheduled" type="checkbox"> Mídias com agenda própria</label>
+  </form>
+  <section class="bench-panel" aria-label="Sequência simulada">
+   <span class="bench-tag">MANIFESTO FICTÍCIO</span>
+   <h2 id="bench-status">Preparando simulação...</h2>
+   <p id="bench-details" role="status" aria-live="polite"></p>
+   <div id="bench-sequence" class="bench-sequence"></div>
+   <p class="bench-foot">A lista acima é uma simulação da ordem de reprodução, não uma transmissão ao vivo nem um relatório de anúncios. A camada comercial real permanece desativada em produção.</p>
+  </section>
+ </main>
+ <footer>VISION MÍDIA DIGITAL <span>Laboratório isolado — sem publicação na TV.</span></footer>
+</body></html>
