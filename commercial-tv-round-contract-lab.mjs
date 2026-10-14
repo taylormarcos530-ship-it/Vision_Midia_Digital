@@ -116,7 +116,7 @@ export function exportRoundCheckpoint(contract){
  }));
 }
 function validModel(model,primary,ads){
- if(!model||model.version!==1||!model.options===false)return false;
+ if(!model||model.version!==1)return false;
  if(!safeInteger(model.cycle)||!safeInteger(model.position)||
   !safeInteger(model.generation)||!safeInteger(model.completed)||
   !safeInteger(model.completedBase)||!safeInteger(model.completedAds)||
@@ -125,7 +125,7 @@ function validModel(model,primary,ads){
   !Array.isArray(model.selected)||!Array.isArray(model.inventory)||!model.played||
   typeof model.played!=='object'||model.completed!==model.completedBase+model.completedAds)
   return false;
- if(!same(model.primary,primary)||!same(model.inventory,ads))return false;
+ if(!same(model.primary,primary)||!same(model.inventory,ads.map(ad=>({...ad,commercial:true}))))return false;
  if(model.position>=model.items.length&&model.items.length>0)return false;
  if(model.position!==0&&model.items.length===0)return false;
  const baseItems=model.items.filter(x=>!x.commercial);
@@ -137,7 +137,7 @@ function validModel(model,primary,ads){
  return true;
 }
 function safeFallback(input,identity,reason,checkpoint){
- const fallback=baseOnlyModel(input?.primary||null);
+ const fallback=baseOnlyModel(validateBase(input?.primary)?input.primary:null);
  // After a commercially changed revision, keep base position only if the base
  // program itself is unchanged. Never replay a deleted advertising item.
  const candidate=checkpoint?.model;
