@@ -35,7 +35,7 @@ jobs:
             supabase/functions/device-control/ \
             supabase/functions/device-monitoring/ \
             netlify.toml vercel.json
-          grep -Fq "applicationId 'com.visionmidia.diagnosticlab.v04'" android-diagnostic-lab/app/build.gradle
+          grep -Fq "applicationId 'com.visionmidia.diagnosticlab.v05'" android-diagnostic-lab/app/build.gradle
           ! grep -q '<uses-permission' android-diagnostic-lab/app/src/main/AndroidManifest.xml
           echo "Production and customer-player files protected."
 
