@@ -39,3 +39,18 @@ test('Auth binding cannot be executed meaningfully until two specific emails are
  assert.match(sql,/email_a like '%__test_email%'/);
  assert.match(sql,/email_b like '%__test_email%'/);
 });
+
+test('linked A/B isolation verification is strictly staging-only and always rolls back',()=>{
+ const sql=fs.readFileSync('tests/sql/staging_linked_accounts_rls_rollback.sql','utf8');
+ assert.match(sql,/private\.vision_staging_guard/);
+ assert.match(sql,/project_ref='jmiuitrrhtaeyrpuyohk'/);
+ assert.match(sql,/staging_only_guard_rejected/);
+ assert.match(sql,/set local role authenticated/);
+ assert.match(sql,/vision_advertiser_portal\(\)/);
+ assert.match(sql,/archived advertiser still can access portal/);
+ assert.match(sql,/rollback;\s*select 'PASS/);
+ assert.doesNotMatch(sql,/\bcommit\s*;/i);
+ assert.doesNotMatch(sql,/fpadgedrgcxrrqflzhjt/);
+ assert.doesNotMatch(sql,/insert into auth\.users/i);
+ assert.doesNotMatch(sql,/encrypted_password\s*=/i);
+});
