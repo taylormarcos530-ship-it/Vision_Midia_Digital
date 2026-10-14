@@ -93,6 +93,9 @@ test('staging diagnostic lives only in homologation HTML and uses textContent',(
  assert.doesNotMatch(regular,/commercial-staging-diagnostics/);
  assert.doesNotMatch(regular,/staging-check-access/);
  assert.match(script,/output\.textContent=result\.lines\.join/);
+ assert.match(script,/addEventListener\('click',clearDiagnostic,true\)/);
+ assert.match(script,/addEventListener\('submit',clearDiagnostic,true\)/);
+ assert.match(script,/if\(currentVersion!==checkVersion\)return/);
  assert.doesNotMatch(script,/innerHTML|localStorage|sessionStorage|\/auth\/v1\/token|\/auth\/v1\/user/);
  assert.doesNotMatch(script,/fpadgedrgcxrrqflzhjt/);
 });
