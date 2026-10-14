@@ -79,3 +79,18 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - **Infraestrutura apenas:** schema comercial ainda **NÃO instalado remotamente**; nenhuma Edge Function, aplicativo, player, configuração do preview, credencial ou dado de cliente foi copiado/modificado.
 - **Bloqueio operacional:** operações de homologação devem apontar explicitamente a `jmiuitrrhtaeyrpuyohk`; nunca executar schema/campanhas no projeto `fpadgedrgcxrrqflzhjt`. Usar contas, mídias, TV e dispositivos fictícios, sem vincular equipamentos reais.
 - **Próximo bloco:** validar dependências do SQL num schema mínimo somente em `jmiuitrrhtaeyrpuyohk`; preparar Auth com contas fictícias; comprovar RLS e armazenamento com dados simulados. Nenhum merge/deploy de produção sem autorização separada.
+
+## Homologação Supabase: esquema instalado e testes RLS (outubro de 2026)
+
+**Projeto-alvo único:** `jmiuitrrhtaeyrpuyohk` — **nunca** `fpadgedrgcxrrqflzhjt` (produção).
+
+- Verificação inicial: novo projeto com zero tabelas `public`, sem migrações, Auth e Storage nativos presentes.
+- Migradas no **projeto isolado** as dependências operacionais mínimas da bancada: `20261014000855 staging_commercial_baseline_only`; e exclusivamente o schema comercial da branch: `20261014000910 staging_advertiser_transparency_portal_v1`.
+- Implantada trava própria de homologação no schema não exposto `private.vision_staging_guard`: migração `staging_strict_environment_guard_only`. A SQL de teste exige esta marca exclusiva antes de gravar dados fictícios.
+- Criado somente na homologação o bucket **privado** `vision-media`; sem copiar nenhum arquivo de cliente.
+- Verificadas 11 tabelas `public` com RLS ativo, todas inicialmente sem linhas, e sete RPCs comerciais: apenas `public.vision_advertiser_portal()` executável por `authenticated`; as rotas Master/manifesto não podem ser executadas pelo usuário comum ou `anon`.
+- Script versionado `tests/sql/staging_advertiser_rls_rollback.sql` foi **executado com êxito diretamente no PostgreSQL de homologação**. Dois registros sintéticos temporários A/B demonstraram isolamento de campanhas e contagens, bloqueio de anunciante desativado e negação anônima. `ROLLBACK` concluído: **zero anunciantes e zero usuários fictícios persistidos**.
+- A mesma verificação com a trava exclusiva foi repetida com sucesso. Nada foi executado no banco operacional.
+- O Security Advisor de homologação mostrou somente avisos conhecidos: seis tabelas operacionais mínimas sem políticas de acesso (propositalmente inacessíveis por cliente neste ambiente isolado) e a RPC `vision_advertiser_portal` com `SECURITY DEFINER` executável por autenticados, intencional e verificada quanto à identidade. Revisar novamente antes de qualquer integração real. Referência do linter: https://supabase.com/docs/guides/database/database-linter?lint=0029_authenticated_security_definer_function_executable .
+- **Não houve criação de contas Auth com senhas reais**, publicação de Edge Functions, conexão de preview a Supabase, teste em TV física, merge ou deploy de produção. O teste de identidades foi transacional, sem login HTTP.
+- **Próxima etapa segura:** usar a API Admin Auth no próprio ambiente de homologação para criar duas contas de teste e um Master fictício; testar login real, bloqueio e revogação. Preparar permissões de Edge Function apenas no projeto de testes, sem função nova ou ativação em produção. Depois validar Storage/relatórios com dados fictícios.
