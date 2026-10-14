@@ -283,3 +283,11 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - Testes adicionais no arquivo `tests/commercial-tv-auto-ui.test.cjs` cobrem o clique conectado sem alterar o temporizador e a reconexão manual após interrupção. Total da CI: **172/172 aprovados, zero falhas**, https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38600703163 ; a checagem de arquivos operacionais permaneceu verde.
 - Preview isolado Vercel para o commit do código e dos testes `8afec47e2c867d02381b15826a95b6bf11492446`: `https://vision-midia-digital-850bex4k5-vision-5529.vercel.app/commercial-tv-auto-bench.html`, **READY**, `target:null` (não produção).
 - **Não representa conexão real com a TV:** somente a bancada offline foi alterada. Ainda depende de confirmação visual do usuário no Android nesta versão.
+
+## Reconexão automática comprovada na rodada 4 (Android)
+
+- O operador relatou ter iniciado a simulação na **Rodada 4**, acionado **Simular queda da conexão**, observado o retorno automático à **mesma rodada** e a retomada da progressão normal.
+- **Validação manual declarada pelo operador:** retorno automático após queda fictícia, preservação do índice da rodada e continuidade da simulação. Não há dados sobre o índice exato do item ou o tempo cronometrado de reconexão; não extrapolar esses detalhes.
+- Esse teste diz respeito exclusivamente ao laboratório offline `commercial-tv-auto-bench.html`. **Não confirma reconexão de uma TV física, persistência do APK, contabilização de exibições nem operação do gateway produtivo.**
+- **Pendente:** verificação visual de **Simular reinício** com restauração da rodada e do item no mesmo navegador; depois planejar homologação em player exclusivo de testes antes de qualquer ativação operacional.
+- Nenhum arquivo operacional, Supabase, device-gateway ou TV de cliente foi modificado neste registro.
