@@ -199,3 +199,14 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - O rodízio aqui é **por criativo/mídia comercial**, não mede audiência nem resolve ainda o agrupamento de várias campanhas sob um mesmo anunciante. Na TV real, um player pode repetir o mesmo manifesto em cache; assim, passar para a rodada seguinte **depende de um protocolo explícito futuro de mudança de ciclo** (por exemplo, rotação de manifestos atualizados sem perda de mídia). **Não ativar isso na infraestrutura produtiva enquanto não for validado em player e equipamento de teste isolado**.
 - **146/146 testes aprovados, 0 falhas** na CI: https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38496727048 ; os arquivos operacionais protegidos permaneceram intocados.
 - Nada foi escrito no Supabase, nenhuma playlist/TV real foi conectada e nenhum deploy de produção foi efetuado nesta etapa.
+
+## Validação visual das cinco rodadas da TV fictícia — ciclo completo
+
+- O operador testou a página de bancada `commercial-tv-bench.html` no Android com **6 mídias do estabelecimento e 5 anúncios comerciais disponíveis**, sem playlist aleatória, mídia única nem agendas individuais ativadas.
+- Prints enviados pelo operador confirmaram as sequências de anúncios: **rodada 1: Loja do João e Empresa B; rodada 2: Publicidade C e D; rodada 3: Publicidade E e Loja do João; rodada 4: Empresa B e Publicidade C; rodada 5: Publicidade D e E**.
+- Na rodada 5, a tela mostrou explicitamente os comerciais D/E nas posições 04/08, a playlist original do Auto Center mantida na ordem (Troca de óleo, Suspensão, Escapamento, Freios, Motor, Revisão) e os demais anunciantes aguardando.
+- Portanto, nas **cinco rodadas simuladas, cada criativo foi selecionado exatamente duas vezes**, sem comerciais consecutivos e sem mudar as seis mídias do estabelecimento. Isso demonstra **oportunidades simuladas**, não exibições contabilizadas.
+- **Escopo da evidência:** simulação no navegador usando o helper comercial isolado e avanço *manual* pela ação "Próxima rodada"; não representa demonstração do player real, avanço de ciclo automático no gateway, persistência de posição ao reiniciar ou relatório de reprodução concluída.
+- Última regressão automática disponível do mesmo código, anterior a este registro apenas documental: **146/146 testes aprovados** no GitHub Actions: https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38496805525 .
+- Nenhuma campanha real foi ativada, nenhuma TV vinculada, nenhum Supabase operacional consultado ou modificado, nenhum player/APK implantado, nenhuma alteração de produção autorizada.
+- **Próxima etapa técnica antes de integração:** projetar e testar em ambiente isolado o avanço seguro de ciclo automático sem reiniciar indevidamente o rodízio a cada atualização do manifesto; prever falhas de conexão/reinício e garantia de não duplicar publicidade, mantendo a programação original do cliente.
