@@ -7,9 +7,9 @@ const src=()=>fs.readFileSync(path.join(dir,'app/src/main/java/com/visionmidia/d
 const manifest=()=>fs.readFileSync(path.join(dir,'app/src/main/AndroidManifest.xml'),'utf8');
 test('diagnostic has a separate application ID and never replaces the production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v04'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v05'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
- assert.match(manifest(),/Vision Diagnóstico TESTE 0.4/);
+ assert.match(manifest(),/Vision Diagnóstico TESTE 0.5/);
  assert.match(manifest(),/LEANBACK_LAUNCHER/);
 });
 test('no Android privileges, boot receivers, services, or production network clients',()=>{
@@ -63,9 +63,9 @@ test('H.264 decoder outcome remains visible after short blue sample returns to n
 });
 test('revised test APK installs alongside older debug signer and production player',()=>{
  const gradle=fs.readFileSync(path.join(dir,'app/build.gradle'),'utf8');
- assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v04'/);
- assert.match(gradle,/versionCode 4/);
- assert.match(gradle,/versionName '0\.4-laboratorio'/);
+ assert.match(gradle,/applicationId 'com\.visionmidia\.diagnosticlab\.v05'/);
+ assert.match(gradle,/versionCode 5/);
+ assert.match(gradle,/versionName '0\.5-laboratorio'/);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.diagnosticlab'\s*$/m);
  assert.doesNotMatch(gradle,/applicationId 'com\.visionmidia\.player'/);
 });
