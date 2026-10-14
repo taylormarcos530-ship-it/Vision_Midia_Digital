@@ -226,6 +226,8 @@ public final class MainActivity extends Activity {
                       button("Simular VERTICAL",() -> setPortrait(true)));
         pair(controls,button("Tela cheia",this::fullscreen),
                       button("Escolher MP4 (opcional)",this::pickVideo));
+        pair(controls,button("▶ INTERCALAR MP4 + IMAGENS",this::openMediaRotation),
+                      button("← Diagnóstico atual",() -> showProgram("Você está no diagnóstico básico.")));
 
         info = text("", 13, Color.LTGRAY);
         root.addView(info);
@@ -468,6 +470,11 @@ public final class MainActivity extends Activity {
         video.setVideoURI(uri);
         video.requestFocus();
         // Actual video.start() is called only when the media player is prepared.
+    }
+
+    private void openMediaRotation() {
+        // Separate local activity. Nothing in the operational customer player is changed.
+        startActivity(new Intent(this,MediaRotationActivity.class));
     }
 
     private void pickVideo() {
