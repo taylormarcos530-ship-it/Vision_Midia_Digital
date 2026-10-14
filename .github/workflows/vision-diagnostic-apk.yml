@@ -51,8 +51,12 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Prepare Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Use runner's preinstalled Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -d "${ANDROID_HOME:-/usr/local/lib/android/sdk}"
+          echo "Android SDK preinstalled by the runner; no sdkmanager installation required."
       - name: Use Gradle 8.10.2
         uses: gradle/actions/setup-gradle@v4
         with:
