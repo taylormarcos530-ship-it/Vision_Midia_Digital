@@ -85,15 +85,21 @@ export function restoreAutoBench(checkpoint){
  // Models explicit checkpoint handoff. No guarantee across real device or browser restarts.
  if(!checkpoint||checkpoint.version!==1||
     !checkpoint.options||typeof checkpoint.options!=='object'||
+    !Number.isInteger(checkpoint.options.baseCount)||checkpoint.options.baseCount<0||checkpoint.options.baseCount>6||
+    !Number.isInteger(checkpoint.options.adCount)||checkpoint.options.adCount<0||checkpoint.options.adCount>5||
+    !['shuffle','single','scheduled','enabled'].every(key=>typeof checkpoint.options[key]==='boolean')||
     !Number.isSafeInteger(checkpoint.cycle)||checkpoint.cycle<0||
     !Number.isSafeInteger(checkpoint.position)||checkpoint.position<0||
     !Number.isSafeInteger(checkpoint.generation)||checkpoint.generation<0||
+    !Number.isSafeInteger(checkpoint.generation+1)||
     !Number.isSafeInteger(checkpoint.completedItems)||checkpoint.completedItems<0||
     !Number.isSafeInteger(checkpoint.completedCycles)||checkpoint.completedCycles<0||
     typeof checkpoint.connected!=='boolean')
   return transition(createAutoBench({enabled:false}),{},false,'Checkpoint inválido: somente playlist original liberada.');
  const restored={...checkpoint,options:autoBenchOptions(checkpoint.options)};
- if(restored.position>=autoBenchView({...restored,position:0}).items.length)
+ const numberOfItems=autoBenchView({...restored,position:0}).items.length;
+ if((numberOfItems===0&&restored.position!==0)||
+    (numberOfItems>0&&restored.position>=numberOfItems))
   return transition(createAutoBench({enabled:false}),{},false,'Checkpoint fora da playlist: anúncios desativados.');
  return transition(restored,{generation:restored.generation+1},true,
   'Reinício simulado: posição e rodada recuperadas; eventos antigos invalidados.');
