@@ -1,0 +1,86 @@
+name: Vision Diagnostic Android TV Emulator (staging only)
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+    paths:
+      - .github/workflows/vision-diagnostic-android-tv-emulator.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  emulate-tv:
+    runs-on: ubuntu-latest
+    timeout-minutes: 28
+    steps:
+      - name: Checkout test branch without publishing credentials
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Guard protected production files and verify standalone package
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=87d907010db614d5459b6af9c7b421328e64f225
+          git cat-file -e "${BASE}^{commit}"
+          git diff --exit-code "$BASE" HEAD -- \
+            player.js player.html player.css player.webmanifest \
+            android-player/ config.js sw.js index.html app.js master.html master.js \
+            supabase/functions/device-gateway/index.ts \
+            supabase/functions/device-control/ \
+            supabase/functions/device-monitoring/ \
+            netlify.toml vercel.json
+          grep -Fq "applicationId 'com.visionmidia.diagnosticlab.v04'" android-diagnostic-lab/app/build.gradle
+          ! grep -q '<uses-permission' android-diagnostic-lab/app/src/main/AndroidManifest.xml
+          echo "Production and customer-player files protected."
+
+      - name: Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Gradle 8.10.2
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+
+      - name: Compile ONLY standalone debug diagnostic APK
+        working-directory: android-diagnostic-lab
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Enable KVM for ephemeral emulator
+        shell: bash
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm || true
+
+      - name: Boot disposable Android TV API 29 and run smoke test
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          target: android-tv
+          arch: x86
+          cores: 2
+          ram-size: 2048M
+          emulator-boot-timeout: 600
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
+          script: bash scripts/vision-diagnostic-tv-emulator-smoke.sh
+
+      - name: Preserve emulator screenshots and diagnostics (private artifact)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-tv-android-emulator-lab-evidence
+          path: android-diagnostic-lab/emulator-evidence/
+          if-no-files-found: ignore
+          retention-days: 7
+
+# This test never installs anything on a customer TV, uses no Supabase, and never deploys.
