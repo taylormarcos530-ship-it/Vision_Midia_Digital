@@ -67,3 +67,15 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - A lógica real de Auth, RLS e os dados de produção não foram alterados. A homologação com credenciais verdadeiras continua bloqueada até haver um Supabase de testes distinto.
 - Resultado local de CI: **108/108 testes aprovados**, inclusive a bateria que verifica não haver mudanças no player, APK e APIs operacionais; execução https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38487488565 .
 - **Próxima etapa:** obter escolha/autorização da organização para uma instância independente de homologação e testar os logins reais de duas contas fictícias com RLS nesse ambiente, sem publicações em produção.
+
+## Provisionamento Supabase de homologação — confirmado em 13/10/2026
+
+- **Projeto novo e exclusivo:** `Vision Mídia Digital - Homologação`
+- **Ref do projeto de teste:** `jmiuitrrhtaeyrpuyohk` — https://supabase.com/dashboard/project/jmiuitrrhtaeyrpuyohk
+- **Região de teste:** `sa-east-1` (São Paulo); **status verificado:** `ACTIVE_HEALTHY`.
+- **Organização:** `Vision mídia tv`, id `susctwfrittaneqtcywv`, plano Free. O serviço retornou **0/mês** para criar um projeto nesta organização; confirmação do usuário obtida antes da criação.
+- **Banco produtivo, proibido para testes:** `fpadgedrgcxrrqflzhjt` — `ACTIVE_HEALTHY`, `us-west-2`.
+- A verificação `get_project` para ambas as refs e `list_projects` confirmou dois projetos com **refs e hosts de PostgreSQL independentes**.
+- **Infraestrutura apenas:** schema comercial ainda **NÃO instalado remotamente**; nenhuma Edge Function, aplicativo, player, configuração do preview, credencial ou dado de cliente foi copiado/modificado.
+- **Bloqueio operacional:** operações de homologação devem apontar explicitamente a `jmiuitrrhtaeyrpuyohk`; nunca executar schema/campanhas no projeto `fpadgedrgcxrrqflzhjt`. Usar contas, mídias, TV e dispositivos fictícios, sem vincular equipamentos reais.
+- **Próximo bloco:** validar dependências do SQL num schema mínimo somente em `jmiuitrrhtaeyrpuyohk`; preparar Auth com contas fictícias; comprovar RLS e armazenamento com dados simulados. Nenhum merge/deploy de produção sem autorização separada.
