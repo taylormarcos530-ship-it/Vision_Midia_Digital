@@ -10,8 +10,14 @@ export function interleave(primary, ads, every = 3) {
  if (commercialEligibility(primary) || !ads?.length) return primary;
  const gap = Number.isInteger(every) && every >= 1 && every <= 20 ? every : 3;
  const items=[]; let cursor=0;
- primary.items.forEach((item,i)=>{items.push(item);if((i+1)%gap===0 && cursor<ads.length)items.push(ads[cursor++]);});
- items.push(...ads.slice(cursor));
+ // At most one commercial insertion per eligible base-media boundary.
+ // Never append surplus ads in a block or alter the customer's playlist.
+ // The final boundary lets short playlists participate without replacing base media.
+ primary.items.forEach((item,i)=>{
+  items.push(item);
+  if(cursor<ads.length && ((i+1)%gap===0 || i===primary.items.length-1))
+   items.push(ads[cursor++]);
+ });
  return {...primary,items};
 }
 export async function bounded(operation, timeoutMs=1500) {
