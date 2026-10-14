@@ -114,6 +114,8 @@ test('a failed token refresh removes the previous advertiser dashboard and reque
   logout:async()=>{}
  };
  const {element}=renderUI(api);
+ // Failed token rotation already clears the shared session in CommercialAPI.refresh().
+ active=false;
  reject(Object.assign(new Error('invalid_grant'),{status:400}));
  await new Promise(r=>setImmediate(r));
  assert.equal(cleared,1);
