@@ -2,7 +2,7 @@
 
 **Branch isolada:** `fix/advertiser-portal-safety-20261013`
 **Base da feature preservada:** `87d907010db614d5459b6af9c7b421328e64f225`
-**Estado atualizado:** projeto de homologação independente criado e esquema instalado; segurança RLS validada no banco de teste; login HTTP preparado em página exclusiva, aguardando contas fictícias no Supabase Auth. Produção intocada.
+**Estado atual:** duas contas de homologação confirmadas e vinculadas; uma campanha ilustrativa em rascunho para cada conta; isolamento RLS confirmado no banco; sem dispositivos, sem reprodução, sem mídia; login HTTP com senha ainda depende de verificação manual. Produção e player intocados.
 
 ## Concluído nesta etapa
 
@@ -127,3 +127,15 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - **Ainda falta validar login HTTP pelo navegador com a senha conhecida pelo operador**, além de criação e exibição de duas campanhas ilustrativas; a simulação SQL de `auth.uid()` não substitui o teste real do Supabase Auth.
 - Preview de testes: `anunciante-homologacao.html` (Vercel preview, nunca domínio de produção). Não usar login/senhas de clientes reais ou da conta Master.
 - Próximo bloco: operador entra em cada conta fictícia pelo preview isolado e confirma que os painéis são diferentes; em seguida preparar campanha e impressão fictícias com execução e desmontagem controladas apenas em homologação.
+
+## Duas campanhas ilustrativas em rascunho — checkpoint 14/10/2026
+
+- **Projeto exclusivamente de homologação:** `jmiuitrrhtaeyrpuyohk` (São Paulo). A trava `private.vision_staging_guard` foi verificada antes das operações. Nada foi executado contra a ref operacional `fpadgedrgcxrrqflzhjt`.
+- Script versionado `tests/sql/staging_seed_two_draft_campaigns.sql`: cria as campanhas **`HOMOLOGACAO A - Campanha ilustrativa (NAO VEICULAR)`** e **`HOMOLOGACAO B - Campanha ilustrativa (NAO VEICULAR)`**, exclusivamente para os anunciantes de bancada A/B; e-mails e UUIDs pessoais não são incluídos no código.
+- As campanhas são `status='draft'`, sem `current_revision_id`, revisões, Storage, playlist, dispositivos, vínculo com TVs ou eventos de playback. Datas são calculadas no fuso de São Paulo e o procedimento valida a ausência de condições capazes de veicular anúncios.
+- A mesma SQL de inserção foi executada **duas vezes** com sucesso, resultando em **exatamente duas campanhas**. Não houve duplicação, edição de campanhas existentes nem geração de impressões.
+- O teste do portal real via identidade SQL `tests/sql/staging_linked_accounts_rls_rollback.sql` foi atualizado e executado novamente: **PASS** na separação A/B por RLS, cada usuário vê **uma única campanha correspondente, status `draft`**, nenhum ponto e nenhum histórico; a simulação de exclusão bloqueia o acesso e é integralmente revertida por `ROLLBACK`. Ambas as contas permanecem ativas.
+- Verificação adicional da situação persistida: `campaigns=2`, `harmless_drafts=2`, `revisions=0`, `tv_links=0`, `recorded_days=0`, `playback_events=0`, `devices=0`, `active_advertisers=2`, manifesto comercial para TV inexistente igual a `[]`.
+- CI automático do GitHub: **122/122 testes aprovados, zero falhas**; [execução de verificação](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38492604139). CI também comprovou que arquivos do player, APK e rotas operacionais permanecem iguais à baseline protegida.
+- **Login HTTP não foi provado neste checkpoint:** o usuário ainda precisa entrar com senha válida para cada uma das duas contas na página `anunciante-homologacao.html`. O teste SQL simula a identidade autenticada, mas não testa senha ou Auth HTTP.
+- **Próximo bloco:** conferir manualmente as duas sessões HTTPS no preview de homologação, confirmar que cada anunciante vê apenas sua campanha fictícia, revisar UX de mensagens e estados de sessão, sem nenhuma integração com TVs de clientes e sem habilitar publicidade comercial em produção.
