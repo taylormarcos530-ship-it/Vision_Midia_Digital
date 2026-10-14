@@ -38,7 +38,7 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
   const item=objects[role],name=role==='base'?'base':'commercial';
   clearPreview(role);
   $('media-'+name+'-loaded').textContent=item?
-   (item.type==='video'?'VÍDEO':'IMAGEM')+' carregado ✓ · '+item.name:
+   (item.type==='video'?'VÍDEO carregado ✓ · ':'IMAGEM carregada ✓ · ')+item.name:
    'Nenhum arquivo carregado; será mostrado um quadro fictício.';
   if(!item)return;
   if(item.type==='video'){
