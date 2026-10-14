@@ -72,7 +72,7 @@ jobs:
           ram-size: 2048M
           emulator-boot-timeout: 600
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim
-          script: bash scripts/vision-diagnostic-tv-emulator-smoke.sh
+          script: bash scripts/vision-diagnostic-tv-emulator-smoke.sh && bash scripts/vision-diagnostic-tv-recovery-smoke.sh
 
       - name: Preserve emulator screenshots and diagnostics (private artifact)
         if: always()
