@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' blob: data:; media-src blob:; connect-src 'none'; font-src 'self'; base-uri 'none'; form-action 'none'">
+<title>Player de homologação local — Vision Mídia Digital</title>
+<link rel="stylesheet" href="./commercial.css">
+<style>
+.media-layout{max-width:1080px;margin:0 auto}
+.media-kicker{font-weight:800;color:#ffd36b;letter-spacing:1px;font-size:12px}
+.media-stage{position:relative;aspect-ratio:16/9;width:100%;background:#0b1523;border:2px solid #4c6681;border-radius:16px;overflow:hidden;display:grid;place-items:center;margin:16px 0}
+.media-stage img,.media-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#0b1523}
+.media-stage [hidden]{display:none}
+.media-placeholder{text-align:center;color:#fff;font-size:clamp(23px,4.5vw,48px);font-weight:800;padding:22px;text-shadow:0 3px 20px #07101b}
+.media-stage:has(#media-live[data-playing="true"]) {border-color:#e3ad40}
+.media-screen-label{position:absolute;top:12px;left:14px;right:14px;display:flex;align-items:flex-start;justify-content:space-between;gap:10px;pointer-events:none}
+.media-screen-label span{font-size:11px;font-weight:750;background:#060e18cb;color:#f3f5fa;padding:7px 9px;border-radius:8px}
+.media-screen-label #media-live[data-playing="true"]{color:#ffe098}
+.media-controls{display:flex;flex-wrap:wrap;gap:10px;margin:20px 0}
+.media-controls button{min-height:44px;width:auto;flex:1 1 160px}
+.media-info,.media-files{background:#13223a;border:1px solid #344f70;border-radius:16px;padding:18px 22px;margin-top:14px}
+.media-files{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}
+.media-files label{display:block;font-size:14px}
+.media-files input{margin-top:10px;display:block;max-width:100%;width:100%;font-size:12px}
+.media-description{font-size:13px;color:#c8d1e1;margin:10px 0}
+.media-warning{font-size:12px;color:#d6dfeb;margin-top:14px}
+.media-status{font-size:14px;line-height:1.6}
+@media(max-width:680px){.media-files{grid-template-columns:1fr}.media-info,.media-files{padding:14px}.media-stage{border-radius:10px}.media-screen-label span{font-size:9px}.media-controls button{flex:1 1 138px}}
+</style>
+<script type="module" src="./commercial-tv-media-ui.mjs"></script>
+</head>
+<body>
+<header class="top"><a class="brand" href="./commercial-tv-auto-bench.html">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Player exclusivo de homologação</span></header>
+<main id="media-lab" class="media-layout">
+<div class="notice"><strong>PLAYER DE TESTES — SEM TV REAL</strong> · Arquivos selecionados ficam somente neste navegador, não são enviados para o servidor. Esta tela não se conecta ao Supabase, não conta exibições e não usa o APK dos clientes.</div>
+<p class="media-kicker">LABORATÓRIO ISOLADO · AUTO CENTER FICTÍCIO</p>
+<h1>Reprodução de mídias com anúncios intercalados</h1>
+<p>Simule a sequência de seis mídias do estabelecimento e até cinco anúncios fictícios. Sem selecionar arquivos, a bancada exibe quadros com nomes; você também pode escolher uma imagem ou vídeo do próprio aparelho para testar reprodução.</p>
+<div id="media-screen" class="media-stage" aria-label="Visualização de teste 16 por 9">
+ <div id="media-placeholder" class="media-placeholder">Pronto para iniciar</div>
+ <img id="media-photo" alt="Imagem local de teste" hidden>
+ <video id="media-video" muted playsinline preload="metadata" hidden></video>
+ <div class="media-screen-label"><span id="media-round">Rodada 1</span><span id="media-live" data-playing="false">PAUSADO</span></div>
+</div>
+<div class="media-controls" aria-label="Controles exclusivamente locais">
+ <button type="button" id="media-start">Iniciar reprodução local</button>
+ <button type="button" id="media-pause">Pausar</button>
+ <button type="button" id="media-disconnect">Simular queda</button>
+ <button type="button" id="media-reconnect">Reconectar</button>
+ <button type="button" id="media-restart">Simular reinício</button>
+ <button type="button" id="media-no-playlist">Remover playlist fictícia</button>
+ <button type="button" id="media-restore-playlist">Restaurar playlist fictícia</button>
+</div>
+<section class="media-info">
+ <strong id="media-current">Preparando mídia fictícia...</strong>
+ <p id="media-status" class="media-status" role="status" aria-live="polite"></p>
+ <p id="media-count" class="media-description"></p>
+ <p id="media-notice" class="media-description">Toque em Iniciar para reproduzir apenas os itens da bancada.</p>
+</section>
+<section class="media-files" aria-label="Arquivos opcionais para testar mídia local">
+ <label><strong>Imagem ou vídeo do estabelecimento</strong><input type="file" id="media-base-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-description">Aplica-se às mídias fictícias do Auto Center.</span></label>
+ <label><strong>Imagem ou vídeo comercial</strong><input type="file" id="media-commercial-file" accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"><span class="media-description">Aplica-se apenas aos anúncios fictícios intercalados.</span></label>
+</section>
+<p class="media-warning">As imagens locais aparecem por cerca de 2,5 segundos; vídeos avançam pelo evento real de término do arquivo. Os quadros fictícios sem arquivo avançam a cada 2 segundos. Erros de mídia pausam o teste; falhas comerciais desativam os anúncios. Tudo ocorre apenas enquanto a página está aberta e visível. A produção permanece intocada.</p>
+</main>
+<footer>VISION MÍDIA DIGITAL <span>Homologação local — nenhum cliente conectado</span></footer>
+</body></html>
