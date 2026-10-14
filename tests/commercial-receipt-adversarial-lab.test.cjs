@@ -227,8 +227,7 @@ test('offline adversarial fixtures cannot access service APIs or change producti
  const gateway=fs.readFileSync('supabase/functions/device-gateway/index.ts','utf8');
  assert.match(src,/OFFLINE LAB ONLY/);
  assert.match(testSrc,/Adversarial OFFLINE fixtures/);
- for(const file of [src,testSrc]){
-  assert.doesNotMatch(file,/\bfetch\s*\(|createClient\s*\(|\.supabase\.co|service_role|localStorage|sessionStorage|https?:\/\//);
- }
+ // Inspect executable source, not this test's own forbidden-token regexp.
+ assert.doesNotMatch(src,/\bfetch\s*\(|createClient\s*\(|\.supabase\.co|service_role|localStorage|sessionStorage|https?:\/\//);
  assert.doesNotMatch(gateway,/commercial-receipt-adversarial-lab/);
 });
