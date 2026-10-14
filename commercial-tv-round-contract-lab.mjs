@@ -82,7 +82,7 @@ export function createRoundContract(input){
  const identity=describeRoundProgram(input);
  const model=identity.valid&&identity.allowed?
   createFairRotationLab(input.primary,input.ads||[]):
-  baseOnlyModel(identity.valid?input.primary:null);
+  baseOnlyModel(validateBase(input?.primary)?input.primary:null);
  return {version:LAB_CONTRACT_VERSION,identity,model,epoch:0,
   status:identity.reason||null};
 }
