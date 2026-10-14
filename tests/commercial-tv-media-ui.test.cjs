@@ -113,5 +113,113 @@ test('disconnection, no playlist, and unsupported file cannot leak media outside
  assert.equal(d.el('media-live').textContent,'PAUSADO');
  d.click('media-reconnect');
  assert.equal(d.el('media-round').textContent,position);
- assert.equal(d.timers.size,0,'reconnection must never auto-complete media');
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+ assert.equal([...d.timers.values()][0].delay,2000,'manual reconnect resumes from same item');
+});
+
+test('two separate selected files get visible independent previews and commercial starts on item four',async()=>{
+ const d=await createDOM();
+ d.select('media-base-file',{size:10000,type:'video/mp4',name:'oficina.mp4'});
+ d.select('media-commercial-file',{size:5000,type:'image/png',name:'anuncio.png'});
+ assert.equal(d.urls.size,2);
+ assert.match(d.el('media-base-loaded').textContent,/VÍDEO carregado.*oficina.mp4/);
+ assert.match(d.el('media-commercial-loaded').textContent,/IMAGEM carregada.*anuncio.png/);
+ assert.equal(d.el('media-base-thumb-video').hidden,false);
+ assert.equal(d.el('media-commercial-thumb-image').hidden,false);
+ assert.match(d.el('media-file-count').textContent,/1 mídia do estabelecimento.*1 comercial/);
+ assert.match(d.el('media-order-hint').textContent,/item 4 de 8/);
+ d.click('media-start');
+ assert.equal(d.el('media-video').hidden,false);
+ assert.equal(d.timers.size,0);
+ for(let i=0;i<3;i++)d.el('media-video').onended();
+ assert.match(d.el('media-round').textContent,/item 4 de 8/);
+ assert.match(d.el('media-current').textContent,/Publicidade comercial/);
+ assert.equal(d.el('media-photo').hidden,false);
+ assert.equal(d.el('media-video').hidden,true);
+ assert.equal(d.el('media-photo').src,d.el('media-commercial-thumb-image').src);
+ assert.equal(d.timers.size,0);
+ d.el('media-photo').onload();
+ d.tick(2500);
+ assert.match(d.el('media-round').textContent,/item 5 de 8/);
+ assert.equal(d.el('media-video').hidden,false);
+});
+
+test('automatic reconnection after three seconds resumes the exact media and rejects old callbacks',async()=>{
+ const d=await createDOM();
+ d.click('media-start');d.tick(2000);
+ const originalPosition=d.el('media-round').textContent;
+ d.click('media-disconnect');
+ assert.equal(d.el('media-live').textContent,'SEM CONEXÃO');
+ assert.equal(d.el('media-reconnect').disabled,false);
+ assert.equal(d.el('media-reconnect').textContent,'Reconectar agora');
+ assert.equal([...d.timers.values()][0].delay,3000);
+ d.tick(3000);
+ assert.equal(d.el('media-round').textContent,originalPosition);
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+ assert.match(d.el('media-status').textContent,/reprodução retomada/);
+ assert.equal(d.el('media-reconnect').textContent,'Verificar conexão ✓');
+ assert.equal([...d.timers.values()][0].delay,2000);
+ d.tick(2000);
+ assert.match(d.el('media-round').textContent,/item 3 de 8/);
+});
+
+test('simulated reboot displays two-second feedback and automatically resumes if it was playing',async()=>{
+ const d=await createDOM();
+ d.click('media-start');d.tick(2000);d.tick(2000);
+ const before=d.el('media-round').textContent;
+ d.click('media-restart');
+ assert.equal(d.el('media-live').textContent,'REINICIANDO');
+ assert.equal(d.el('media-round').textContent,before);
+ assert.equal(d.el('media-restart').disabled,true);
+ assert.match(d.el('media-notice').textContent,/REINICIANDO/);
+ assert.equal([...d.timers.values()][0].delay,2000);
+ d.tick(2000);
+ assert.equal(d.el('media-round').textContent,before);
+ assert.match(d.el('media-status').textContent,/reprodução retomada/);
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+ assert.equal([...d.timers.values()][0].delay,2000);
+ d.tick(2000);
+ assert.match(d.el('media-round').textContent,/item 4 de 8/);
+});
+
+test('reboot while paused keeps paused and continues only with explicit start',async()=>{
+ const d=await createDOM();
+ d.click('media-restart');
+ assert.equal(d.el('media-live').textContent,'REINICIANDO');
+ d.tick(2000);
+ assert.equal(d.el('media-live').textContent,'PAUSADO');
+ assert.equal(d.timers.size,0);
+ d.click('media-start');
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+});
+
+test('manual reconnect before timeout cancels the automatic reconnect and no stale transition happens',async()=>{
+ const d=await createDOM();
+ d.click('media-start');d.click('media-disconnect');
+ assert.equal([...d.timers.values()][0].delay,3000);
+ d.click('media-reconnect');
+ assert.equal(d.timers.size,1);
+ assert.equal([...d.timers.values()][0].delay,2000);
+ d.click('media-reconnect');
+ assert.match(d.el('media-notice').textContent,/já ativa/);
+ assert.equal(d.timers.size,1);
+ d.tick(2000);
+ assert.match(d.el('media-round').textContent,/item 2 de 8/);
+});
+
+test('background browser tab cancels fake reconnect/reboot and never advances hidden playback',async()=>{
+ const d=await createDOM();
+ d.click('media-start');d.click('media-disconnect');
+ assert.equal(d.timers.size,1);
+ d.document.hidden=true;d.docEvents.get('visibilitychange')();
+ assert.equal(d.timers.size,0);
+ assert.equal(d.el('media-live').textContent,'SEM CONEXÃO');
+ d.document.hidden=false;d.click('media-reconnect');
+ assert.equal(d.timers.size,0,'does not autoplay after the page was hidden');
+ d.click('media-start');
+ d.click('media-restart');
+ assert.equal(d.timers.size,1);
+ d.document.hidden=true;d.docEvents.get('visibilitychange')();
+ assert.equal(d.timers.size,0);
+ assert.equal(d.el('media-live').textContent,'PAUSADO');
 });
