@@ -17,8 +17,26 @@ export function autoBenchOptions(input={}){
  };
 }
 
+// A deterministic *fixture identity*, not a signature for a real player or a security token.
+// On a real device the canonical playlist/media revision would need trusted storage.
+export function autoBenchProgramSignature(options={},revision='fixture-v1'){
+ const normalized=autoBenchOptions(options);
+ const preview=simulateBench({...normalized,cycle:0});
+ return JSON.stringify({
+  version:1,revision,
+  playlist:preview.original?.playlist?.id||null,
+  base:preview.original?.items.map(item=>item.media.id)||[],
+  commercials:preview.ads.map(item=>item.media.id),
+  options:normalized
+ });
+}
+const benchRevision=input=>typeof input?.programRevision==='string'&&input.programRevision.length>0&&input.programRevision.length<=128?
+ input.programRevision:'fixture-v1';
+
 export function createAutoBench(input={}){
- return {version:1,options:autoBenchOptions(input),cycle:0,position:0,generation:0,
+ const options=autoBenchOptions(input),programRevision=benchRevision(input);
+ return {version:1,options,programRevision,programSignature:autoBenchProgramSignature(options,programRevision),
+  cycle:0,position:0,generation:0,
   connected:true,completedItems:0,completedCycles:0,lastAction:'Bancada iniciada. Nenhum evento real registrado.'};
 }
 
@@ -75,16 +93,21 @@ export function advanceAutoBench(state,event){
  }
  if(event.type==='configure'){
   const options=autoBenchOptions(event.options);
-  return transition(state,{options,position:0,generation:state.generation+1},true,
+  const programRevision=event.options?.programRevision===undefined?state.programRevision:benchRevision(event.options);
+  return transition(state,{options,programRevision,
+   programSignature:autoBenchProgramSignature(options,programRevision),
+   position:0,generation:state.generation+1},true,
    'Alterada somente a configuração fictícia; rodada preservada e sequência reiniciada.');
  }
  return transition(state,{},false,'Evento desconhecido ignorado.');
 }
 
-export function restoreAutoBench(checkpoint){
+export function restoreAutoBench(checkpoint,currentProgram){
  // Models explicit checkpoint handoff. No guarantee across real device or browser restarts.
  if(!checkpoint||checkpoint.version!==1||
     !checkpoint.options||typeof checkpoint.options!=='object'||
+    typeof checkpoint.programRevision!=='string'||
+    typeof checkpoint.programSignature!=='string'||
     !Number.isInteger(checkpoint.options.baseCount)||checkpoint.options.baseCount<0||checkpoint.options.baseCount>6||
     !Number.isInteger(checkpoint.options.adCount)||checkpoint.options.adCount<0||checkpoint.options.adCount>5||
     !['shuffle','single','scheduled','enabled'].every(key=>typeof checkpoint.options[key]==='boolean')||
@@ -97,6 +120,17 @@ export function restoreAutoBench(checkpoint){
     typeof checkpoint.connected!=='boolean')
   return transition(createAutoBench({enabled:false}),{},false,'Checkpoint inválido: somente playlist original liberada.');
  const restored={...checkpoint,options:autoBenchOptions(checkpoint.options)};
+ // Fail closed if the saved manifest identity has been changed or is obsolete.
+ if(restored.programSignature!==autoBenchProgramSignature(restored.options,restored.programRevision))
+  return transition(createAutoBench({enabled:false}),{},false,
+   'Checkpoint incompatível: anúncios desativados.');
+ // Optionally reconcile against the new playlist/revision provided after a restart.
+ if(currentProgram!==undefined){
+  const current=autoBenchOptions(currentProgram),revision=benchRevision(currentProgram);
+  if(restored.programSignature!==autoBenchProgramSignature(current,revision))
+   return transition(createAutoBench({...current,enabled:false,programRevision:revision}),{},false,
+    'Programação alterada no reinício: anúncios suspensos até nova validação.');
+ }
  const numberOfItems=autoBenchView({...restored,position:0}).items.length;
  if((numberOfItems===0&&restored.position!==0)||
     (numberOfItems>0&&restored.position>=numberOfItems))
