@@ -15,7 +15,7 @@ const ads=()=>[1,2,3,4,5].map(n=>({
  schedule:{enabled:true,start_date:'2026-10-01',end_date:'2026-11-30'},
  commercial:true
 }));
-const program=()=>({primary:base(),ads:ads(),assignmentRevision:'device-assignment-1',
+const program=()=>({primary:base(),ads:ads(),deviceId:'fixture-TV-1',assignmentRevision:'device-assignment-1',
  inventoryRevision:'commercial-inventory-1',
  capabilities:{supportsItemSchedules:true,protocolVersion:1,timeZone:'America/Sao_Paulo'}});
 function accepted(session,event,api){
@@ -36,6 +36,7 @@ test('program identity covers playlist assignment, item revisions, commercial in
  assert.equal(id.valid,true);assert.equal(id.allowed,true);
  assert.deepEqual(id,api.describeRoundProgram(structuredClone(original)));
  for(const change of [
+  p=>{p.deviceId='fixture-TV-2';},
   p=>{p.assignmentRevision='device-assignment-2';},
   p=>{p.primary.playlist.updated_at='playlist-revision-2';},
   p=>{p.primary.items[0].media.checksum='changed-file';},
@@ -84,6 +85,19 @@ test('unchanged revision handoff preserves round and media, pauses and invalidat
  const done=accepted(running,{type:'complete',lease:api.currentRoundLease(running)},api);
  assert.equal(done.model.completedAds,1);
  assert.equal(done.model.completedBase,3);
+});
+test('checkpoint from another fictional TV cannot resume ads even with identical playlist',async()=>{
+ const api=await load(),source=program();
+ const saved=api.exportRoundCheckpoint(finish(api.createRoundContract(source),api,3));
+ const other=structuredClone(source);other.deviceId='fixture-TV-2';
+ const result=api.restoreRoundCheckpoint(other,saved);
+ assert.equal(result.accepted,false);
+ assert.equal(result.reason,'base_program_changed');
+ assert.equal(result.contract.model.position,0);
+ assert.deepEqual(result.contract.model.items,other.primary.items);
+ assert.equal(result.contract.model.items.some(item=>item.commercial),false);
+ assert.equal(api.applyRoundContract(result.contract,{type:'complete',
+  lease:api.currentRoundLease(api.createRoundContract(source))}).accepted,false);
 });
 test('simulated restart rejects old lease and requires fresh start',async()=>{
  const api=await load();
