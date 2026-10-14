@@ -123,7 +123,11 @@ if(typeof document!=='undefined'&&document.getElementById('auto-bench-form')){
   $('auto-complete').disabled=rebooting||!view.current||!view.connected;
   $('auto-disconnect').disabled=rebooting||!view.connected;
   $('auto-reconnect').disabled=rebooting||view.connected;
-  $('auto-reconnect').textContent=!view.connected?'Reconectar agora':'Reconectar';
+  $('auto-reconnect').textContent=rebooting?'Aguarde o reinício…':
+   view.connected?'Conectado ✓':'Reconectar agora';
+  $('auto-reconnect').title=view.connected?
+   'A conexão da bancada já está ativa. Para testar novamente, use Simular queda da conexão.':
+   'Restabelecer agora a conexão fictícia, sem mudar a rodada ou o item.';
   $('auto-refresh').disabled=rebooting;
   $('auto-restart').disabled=rebooting;
   $('auto-restart').textContent=rebooting?'Reiniciando…':'Simular reinício';
