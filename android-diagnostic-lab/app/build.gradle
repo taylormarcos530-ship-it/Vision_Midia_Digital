@@ -1,0 +1,30 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.visionmidia.diagnosticlab'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.visionmidia.diagnosticlab'
+        minSdk 21
+        targetSdk 32
+        versionCode 1
+        versionName '0.1-laboratorio'
+    }
+
+    buildTypes {
+        debug { applicationIdSuffix '' }
+        release {
+            minifyEnabled false
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// No third-party dependencies. Does not contain the customer's player.
