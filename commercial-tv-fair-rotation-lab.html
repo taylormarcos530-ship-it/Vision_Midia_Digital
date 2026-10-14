@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; form-action 'none'; connect-src 'none'">
+<title>Vision Mídia Digital · Distribuição comercial fictícia</title>
+<style>
+:root{color-scheme:dark;--bg:#071321;--card:#101f32;--edge:#263951;--text:#f4f7fc;--muted:#b1c2d5;--gold:#ffbd3a;--sky:#86c7fb;--ok:#88e2ad;--red:#ffc0b8;font-family:system-ui,-apple-system,Arial,sans-serif}
+*{box-sizing:border-box}
+body{margin:0;background:radial-gradient(circle at 5% 5%,#163353 0,transparent 43%),var(--bg);color:var(--text);line-height:1.5}
+header{background:#071321f0;border-bottom:1px solid var(--edge);padding:15px max(16px,calc((100vw - 1120px)/2));display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.brand{font-size:17px;letter-spacing:.6px;font-weight:900;color:white}.brand span{color:var(--gold)}
+.top-note{font-size:12px;font-weight:800;letter-spacing:1px;color:var(--gold)}
+main{max-width:1120px;padding:24px 16px 60px;margin:auto}
+h1{font-size:clamp(25px,4vw,38px);line-height:1.15;margin:14px 0 12px}
+h2{font-size:18px;margin:0 0 12px}
+p{margin:10px 0}
+.description{max-width:780px;color:var(--muted)}
+.notice{border:1px solid #99702d;background:#342718;border-radius:14px;padding:14px 18px;color:#ffdc91;font-size:14px}
+.eyebrow{color:var(--gold);letter-spacing:1.2px;font-size:12px;font-weight:900}
+.stats{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:11px;margin:22px 0}
+.stat{border:1px solid var(--edge);background:var(--card);padding:15px;border-radius:14px}
+.stat span{display:block;color:var(--muted);font-size:12px}.stat strong{display:block;font-size:clamp(20px,2.6vw,29px);margin-top:6px;font-variant-numeric:tabular-nums}
+.layout{display:grid;grid-template-columns:minmax(0,1.25fr) minmax(300px,1fr);gap:16px}
+.panel{min-width:0;background:var(--card);border:1px solid var(--edge);border-radius:18px;padding:20px;margin-bottom:16px}
+.player{background:linear-gradient(150deg,#0c3353,#102038);border:1px solid #2d6589;border-radius:13px;padding:20px;min-height:164px;display:flex;flex-direction:column;justify-content:center;gap:8px}
+.player small{color:var(--sky);font-weight:800;letter-spacing:1px}.player strong{font-size:clamp(22px,3vw,30px);line-height:1.25}
+.status{display:inline-block;border:1px solid var(--edge);border-radius:999px;padding:5px 12px;color:var(--muted);font-size:12px;font-weight:800}
+.status[data-kind=running]{border-color:#286549;color:var(--ok)}
+.status[data-kind=blocked]{border-color:#8e4d46;color:var(--red)}
+.actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin-top:14px}
+button,select{font:inherit;border-radius:11px;min-height:46px}
+button{background:#20425c;border:1px solid #4f7897;color:#f5faff;padding:10px 12px;font-weight:700;cursor:pointer}
+button.primary{background:var(--gold);border-color:var(--gold);color:#122134}
+button.danger{background:#4a292a;border-color:#9a5151}
+button:disabled{opacity:.4;cursor:not-allowed}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.helper{font-size:12px;color:var(--muted)}
+.guard{padding:12px;border-left:3px solid var(--ok);background:#152d32;color:#c8f0df;border-radius:6px;font-size:13px}
+.sequence{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));list-style:none;padding:0;gap:9px;margin:12px 0}
+.fair-item{background:#192f46;border:1px solid #42627f;padding:12px;border-radius:11px;min-height:88px}
+.fair-item small{display:block;color:#c4d0e0;font-size:10px;letter-spacing:.5px}
+.fair-item strong{display:block;margin-top:5px;font-size:14px}
+.fair-item.commercial{background:#3d3022;border-color:#b78636}
+.fair-item.commercial small{color:#ffd28a}
+.fair-item.current{outline:3px solid var(--gold);outline-offset:-3px}
+.fair-toggle{display:flex;align-items:center;gap:11px;background:#1a3148;border:1px solid #314d66;border-radius:9px;padding:10px 12px}
+.fair-toggle input{width:20px;height:20px;accent-color:var(--gold);flex-shrink:0}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:12px 0}
+select{width:100%;background:#182e46;color:#fff;border:1px solid #4a657c;padding:8px}
+label.field{display:block;color:var(--muted);font-size:13px;margin:10px 0}
+label.field select{margin-top:5px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:11px 7px;text-align:left;border-bottom:1px solid var(--edge)}
+th{font-size:11px;color:var(--muted)}
+td:last-child,th:last-child{text-align:right;font-variant-numeric:tabular-nums}
+.fair-disabled{opacity:.55}
+#fair-notice{min-height:42px;color:#ffdf9c;font-size:13px}
+footer{color:var(--muted);font-size:12px;text-align:center;border-top:1px solid var(--edge);padding:20px}
+@media(max-width:800px){.layout{grid-template-columns:1fr}.stats{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:480px){.stats{grid-template-columns:repeat(2,minmax(0,1fr))}.stats .stat:last-child{grid-column:span 2}.panel{padding:14px}.toggles{grid-template-columns:1fr}.actions{gap:7px}.sequence{gap:7px}.fair-item{padding:10px}button{font-size:13px;padding:9px}}
+</style>
+<script type="module" src="./commercial-tv-fair-rotation-ui.mjs"></script>
+</head>
+<body id="fair-lab">
+<header><div class="brand">VISION <span>MÍDIA DIGITAL</span></div><div class="top-note">LABORATÓRIO · SIMULAÇÃO OFFLINE</div></header>
+<main>
+<div class="notice"><strong>SEM TV REAL / SEM ANÚNCIOS REAIS.</strong> Todos os números desta página são fictícios, calculados no próprio navegador. Nenhuma campanha ou mídia de cliente é acessada. Nenhuma contagem representa impressão comercial verdadeira.</div>
+<div class="eyebrow" style="margin-top:25px">BANCO DE PROVAS · AUTO CENTER FICTÍCIO</div>
+<h1>Distribuição equilibrada de anúncios</h1>
+<p class="description">Experimente cinco anunciantes em duas vagas comerciais por rodada. Veja quem foi selecionado, quem está aguardando e como uma desativação protege a playlist do estabelecimento.</p>
+<div class="stats" aria-label="Métricas somente da simulação">
+<div class="stat"><span>Rodada</span><strong id="fair-round">1</strong></div>
+<div class="stat"><span>Item</span><strong id="fair-position">1 / 8</strong></div>
+<div class="stat"><span>Mídias do ponto concluídas</span><strong id="fair-base-count">0</strong></div>
+<div class="stat"><span>Anúncios fictícios concluídos</span><strong id="fair-ad-count">0</strong></div>
+<div class="stat"><span>Falhas simuladas</span><strong id="fair-failures">0</strong></div>
+</div>
+<div class="layout">
+<div>
+<section class="panel" aria-labelledby="now-title">
+<h2 id="now-title">Reprodução simulada</h2>
+<div class="player"><small id="fair-current-type">MÍDIA DO ESTABELECIMENTO</small><strong id="fair-current">Preparando...</strong><div><span id="fair-state" class="status" data-kind="paused">Pausado</span></div></div>
+<p id="fair-notice" role="status" aria-live="polite">Pronto.</p>
+<div class="actions" aria-label="Comandos locais">
+<button id="fair-start" class="primary" type="button">▶ Iniciar</button>
+<button id="fair-pause" type="button">Ⅱ Pausar</button>
+<button id="fair-finish" type="button">Concluir item fictício</button>
+<button id="fair-cycle" class="primary" type="button">Simular 1 rodada</button>
+<button id="fair-five" type="button">Simular 5 rodadas</button>
+<button id="fair-restart" type="button">Simular reinício</button>
+<button id="fair-disconnect" type="button">Simular queda</button>
+<button id="fair-reconnect" type="button">Reconectar</button>
+<button id="fair-error" class="danger" type="button">Simular erro da mídia</button>
+<button id="fair-reset" type="button">Zerar laboratório</button>
+<button id="fair-revalidate" type="button">Revalidar anúncios</button>
+</div>
+<p class="helper">Não há temporizador nem vídeo real nesta tela: cada conclusão é simulada por clique. Reinício e queda pausam o laboratório e exigem Iniciar novamente.</p>
+</section>
+<section class="panel" aria-labelledby="queue-title">
+<h2 id="queue-title">Fila de anunciantes</h2>
+<p id="fair-queue" role="status" aria-live="polite"></p>
+<p id="fair-guard" class="guard"></p>
+</section>
+</div>
+<div>
+<section class="panel" aria-labelledby="seq-title">
+<h2 id="seq-title">Ordem desta rodada</h2>
+<ol id="fair-sequence" class="sequence"></ol>
+<p class="helper">Contorno amarelo = próximo item atual. A sequência mantém todas as mídias do ponto na mesma ordem.</p>
+</section>
+<section class="panel" aria-labelledby="ads-title">
+<h2 id="ads-title">Anunciantes fictícios</h2>
+<p class="helper">Desmarcar qualquer anunciante cancela as inserções ainda não concluídas. A rodada atual continua só com a mídia do ponto; o novo conjunto entra na seguinte.</p>
+<div id="fair-toggles" class="toggles" aria-label="Ativar ou desativar anunciantes de teste"></div>
+<label class="field" for="fair-base-select">Quantidade de mídias no ponto (reinicia somente esta bancada)
+<select id="fair-base-select">
+<option value="0">Sem playlist · aguardando</option>
+<option value="1">1 mídia</option>
+<option value="3">3 mídias</option>
+<option value="6" selected>6 mídias</option>
+</select>
+</label>
+<table aria-label="Contagens locais por anunciante">
+<thead><tr><th>Empresa</th><th>Situação fictícia</th><th>Concluídos</th></tr></thead>
+<tbody id="fair-advertisers"></tbody>
+</table>
+</section>
+</div>
+</div>
+<p class="description">Esta tela não está integrada ao manifesto do player oficial. A distribuição justa aqui é um modelo de teste, ainda sem homologação em TV real, Supabase ou rede de anunciantes.</p>
+</main>
+<footer>VISION MÍDIA DIGITAL · Laboratório isolado · Sem login, gravação, credenciais ou publicação.</footer>
+</body>
+</html>
