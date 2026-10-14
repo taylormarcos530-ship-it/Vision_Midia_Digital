@@ -109,8 +109,9 @@ test('disconnection, no playlist, and unsupported file cannot leak media outside
  d.click('media-start');
  const position=d.el('media-round').textContent;
  d.click('media-disconnect');
- assert.equal(d.timers.size,0);
- assert.equal(d.el('media-live').textContent,'PAUSADO');
+ assert.equal(d.timers.size,1,'only the delayed reconnect timer remains');
+ assert.equal([...d.timers.values()][0].delay,3000);
+ assert.equal(d.el('media-live').textContent,'SEM CONEXÃO');
  d.click('media-reconnect');
  assert.equal(d.el('media-round').textContent,position);
  assert.equal(d.el('media-live').textContent,'EXECUTANDO');
