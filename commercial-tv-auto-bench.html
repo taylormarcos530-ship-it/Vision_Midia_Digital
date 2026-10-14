@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Avanço automático fictício — Laboratório Vision</title>
+<link rel="stylesheet" href="./commercial.css">
+<style>
+.auto-title{max-width:780px}
+.auto-kicker{font-weight:800;font-size:12px;color:#ffc04d;letter-spacing:1px}
+.auto-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 18px;padding:20px;border:1px solid #38506a;border-radius:18px;background:#122138;margin:24px 0}
+.auto-check{display:flex;align-items:center;gap:10px;margin:10px 0;font-size:14px}
+.auto-check input{display:inline-block;width:20px;height:20px;margin:0;min-width:20px}
+.auto-buttons{display:flex;flex-wrap:wrap;gap:10px;margin:18px 0}
+.auto-buttons button,.auto-buttons a{min-height:44px;width:auto;max-width:100%}
+.auto-panel{padding:20px 24px;border-radius:18px;background:#14233a;border:1px solid #38506a}
+.auto-current-name{font-size:clamp(19px,3.5vw,27px);font-weight:750;margin:8px 0 20px}
+.auto-meta{color:#d7e0ed;font-size:14px}
+.auto-sequence{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-top:20px}
+.auto-item{display:flex;flex-direction:column;gap:10px;min-height:120px;border-radius:12px;border:1px solid #526b83;padding:15px;background:#1b3047}
+.auto-item.auto-ad{background:#352b20;border-color:#e9b451}
+.auto-item.auto-current{outline:3px solid #79b8ef;outline-offset:2px}
+.auto-item span{font-size:12px;color:#c5d0e0}
+.auto-item small{font-size:10px;letter-spacing:1px;color:#b7c4d6}
+.auto-item.auto-ad small{color:#ffdb9b}
+.auto-empty{grid-column:1/-1;padding:18px;border:1px dashed #526b83;border-radius:10px}
+.auto-caveat{font-size:12px;color:#c5d0e0;margin-top:18px}
+@media(max-width:620px){.auto-form{grid-template-columns:1fr;padding:16px}.auto-panel{padding:15px}.auto-sequence{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.auto-item{padding:11px}.auto-buttons button{flex:1 1 180px}}
+</style>
+<script type="module" src="./commercial-tv-auto-ui.mjs"></script>
+</head>
+<body>
+<header class="top"><a href="./commercial-tv-bench.html" class="brand">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Laboratório do rodízio automático</span></header>
+<main>
+<div class="notice"><strong>TESTE 100% OFFLINE — NENHUMA TV REAL</strong> · Aqui o fim de cada mídia é simulado a cada 1,6 segundo, apenas enquanto a página está visível. Nenhum anúncio real, autenticação, dado de cliente, player, API ou contagem de exibição é utilizado.</div>
+<div class="auto-title"><span class="auto-kicker">LABORATÓRIO VISION · AUTO CENTER FICTÍCIO</span><h1>Avanço automático das rodadas</h1><p>Veja os comerciais se alternarem automaticamente conforme os itens terminam. Experimente pausar, desconectar, reconectar, atualizar ou simular reinício. A playlist original continua na mesma ordem.</p></div>
+<form id="auto-bench-form" class="auto-form">
+<label>Mídias do estabelecimento<select name="baseCount">
+<option value="0">0 — TV sem playlist</option><option value="1">1 mídia</option>
+<option value="3">3 mídias</option><option value="6" selected>6 mídias</option>
+</select></label>
+<label>Anúncios comerciais disponíveis<select name="adCount">
+<option value="0">0 anúncios</option><option value="1">1 anúncio</option>
+<option value="2">2 anúncios</option><option value="5" selected>5 anúncios</option>
+</select></label>
+<label class="auto-check"><input name="enabled" type="checkbox" checked> Camada comercial ativa somente no teste</label>
+<label class="auto-check"><input name="shuffle" type="checkbox"> Playlist em ordem aleatória</label>
+<label class="auto-check"><input name="single" type="checkbox"> Modo mídia única</label>
+<label class="auto-check"><input name="scheduled" type="checkbox"> Mídias com agenda própria</label>
+</form>
+<div class="auto-buttons" aria-label="Operações fictícias">
+<button type="button" id="auto-compatible">Usar playlist compatível</button>
+<button type="button" id="auto-mode">Iniciar avanço automático</button>
+<button type="button" id="auto-complete">Concluir item (simulado)</button>
+<button type="button" id="auto-refresh">Atualizar programação</button>
+<button type="button" id="auto-disconnect">Simular queda da conexão</button>
+<button type="button" id="auto-reconnect">Reconectar</button>
+<button type="button" id="auto-restart">Simular reinício</button>
+</div>
+<section class="auto-panel">
+<span class="auto-kicker">ORDEM SIMULADA — MANIFESTO NÃO PUBLICADO</span>
+<h2 id="auto-status">Preparando bancada...</h2>
+<p id="auto-round" class="auto-meta" role="status" aria-live="polite"></p>
+<div id="auto-current" class="auto-current-name"></div>
+<p id="auto-health" class="auto-meta"></p>
+<p id="auto-metrics" class="auto-meta"></p>
+<p id="auto-message" class="auto-meta" role="status" aria-live="polite"></p>
+<div id="auto-sequence" class="auto-sequence" aria-label="Itens fictícios por rodada"></div>
+<p class="auto-caveat">Reiniciar aqui recupera um checkpoint mantido na memória desta página. Fechar ou atualizar o navegador reinicia a bancada: persistência real, desligamento da TV e contagem de exibições ainda não foram testados. A produção permanece desativada.</p>
+</section>
+</main>
+<footer>VISION MÍDIA DIGITAL <span>Rodízio de bancada — sem publicação na TV</span></footer>
+</body></html>
