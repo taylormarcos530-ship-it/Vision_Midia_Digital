@@ -45,6 +45,7 @@ public final class MainActivity extends Activity {
     private FrameLayout frame;
     private VideoView video;
     private Runnable activeTask;
+    private Runnable videoMessageHideTask; // Independent of the simulated playlist timer.
     private int generation = 0, current = 0, completed = 0, round = 1;
     private int decoded = 0, decodeErrors = 0;
     private boolean running = false, disconnected = false, rebooting = false;
@@ -186,6 +187,7 @@ public final class MainActivity extends Activity {
             videoIndicator.setText("✓ MP4 CONCLUÍDO · reprodução local aprovada");
             videoIndicator.setBackground(background(Color.rgb(11, 78, 50), Color.GREEN));
             videoIndicator.setVisibility(View.VISIBLE);
+            scheduleVideoMessageHide();
             showProgram("MP4 de ~2 segundos encerrado normalmente; a tela volta à sequência.");
         });
         video.setOnErrorListener((mp,what,extra) -> {
@@ -198,6 +200,7 @@ public final class MainActivity extends Activity {
             videoIndicator.setText("✕ ERRO DE VÍDEO · codec ou arquivo");
             videoIndicator.setBackground(background(Color.rgb(110, 25, 25), Color.RED));
             videoIndicator.setVisibility(View.VISIBLE);
+            scheduleVideoMessageHide();
             showProgram("Vídeo não reproduzido. Nenhuma conclusão contabilizada.");
             return true;
         });
@@ -271,7 +274,26 @@ public final class MainActivity extends Activity {
         handler.postDelayed(activeTask,2000);
     }
 
+    private void cancelVideoMessageHide() {
+        if(videoMessageHideTask!=null){
+            handler.removeCallbacks(videoMessageHideTask);
+            videoMessageHideTask=null;
+        }
+    }
+
+    private void scheduleVideoMessageHide() {
+        cancelVideoMessageHide();
+        // The outcome stays readable briefly, then stops obscuring client-like content.
+        // Do not modify playlist generation/timers or reset the cycle.
+        videoMessageHideTask=() -> {
+            videoMessageHideTask=null;
+            if(videoIndicator!=null)videoIndicator.setVisibility(View.GONE);
+        };
+        handler.postDelayed(videoMessageHideTask,3000);
+    }
+
     private void stopVideo() {
+        cancelVideoMessageHide();
         videoMode=false;
         video.stopPlayback();
         video.setVisibility(View.GONE);
@@ -428,6 +450,7 @@ public final class MainActivity extends Activity {
             decodeErrors++;
             videoIndicator.setText("✕ Falha ao preparar o arquivo MP4");
             videoIndicator.setVisibility(View.VISIBLE);
+            scheduleVideoMessageHide();
             mediaReport.setText("Não foi possível preparar o MP4 local: "+e.getClass().getSimpleName());
         }
     }
@@ -466,6 +489,8 @@ public final class MainActivity extends Activity {
 
     @Override protected void onPause() {
         super.onPause();
+        cancelVideoMessageHide();
+        if(videoIndicator!=null)videoIndicator.setVisibility(View.GONE);
         cancelTimer();running=false;resumeOnConnection=false;
         if(videoMode){video.pause();stopVideo();}
         if(status!=null)showProgram("Aplicativo em segundo plano: testes pausados.");
