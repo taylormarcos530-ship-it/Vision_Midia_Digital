@@ -22,7 +22,7 @@ export class CommercialAPI{
   return data;
  }
  async refresh(){const generation=this.authGeneration;if(!this.refreshing)this.refreshing=this.request('/auth/v1/token?grant_type=refresh_token',{auth:false,body:{refresh_token:this.session()?.refresh_token}}).then(d=>{if(generation===this.authGeneration)this.save(d);else throw Object.assign(new Error('Sessão encerrada.'),{status:401});}).catch(e=>{if(generation===this.authGeneration)this.clear();throw e}).finally(()=>{this.refreshing=null});return this.refreshing;}
- async login(email,password){const d=await this.request('/auth/v1/token?grant_type=password',{auth:false,body:{email,password}});this.save(d);}
+ async login(email,password){const generation=this.authGeneration;const d=await this.request('/auth/v1/token?grant_type=password',{auth:false,body:{email,password}});if(generation!==this.authGeneration)throw Object.assign(new Error('Sessão encerrada.'),{status:401});this.save(d);}
  rpc(name,body={}){return this.request('/rest/v1/rpc/'+name,{body})}
  masterCall(action,body={}){return this.request('/functions/v1/master-admin',{body:{action,...body}})}
  async logout(){const pending=this.request('/auth/v1/logout',{body:{},retry:false});this.clear();await pending;}
