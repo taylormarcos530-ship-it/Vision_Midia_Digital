@@ -139,3 +139,14 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - CI automático do GitHub: **122/122 testes aprovados, zero falhas**; [execução de verificação](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38492604139). CI também comprovou que arquivos do player, APK e rotas operacionais permanecem iguais à baseline protegida.
 - **Login HTTP não foi provado neste checkpoint:** o usuário ainda precisa entrar com senha válida para cada uma das duas contas na página `anunciante-homologacao.html`. O teste SQL simula a identidade autenticada, mas não testa senha ou Auth HTTP.
 - **Próximo bloco:** conferir manualmente as duas sessões HTTPS no preview de homologação, confirmar que cada anunciante vê apenas sua campanha fictícia, revisar UX de mensagens e estados de sessão, sem nenhuma integração com TVs de clientes e sem habilitar publicidade comercial em produção.
+
+## Diagnóstico read-only na tela de login de homologação (14/10/2026)
+
+- Nova interface exclusiva `anunciante-homologacao.html` com botão **Verificar conexão e meu acesso**, vinculada a `commercial-staging-diagnostics.mjs`.
+- O módulo faz `GET /auth/v1/health` usando **exclusivamente a chave publishable** do projeto de homologação. Esta API pública foi verificada na documentação Supabase; não envia senha, sessão nem dados do cliente nessa consulta.
+- Se não houver login, exibe **Supabase de testes acessível / login ainda não efetuado**. Com sessão válida, consulta unicamente `vision_advertiser_portal()` usando o token do próprio anunciante e apresenta nome, número de campanhas, rascunhos, vínculos e exibições daquela conta. Nenhum Master, TV, campanha ou anúncio é criado.
+- O diagnóstico rejeita configuração desabilitada, de produção ou sem chave pública; falha caso a API retorne campanha de outro anunciante e ignora qualquer resposta que chegue depois de sair ou trocar de sessão. Usa `textContent`, não `innerHTML` nem armazenamento persistente.
+- A página normal `anunciante.html`, o player e a aplicação dos clientes não foram modificados; a configuração do módulo de produção continua inativa. A ferramenta só é carregada no HTML exclusivo da homologação.
+- Estado remoto confirmado antes da alteração: **2 anunciantes ativos, 2 campanhas em rascunho, 0 vínculos com TVs, 0 registros diários**, trava do projeto exclusivo presente.
+- **128/128 testes aprovados** na CI, incluindo 6 novos testes do diagnóstico, erro de autorização, sessão invalidada e verificação de que não há acesso a recursos de produção. Registro da CI https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38493184820 .
+- O teste real de entrada com senha no navegador **ainda depende da confirmação do operador**; não afirmar que foi validado apenas pelos mocks e consultas SQL.
