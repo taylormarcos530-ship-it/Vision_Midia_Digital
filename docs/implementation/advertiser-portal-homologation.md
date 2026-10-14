@@ -116,3 +116,14 @@ Não alterar `player.js`, APK, playlist operacional, fallback, campanhas existen
 - **118/118 testes CI aprovados**, incluindo checagens do script, guards, isolamento das credenciais e proteção do player/APK. https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/38490355487
 - Banco produtivo `fpadgedrgcxrrqflzhjt` intocado; sem deploy Edge, migrations ou mudanças no aplicativo dos clientes nesta etapa.
 - **Próxima tarefa:** após as duas contas aparecerem no Auth de homologação, vincular e testar login HTTP real, RLS A/B, acesso suspenso, restauração e sessão expirada sem qualquer ação em TVs reais.
+
+## Vínculo A/B confirmado e isolado (outubro 2026)
+
+- Após consentimento explícito do usuário, dois **usuários Auth existentes, com senhas e e-mails confirmados**, foram vinculados como **Anunciante A** e **Anunciante B** exclusivamente em `jmiuitrrhtaeyrpuyohk`. Os seus e-mails e IDs do Auth **não são reproduzidos nesta documentação nem no script de teste**.
+- Os vínculos constam em `public.vision_advertisers` como `active`, `archived_at=null`; ambos foram checados como não administradores e não membros de estabelecimento. Nenhuma senha foi criada, alterada, exportada ou armazenada no GitHub.
+- O projeto de produção `fpadgedrgcxrrqflzhjt` não recebeu consultas de mutação, migrações nem funções nesta etapa.
+- Script repetível `tests/sql/staging_linked_accounts_rls_rollback.sql`: primeiro valida a trava exclusiva da homologação, descobre os dois UUIDs a partir dos vínculos locais sem expor os dados pessoais, simula os papéis `authenticated`, verifica a separação RLS e bloqueio por arquivamento e executa `ROLLBACK`.
+- Teste remoto retornou `PASS: A/B isolated, archive denied and rolled back`, `active_after_rollback=2`, `users_unchanged=2`. As duas contas **permanecem ativas**, campanhas e TVs fictícias continuam não cadastradas.
+- **Ainda falta validar login HTTP pelo navegador com a senha conhecida pelo operador**, além de criação e exibição de duas campanhas ilustrativas; a simulação SQL de `auth.uid()` não substitui o teste real do Supabase Auth.
+- Preview de testes: `anunciante-homologacao.html` (Vercel preview, nunca domínio de produção). Não usar login/senhas de clientes reais ou da conta Master.
+- Próximo bloco: operador entra em cada conta fictícia pelo preview isolado e confirma que os painéis são diferentes; em seguida preparar campanha e impressão fictícias com execução e desmontagem controladas apenas em homologação.
