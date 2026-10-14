@@ -87,7 +87,7 @@ test('MP4 message timeout cannot affect playlist generation or simulated reconne
  const java=src();
  const timerBlock=java.slice(java.indexOf('private void scheduleVideoMessageHide()'),
   java.indexOf('private void stopVideo()'));
- assert.doesNotMatch(timerBlock,/\bgeneration\b|activeTask|completed\+\+|current\+\+|round\+\+|advanceLater\(/);
+ assert.doesNotMatch(timerBlock.replace(/\/\/[^\n]*/g,''),/\bgeneration\b|activeTask|completed\+\+|current\+\+|round\+\+|advanceLater\(/);
  assert.match(timerBlock,/handler\.postDelayed\(videoMessageHideTask,3000\)/);
  assert.match(java,/handler\.postDelayed\(activeTask,3000\)/);
  assert.match(java,/handler\.postDelayed\(activeTask,2000\)/);
