@@ -30,7 +30,7 @@ test('changed commercial inventory after restart blocks all ads without altering
  assert.match(result.reason,/Programação alterada/);
 });
 test('changed playlist content or revision cannot silently restore earlier campaign positions',async()=>{
- const {createAutoBench,restoreAutoBench}=await load();
+ const {createAutoBench,autoBenchView,restoreAutoBench}=await load();
  const c=createAutoBench({baseCount:6,adCount:5,programRevision:'playlist-rev-1'});
  for(const program of [
   {baseCount:3,adCount:5,programRevision:'playlist-rev-2'},
