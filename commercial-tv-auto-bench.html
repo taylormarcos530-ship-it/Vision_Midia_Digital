@@ -26,6 +26,9 @@
 .auto-item.auto-ad small{color:#ffdb9b}
 .auto-empty{grid-column:1/-1;padding:18px;border:1px dashed #526b83;border-radius:10px}
 .auto-caveat{font-size:12px;color:#c5d0e0;margin-top:18px}
+.auto-feedback{padding:16px 18px;margin:12px 0 22px;border-radius:12px;border:1px solid #526b83;background:#14233a;color:#d7e0ed;font-size:14px;font-weight:650;line-height:1.5}
+.auto-feedback[data-state="offline"]{border-color:#f0b34e;color:#ffdc9c}
+.auto-feedback[data-state="restarting"]{border-color:#79b8ef;color:#bde0ff}
 @media(max-width:620px){.auto-form{grid-template-columns:1fr;padding:16px}.auto-panel{padding:15px}.auto-sequence{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}.auto-item{padding:11px}.auto-buttons button{flex:1 1 180px}}
 </style>
 <script type="module" src="./commercial-tv-auto-ui.mjs"></script>
@@ -34,7 +37,7 @@
 <header class="top"><a href="./commercial-tv-bench.html" class="brand">VISION<span>MÍDIA DIGITAL</span></a><span class="tagline">Laboratório do rodízio automático</span></header>
 <main>
 <div class="notice"><strong>TESTE 100% OFFLINE — NENHUMA TV REAL</strong> · Aqui o fim de cada mídia é simulado a cada 1,6 segundo, apenas enquanto a página está visível. Nenhum anúncio real, autenticação, dado de cliente, player, API ou contagem de exibição é utilizado.</div>
-<div class="auto-title"><span class="auto-kicker">LABORATÓRIO VISION · AUTO CENTER FICTÍCIO</span><h1>Avanço automático das rodadas</h1><p>Veja os comerciais se alternarem automaticamente conforme os itens terminam. Experimente pausar, desconectar, reconectar, atualizar ou simular reinício. A playlist original continua na mesma ordem.</p></div>
+<div class="auto-title"><span class="auto-kicker">LABORATÓRIO VISION · AUTO CENTER FICTÍCIO</span><h1>Avanço automático das rodadas</h1><p>Veja os comerciais se alternarem automaticamente conforme os itens terminam. Ao simular uma queda, a bancada pausa e <strong>reconecta automaticamente após cerca de 3 segundos</strong>. O botão de reinício mostra a recuperação fictícia por 2 segundos. Nenhuma configuração real é alterada.</p></div>
 <form id="auto-bench-form" class="auto-form">
 <label>Mídias do estabelecimento<select name="baseCount">
 <option value="0">0 — TV sem playlist</option><option value="1">1 mídia</option>
@@ -58,6 +61,7 @@
 <button type="button" id="auto-reconnect">Reconectar</button>
 <button type="button" id="auto-restart">Simular reinício</button>
 </div>
+<p id="auto-feedback" class="auto-feedback" role="status" aria-live="polite">Bancada pronta para iniciar.</p>
 <section class="auto-panel">
 <span class="auto-kicker">ORDEM SIMULADA — MANIFESTO NÃO PUBLICADO</span>
 <h2 id="auto-status">Preparando bancada...</h2>
