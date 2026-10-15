@@ -156,9 +156,13 @@ test('offline PostgreSQL RLS matrix: separate advertiser, Master, point and anon
    const snapshot=portal.revisions[0];
    const exposesSource=snapshot.source_storage_path==='private-owner/point-media.webp' &&
     snapshot.source_media_id===id(30);
-   assert.equal(exposesSource,true,'document existing staging-only projection risk');
-   // This is a FINDING, not an approval. Do not deploy the current projection to real advertisers.
-   console.warn('SECURITY FINDING (staging-only): advertiser revision JSON includes point source_storage_path and source_media_id. Redact in reviewed future SQL/RPC contract.');
+   assert.equal(exposesSource,true,'document existing staging-only portal projection risk');
+   const direct=(await queryAs(users.a,'SELECT source_media_id,source_storage_path FROM vision_commercial_revisions')).rows;
+   assert.equal(direct.length,1);
+   assert.equal(direct[0].source_storage_path,'private-owner/point-media.webp');
+   assert.equal(direct[0].source_media_id,id(30));
+   // This is a FINDING, not an approval. Both RPC projection AND direct table grants must change.
+   console.warn('SECURITY FINDING (staging-only): portal JSON and direct SELECT expose point source_storage_path/source_media_id. Redact both RPC output and direct SQL column grants before activation.');
   });
   await t.test('archiving disables advertiser portal, RLS rows and its Storage view',async()=>{
    await db.query('UPDATE vision_advertisers SET status=$1,archived_at=now() WHERE id=$2',['disabled',id(40)]);
