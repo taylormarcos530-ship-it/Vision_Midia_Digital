@@ -268,6 +268,74 @@ async function verifyBrokenMp4(browser,base,mode){
   eq(s.external,[],'no external requests for '+mode+' MP4');
  }finally{await s.context.close();videoMode='valid';}
 }
+async function verifyLegacyDomAndOutOfOrder(browser,base){
+ const s=await open(browser,base,390);
+ try{
+  await login(s.page);
+  const observed=await s.page.evaluate(async()=>{
+   const ui=await import('/commercial-ui.mjs');
+   const priorEscape=window.CSS.escape;
+   const priorReplace=Element.prototype.replaceChildren;
+   const priorCodec=HTMLVideoElement.prototype.canPlayType;
+   const root=document.createElement('div');
+   root.innerHTML='<div data-revision="rev-1"></div>';
+   document.body.appendChild(root);
+   const slot=root.querySelector('[data-revision="rev-1"]');
+   const item={id:'rev-1',media_type:'image',name:'Lab imagem',
+    storage_path:'commercial-ads/00000000-0000-4000-8000-000000000301.webp'};
+   const data={revisions:[item]};
+   const makeApi=(request)=>({config:{supabaseUrl:location.origin},request});
+   const link=token=>({signedURL:'/object/sign/vision-media/'+item.storage_path+'?token='+token});
+   try{
+    // These are real DOM manipulations in modern Chromium with selected APIs
+    // deliberately unavailable; NOT a test of an actual old Android WebView.
+    window.CSS.escape=undefined;
+    Element.prototype.replaceChildren=undefined;
+    let resolveSlow;
+    const stale=ui.loadThumbnails(root,data,makeApi(()=>new Promise(resolve=>{resolveSlow=resolve})));
+    await ui.loadThumbnails(root,data,makeApi(async()=>link('newer')));
+    const newer=slot.querySelector('img');
+    const visibleBefore=newer?.src.includes('token=newer')===true;
+    resolveSlow(link('older'));
+    await stale;
+    const slowIgnored=slot.querySelector('img')===newer&&newer.src.includes('token=newer');
+    await ui.loadThumbnails(root,data,makeApi(async()=>link('newest')));
+    newer.onerror();
+    const oldMediaErrorIgnored=slot.querySelector('img')?.src.includes('token=newest')===true;
+    HTMLVideoElement.prototype.canPlayType=()=> '';
+    const videoData={revisions:[{...item,media_type:'video',
+      storage_path:'commercial-ads/00000000-0000-4000-8000-000000000302.mp4'}]};
+    await ui.loadThumbnails(root,videoData,makeApi(async()=>({
+     signedURL:'/object/sign/vision-media/'+videoData.revisions[0].storage_path+'?token=video'
+    })));
+    const unsupportedVideoFailsSafely=!slot.querySelector('video')&&
+      slot.textContent.includes('Prévia indisponível no momento.');
+    return {visibleBefore,slowIgnored,oldMediaErrorIgnored,unsupportedVideoFailsSafely};
+   }finally{
+    window.CSS.escape=priorEscape;
+    Element.prototype.replaceChildren=priorReplace;
+    HTMLVideoElement.prototype.canPlayType=priorCodec;
+    root.remove();
+   }
+  });
+  for(const [caseName,result] of Object.entries(observed)){
+   ok(result,'real Chromium legacy-DOM/race emulation '+caseName);
+  }
+  // Browser-level logout should remain backward compatible with the simple
+  // older DOM clearing API (innerHTML), not replaceChildren.
+  await s.page.evaluate(()=>{Element.prototype.replaceChildren=undefined;});
+  try{
+   await s.page.locator('#refresh').click();
+   await s.page.locator('.creative img').waitFor();
+   await s.page.locator('#logout').click();
+   await s.page.locator('#login:not([hidden])').waitFor();
+   eq(await s.page.locator('#campaigns').textContent(),'','logout clears panel with replaceChildren absent');
+   eq(await s.page.evaluate(()=>sessionStorage.length),0,'old-DOM logout purges session');
+  }finally{await s.page.evaluate(()=>{delete Element.prototype.replaceChildren;});}
+  eq(s.pageErrors,[],'no script exceptions during old DOM emulation');
+  eq(s.external,[],'no external requests during old DOM emulation');
+ }finally{await s.context.close();}
+}
 async function run(){
  mp4Directory=fs.mkdtempSync(path.join(os.tmpdir(),'vision-commercial-mp4-'));
  const mp4File=path.join(mp4Directory,'fixture-commercial.mp4');
@@ -289,6 +357,7 @@ async function run(){
   const folder=process.env.RUNNER_TEMP||os.tmpdir();
   for(const width of [320,390,768,1280])await baseline(browser,base,width,folder);
   await verifyRealMp4(browser,base);
+  await verifyLegacyDomAndOutOfOrder(browser,base);
   await verifyBrokenMp4(browser,base,'missing');
   await verifyBrokenMp4(browser,base,'corrupt');
   await failures(browser,base);
