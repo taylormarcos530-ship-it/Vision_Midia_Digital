@@ -71,13 +71,17 @@ jobs:
           "$BIN" --version
           echo "VISION_TEST_CHROMIUM=$BIN" >> "$GITHUB_ENV"
 
-      - name: Verify ephemeral MP4 encoder is available
+      - name: Provision FFmpeg only on disposable CI runner
         shell: bash
         run: |
           set -euo pipefail
+          if ! command -v ffmpeg >/dev/null 2>&1; then
+            sudo apt-get update -qq
+            sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq ffmpeg
+          fi
           command -v ffmpeg
           ffmpeg -hide_banner -version | head -n 1
-          ffmpeg -hide_banner -encoders 2>/dev/null | grep -qE '^[[:space:]]*V[.A-Z]+[[:space:]]+libx264[[:space:]]' || {
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -E '^[[:space:]]*V[.A-Z]+[[:space:]]+libx264[[:space:]]' || {
             echo "::error::Missing local H264 encoder; do not substitute a fake MP4."
             exit 1
           }
