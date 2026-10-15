@@ -130,7 +130,7 @@ async function baseline(browser,base,width,folder){
   eq(await page.locator('.campaign').count(),3,'all campaign cards at '+width);
   eq(await page.locator('.creative img').count(),1,'one commercial image at '+width);
   eq(await page.locator('.creative video').count(),1,'one commercial video at '+width);
-  eq(await page.locator('.creative [data-revision="r-private"] img').count(),0,
+  eq(await page.locator('.creative[data-revision="r-private"] img').count(),0,
    'no forbidden customer image at '+width);
   eq(s.signed.slice().sort(),[imgPath,videoPath].sort(),'only safe copies requested at '+width);
   const metrics=await page.locator('.campaign').first().locator('.metrics strong').allTextContents();
@@ -158,19 +158,21 @@ async function failures(browser,base){
  const {page}=s;
  try{
   await login(page);
-  await page.locator('.creative [data-revision="r-image"]').getByText('Prévia indisponível no momento.').waitFor();
+  await page.locator('.creative[data-revision="r-image"]').getByText('Prévia indisponível no momento.').waitFor();
   eq(await page.locator('.creative img').count(),0,'denied Storage shows no image');
   eq(await page.locator('.creative video').count(),0,'denied Storage shows no video');
   eq(s.signed.slice().sort(),[imgPath,videoPath].sort(),'denied requests remain narrowly scoped');
   ok(await page.locator('#dashboard').isVisible(),'campaigns survive storage failure');
-  await s.page.screenshot({path:path.join(os.tmpdir(),'vision-commercial-portal-denied.png'),fullPage:true});
+  await s.page.screenshot({path:path.join(process.env.RUNNER_TEMP||os.tmpdir(),'vision-commercial-portal-denied.png'),fullPage:true});
   s.setStorageMode('wrong-host');
   await page.locator('#refresh').click();
   await page.waitForFunction(()=>document.querySelectorAll('.campaign').length===3);
+  await page.waitForFunction(()=>document.querySelectorAll('.creative img,.creative video').length===0);
   // A foreign signed host is not inserted or requested by Chromium.
   await page.waitForFunction(()=>document.querySelectorAll('.creative img,.creative video').length===0);
   eq(await page.locator('.creative img, .creative video').count(),0,
    'foreign signed URL is never rendered');
+  await page.waitForFunction(()=>document.querySelectorAll('.campaign').length===3);
   eq(s.external,[],'no request to foreign signature host');
   s.setStorageMode('ok');
   s.setRpcMode('disabled');
