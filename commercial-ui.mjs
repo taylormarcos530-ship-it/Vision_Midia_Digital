@@ -51,8 +51,16 @@ export async function loadThumbnails(root,data,api){
    // Verify the signed resource matches the requested commercial copy, not just the host.
    if(url.origin!==origin||url.pathname!==signedPath)continue;
    const el=document.createElement(rev.media_type==='video'?'video':'img');
-   el.src=url.href;el.alt=rev.name||'Prévia comercial';
+   el.alt=rev.name||'Prévia comercial';
    if(rev.media_type==='video'){el.controls=true;el.preload='metadata';el.playsInline=true;}
+   // A signed URL can still return a deleted, corrupt or unsupported file.
+   // Never leave a broken media element covering the advertiser's campaign card.
+   el.onerror=()=>{
+    if(typeof slot.contains==='function'&&!slot.contains(el))return;
+    slot.replaceChildren();
+    slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>');
+   };
+   el.src=url.href;
    slot.replaceChildren(el);
   }catch{slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>')}
  }
