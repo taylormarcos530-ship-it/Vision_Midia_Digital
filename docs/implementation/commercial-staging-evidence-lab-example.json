@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "scope": "ISOLATED_STAGING_ONLY",
+  "environment": {
+    "approvedForStaging": false,
+    "isolated": false,
+    "productionCredentialsExcluded": false
+  },
+  "policy": {
+    "selected": "UNDECIDED",
+    "residualAccepted": false
+  },
+  "approvals": {
+    "reviewerSignedOff": false,
+    "productionDeployAuthorized": false
+  },
+  "checks": [
+    {
+      "id": "ENV-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "ENV-02",
+      "status": "NOT_RUN",
+      "evidence": [
+        {
+          "ref": "EV-00000001",
+          "type": "SYNTHETIC_IDENTITY_MATRIX",
+          "source": "LAB",
+          "sha256": "3c3f14fb6e5a9bdb599797434c4b3c0db1f64f63168acd1c40fe65ec0e5f17bb",
+          "observedAt": "2026-10-15T12:00:00Z"
+        }
+      ]
+    },
+    {
+      "id": "SQL-01",
+      "status": "BLOCKED",
+      "evidence": []
+    },
+    {
+      "id": "SQL-02",
+      "status": "BLOCKED",
+      "evidence": []
+    },
+    {
+      "id": "RLS-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "RLS-02",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "COPY-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "URL-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "URL-02",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "CDN-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "VIDEO-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "WEBVIEW-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "SESSION-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "LOG-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "COST-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "DECISION-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    },
+    {
+      "id": "ROLLBACK-01",
+      "status": "NOT_RUN",
+      "evidence": []
+    }
+  ]
+}
