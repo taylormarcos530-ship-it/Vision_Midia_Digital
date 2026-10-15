@@ -1,0 +1,90 @@
+name: Commercial PostgreSQL Multi-Session Lab
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+    paths:
+      - 'tests/postgres-commercial-multisession-lab.py'
+      - '.github/workflows/commercial-postgres-multisession-lab.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  postgres-multisession-offline:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: vision_atomic_lab
+          POSTGRES_PASSWORD: disposable_ci_only_2026
+          POSTGRES_DB: vision_atomic_lab
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U vision_atomic_lab -d vision_atomic_lab"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      VISION_ISOLATED_PG: '1'
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: vision_atomic_lab
+      PGPASSWORD: disposable_ci_only_2026
+      PGDATABASE: vision_atomic_lab
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout isolated test branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Refuse changes to live player or gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=87d907010db614d5459b6af9c7b421328e64f225
+          git cat-file -e "${BASE}^{commit}"
+          if ! git diff --quiet "${BASE}" HEAD -- \
+            player.js player.html player.css player.webmanifest \
+            android-player/ config.js sw.js \
+            index.html app.js master.html master.js \
+            supabase/functions/device-gateway/index.ts \
+            supabase/functions/device-control/ \
+            supabase/functions/device-monitoring/ \
+            supabase/functions/master-admin/index.ts \
+            netlify.toml vercel.json; then
+            echo "::error::Protected live code changed. Refuse test execution."
+            exit 1
+          fi
+          echo "Live player, production gateway and deployment files unchanged."
+
+      - name: Set up dedicated Python runtime
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install ephemeral PostgreSQL driver
+        run: python -m pip install --disable-pip-version-check psycopg2-binary==2.9.10
+
+      - name: Verify local disposable database and no external configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$PGHOST" = "127.0.0.1"
+          test "$PGDATABASE" = "vision_atomic_lab"
+          test "$PGUSER" = "vision_atomic_lab"
+          test "$VISION_ISOLATED_PG" = "1"
+          echo "PostgreSQL service is disposable and loopback-only for the test process."
+
+      - name: Run true multi-connection PostgreSQL receipt tests
+        run: python tests/postgres-commercial-multisession-lab.py
+
+# No Supabase network access, connection secrets, migrations, Edge deploy,
+# existing playback_logs mutations, customer APK install or production release.
