@@ -7,7 +7,7 @@ test('read-only command reports two synthetic snapshots with no structural alarm
  const x=spawnSync(process.execPath,[cli],{cwd:process.cwd(),encoding:'utf8'});
  assert.equal(x.status,0,x.stderr);
  assert.match(x.stdout,/SEM ALERTAS/);
- assert.match(x.stdout,/EV-00000001/);
+ assert.match(x.stdout,/\| 2 \| 2026-10-15T12:10:00Z \| 1 \| 0 \| 2 \|/);
  assert.match(x.stdout,/2026-10-15T12:05:00Z/);
  assert.match(x.stdout,/2026-10-15T12:10:00Z/);
  assert.match(x.stdout,/Autorização para staging, mudanças em SQL e produção:\*\* nenhuma/);
