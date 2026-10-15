@@ -170,9 +170,13 @@ async function failures(browser,base){
   await page.waitForFunction(()=>document.querySelectorAll('.creative img,.creative video').length===0);
   // A foreign signed host is not inserted or requested by Chromium.
   await page.waitForFunction(()=>document.querySelectorAll('.creative img,.creative video').length===0);
+  // Verify that the new RPC and both signing calls actually completed before
+  // triggering the session revocation, rather than asserting stale DOM state.
+  for(let i=0;i<200&&s.signed.length<4;i++)await new Promise(resolve=>setTimeout(resolve,25));
+  eq(s.signed.length,4,'refresh attempted both copies with a rejected foreign signature');
+  await page.waitForTimeout(100);
   eq(await page.locator('.creative img, .creative video').count(),0,
    'foreign signed URL is never rendered');
-  await page.waitForFunction(()=>document.querySelectorAll('.campaign').length===3);
   eq(s.external,[],'no request to foreign signature host');
   s.setStorageMode('ok');
   s.setRpcMode('disabled');
