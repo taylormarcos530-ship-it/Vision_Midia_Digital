@@ -336,6 +336,81 @@ async function verifyLegacyDomAndOutOfOrder(browser,base){
   eq(s.external,[],'no external requests during old DOM emulation');
  }finally{await s.context.close();}
 }
+// Real Chromium: hold the first signed-image reply while the panel refreshes,
+// logs out or receives an advertiser_unavailable denial. Only localhost fixtures.
+async function verifyPendingSignatureLifecycle(browser,base,action){
+ const s=await open(browser,base,390);
+ const {page}=s;
+ let unblock;
+ const blocked=new Promise(resolve=>{unblock=resolve;});
+ let firstHeld=false,rpcCalls=0,signatureCalls=0;
+ let signalHeld;
+ const held=new Promise(resolve=>{signalHeld=resolve;});
+ try{
+  await page.route('**/fake/rest/v1/rpc/vision_advertiser_portal',route=>{
+   rpcCalls++;
+   return route.fallback();
+  });
+  await page.route('**/fake/storage/v1/object/sign/vision-media/**',async route=>{
+   const url=new URL(route.request().url());
+   if(url.pathname.endsWith('/'+imgPath)){
+    signatureCalls++;
+    if(!firstHeld){
+     firstHeld=true;
+     signalHeld();
+     await blocked;
+     return route.fulfill({
+      json:{signedURL:'/object/sign/vision-media/'+imgPath+'?token=obsolete'}
+     });
+    }
+   }
+   return route.fallback();
+  });
+  await login(page);
+  await Promise.race([
+   held,
+   new Promise((_,reject)=>setTimeout(()=>reject(new Error('Signing fixture did not block')),8000))
+  ]);
+  eq(rpcCalls,1,'original dashboard RPC started before delayed sign: '+action);
+  if(action==='refresh'){
+   await page.locator('#refresh').click();
+   await page.locator('.creative[data-revision="r-image"] img').waitFor({timeout:10000});
+   const newSrc=await page.locator('.creative[data-revision="r-image"] img').getAttribute('src');
+   ok(newSrc.includes('token=local-fixture'),'refreshed dashboard preview came from latest signature');
+   eq(rpcCalls,2,'refresh RPC not blocked by earlier pending preview');
+   ok(signatureCalls>=2,'new refresh can sign another image before old response');
+   unblock();
+   await page.waitForTimeout(140);
+   const after=await page.locator('.creative[data-revision="r-image"] img').getAttribute('src');
+   eq(after,newSrc,'late original signed reply never overwrites refreshed preview');
+   ok(await page.locator('#dashboard').isVisible(),'refreshed dashboard remains visible');
+  }else{
+   if(action==='revoked'){
+    s.setRpcMode('disabled');
+    await page.locator('#refresh').click();
+    eq(rpcCalls,2,'revocation RPC starts while old signing is still pending');
+   }else if(action==='logout'){
+    await page.locator('#logout').click();
+   }else throw Error('Unsupported lifecycle action '+action);
+   await page.locator('#login:not([hidden])').waitFor({timeout:10000});
+   unblock();
+   await page.waitForTimeout(140);
+   eq(await page.locator('#campaigns').textContent(),'',
+    'no signed preview or cached campaign resurfaces after '+action);
+   eq(await page.locator('#campaigns img, #campaigns video').count(),0,
+    'no old advertiser media reappears after '+action);
+   eq(await page.evaluate(()=>sessionStorage.length),0,
+    'session storage cleared for '+action);
+   ok(!(await page.locator('#dashboard').isVisible()),
+    'dashboard remains closed after '+action);
+  }
+  eq(s.pageErrors,[],'no browser errors while delayed signature resolves after '+action);
+  eq(s.external,[],'no external network requests while session lifecycle is '+action);
+ }finally{
+  unblock();
+  await s.context.close();
+ }
+}
 async function run(){
  mp4Directory=fs.mkdtempSync(path.join(os.tmpdir(),'vision-commercial-mp4-'));
  const mp4File=path.join(mp4Directory,'fixture-commercial.mp4');
@@ -358,6 +433,7 @@ async function run(){
   for(const width of [320,390,768,1280])await baseline(browser,base,width,folder);
   await verifyRealMp4(browser,base);
   await verifyLegacyDomAndOutOfOrder(browser,base);
+  for(const action of ['refresh','logout','revoked'])await verifyPendingSignatureLifecycle(browser,base,action);
   await verifyBrokenMp4(browser,base,'missing');
   await verifyBrokenMp4(browser,base,'corrupt');
   await failures(browser,base);
