@@ -166,6 +166,39 @@ test('sign failure keeps existing UI available and marks preview unavailable',as
   assert.equal(slots.get('r1').fallback,'<small>Prévia indisponível no momento.</small>');
  });
 });
+test('corrupt or inaccessible MP4 triggers non-blocking preview fallback',async()=>{
+ const {loadThumbnails}=await load();
+ await fakeDom(async({root,created,slots})=>{
+  const data=sample();
+  data.revisions[0].media_type='video';
+  data.revisions[0].storage_path=videoPath;
+  const api={config:{supabaseUrl:'https://fixture-supabase.invalid'},
+   async request(){return {signedURL:'/object/sign/vision-media/'+videoPath+'?token=lab'}}};
+  await loadThumbnails(root,data,api);
+  const slot=slots.get('r1'),video=created[0];
+  assert.equal(slot.children[0],video);
+  assert.equal(typeof video.onerror,'function');
+  video.onerror();
+  assert.deepEqual(slot.children,[]);
+  assert.equal(slot.fallback,'<small>Prévia indisponível no momento.</small>');
+ });
+});
+test('late broken-media callback never erases a newer replacement preview',async()=>{
+ const {loadThumbnails}=await load();
+ await fakeDom(async({root,created,slots})=>{
+  const api={config:{supabaseUrl:'https://fixture-supabase.invalid'},
+   async request(){return {signedURL:'/object/sign/vision-media/'+path+'?token=lab'}}};
+  await loadThumbnails(root,sample(),api);
+  const slot=slots.get('r1');
+  const first=created[0];
+  slot.contains=node=>slot.children.includes(node);
+  await loadThumbnails(root,sample(),api);
+  assert.equal(slot.children[0],created[1]);
+  first.onerror();
+  assert.equal(slot.children[0],created[1]);
+  assert.equal(slot.fallback,null);
+ });
+});
 test('malicious campaign names remain escaped after switching to reduced projection',async()=>{
  const {renderCampaigns}=await load();
  const data=sample();data.campaigns[0].name='<img src=x onerror=alert(1)>';
