@@ -4,6 +4,7 @@ No Supabase, device credentials, real customer records, remote staging or deploy
 Production token authentication, media integrity and pixel proof are NOT implemented.
 """
 import concurrent.futures
+from contextlib import contextmanager
 import datetime as dt
 import hashlib
 import json
@@ -46,8 +47,18 @@ def connect():
     return c
 
 
+@contextmanager
+def db():
+    c = connect()
+    try:
+        with c:
+            yield c
+    finally:
+        c.close()
+
+
 def initialize():
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("""
             CREATE SCHEMA IF NOT EXISTS commercial_lab;
@@ -94,7 +105,7 @@ def occurrence(n):
 def reset():
     issued_at = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=45)
     ends = issued_at + dt.timedelta(minutes=5)
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("TRUNCATE commercial_lab.receipts, commercial_lab.occurrences, commercial_lab.device_programs")
             q.executemany(
@@ -225,14 +236,14 @@ def revoke(device=TV1, after_lock=None):
 
 
 def accepted(device=TV1):
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("SELECT count(*) FROM commercial_lab.receipts WHERE device_id=%s", (device,))
             return q.fetchone()[0]
 
 
 def base_snapshot():
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("SELECT item_no,label FROM commercial_lab.point_media ORDER BY item_no")
             return q.fetchall()
@@ -360,7 +371,7 @@ def test_after_commit_ack_lost():
 
 
 def test_offline_expired():
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("""
               UPDATE commercial_lab.occurrences SET
@@ -377,7 +388,7 @@ def test_completed_vs_attempt():
     assert receive(p) == "accepted"
     incomplete = receipt(i=2, event="interrupted", completed=False)
     assert receive(incomplete) == "accepted"
-    with connect() as c:
+    with db() as c:
         with c.cursor() as q:
             q.execute("""
               SELECT count(*),count(*) FILTER(WHERE completed)
