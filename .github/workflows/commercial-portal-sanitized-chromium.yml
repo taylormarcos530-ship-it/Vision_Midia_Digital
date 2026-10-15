@@ -1,0 +1,87 @@
+name: Commercial Sanitized Advertiser Portal Chromium Lab
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+    paths:
+      - 'commercial-ui.mjs'
+      - 'advertiser-portal.mjs'
+      - 'anunciante.html'
+      - 'commercial.css'
+      - 'tests/browser/commercial-portal-sanitized-browser.cjs'
+      - '.github/workflows/commercial-portal-sanitized-chromium.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sanitized-preview-browser-lab:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - name: Checkout isolated branch only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Reject modifications to official player or backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=87d907010db614d5459b6af9c7b421328e64f225
+          git cat-file -e "${BASE}^{commit}"
+          if ! git diff --quiet "$BASE" HEAD -- \
+            player.js player.html player.css player.webmanifest \
+            android-player/ config.js sw.js \
+            index.html app.js master.html master.js \
+            supabase/functions/device-gateway/index.ts \
+            supabase/functions/device-control/ \
+            supabase/functions/device-monitoring/ \
+            supabase/functions/master-admin/index.ts \
+            netlify.toml vercel.json; then
+            echo "::error::Protected player/backend was modified: refusing lab run."
+            exit 1
+          fi
+          echo "Production files unchanged."
+
+      - name: Install Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked test dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install transient Chromium test driver, without lock changes
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright-core@1.55.0
+
+      - name: Find runner Chromium only
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$BIN" ]]; then
+            echo "::error::No local Chromium; do not fall back to deploying a site."
+            exit 1
+          fi
+          "$BIN" --version
+          echo "VISION_TEST_CHROMIUM=$BIN" >> "$GITHUB_ENV"
+
+      - name: Verify sanitized portal in actual browser, with local API fixtures
+        run: node tests/browser/commercial-portal-sanitized-browser.cjs
+
+      - name: Attach screen captures for inspection
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-commercial-portal-sanitized-browser
+          path: ${{ runner.temp }}/vision-commercial-portal-*.png
+          if-no-files-found: ignore
+          retention-days: 7
+
+# This workflow never uploads assets or touches real networks, tokens, Supabase,
+# production player/APK, database migrations, Edge Functions, Netlify or Vercel.
