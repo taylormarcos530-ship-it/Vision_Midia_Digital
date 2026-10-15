@@ -34,34 +34,63 @@ export function commercialPreviewPath(value){
   /^commercial-ads\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\.(?:png|jpe?g|webp|gif|mp4|mov|webm|m4v))?$/.test(value)
   ?value:null;
 }
+// Preview-only compatibility utilities. ESM itself still requires a compatible browser.
+const previewGenerations=new WeakMap();
+function replacePreview(slot,element){
+ if(typeof slot.replaceChildren==='function'){
+  if(element)slot.replaceChildren(element);else slot.replaceChildren();
+ }else{
+  // Element.replaceChildren was introduced later than DOM appendChild/removeChild.
+  while(slot.firstChild)slot.removeChild(slot.firstChild);
+  if(element)slot.appendChild(element);
+ }
+}
+function failedPreview(slot,generation){
+ if(previewGenerations.get(slot)!==generation||slot.isConnected===false)return;
+ replacePreview(slot);
+ slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>');
+}
 export async function loadThumbnails(root,data,api){
  for(const rev of data.revisions||[]){
-  if(!rev||typeof rev.id!=='string'||!rev.id)continue;
-  const slot=root.querySelector('[data-revision="'+CSS.escape(rev.id)+'"]');
+  // Only opaque revision identifiers are expected, never CSS selectors supplied by users.
+  if(!rev||typeof rev.id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(rev.id))continue;
+  const slot=root.querySelector('[data-revision="'+rev.id+'"]');
   if(!slot)continue;
+  // Each request owns only the version of this visible slot it started for.
+  // A slow signed URL or late media error can never replace a newer preview.
+  const generation=(previewGenerations.get(slot)||0)+1;
+  previewGenerations.set(slot,generation);
+  const current=()=>previewGenerations.get(slot)===generation&&slot.isConnected!==false;
   const path=commercialPreviewPath(rev.storage_path);
-  if(!path)continue; // Do not sign original customer media or arbitrary Storage keys.
+  if(!path){failedPreview(slot,generation);continue;}
   const signedPath='/storage/v1/object/sign/vision-media/'+path.split('/').map(encodeURIComponent).join('/');
   try{
    const signed=await api.request(signedPath,{body:{expiresIn:60}});
+   if(!current())continue;
    const raw=signed?.signedURL||signed?.signedUrl;
-   if(typeof raw!=='string'||!raw)continue;
+   if(typeof raw!=='string'||!raw){failedPreview(slot,generation);continue;}
    const origin=new URL(api.config.supabaseUrl).origin;
    const url=new URL(raw.startsWith('/object/')?'/storage/v1'+raw:raw,origin);
-   // Verify the signed resource matches the requested commercial copy, not just the host.
-   if(url.origin!==origin||url.pathname!==signedPath)continue;
-   const el=document.createElement(rev.media_type==='video'?'video':'img');
+   if(url.origin!==origin||url.pathname!==signedPath){failedPreview(slot,generation);continue;}
+   const video=rev.media_type==='video';
+   const el=document.createElement(video?'video':'img');
    el.alt=rev.name||'Prévia comercial';
-   if(rev.media_type==='video'){el.controls=true;el.preload='metadata';el.playsInline=true;}
-   // A signed URL can still return a deleted, corrupt or unsupported file.
-   // Never leave a broken media element covering the advertiser's campaign card.
+   if(video){
+    el.controls=true;el.preload='metadata';el.playsInline=true;
+    // Unsupported codecs must fail without leaving a dead preview element.
+    if(typeof el.canPlayType==='function'&&!el.canPlayType('video/mp4')){
+     failedPreview(slot,generation);continue;
+    }
+   }
    el.onerror=()=>{
-    if(typeof slot.contains==='function'&&!slot.contains(el))return;
-    slot.replaceChildren();
-    slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>');
+    if(!current()||(typeof slot.contains==='function'&&!slot.contains(el)))return;
+    failedPreview(slot,generation);
    };
+   if(!current())continue;
+   replacePreview(slot,el);
    el.src=url.href;
-   slot.replaceChildren(el);
-  }catch{slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>')}
+  }catch{
+   if(current())failedPreview(slot,generation);
+  }
  }
 }
