@@ -1,0 +1,74 @@
+name: Commercial Signed URL Cache Chromium Lab
+
+on:
+  push:
+    branches:
+      - fix/advertiser-portal-safety-20261013
+    paths:
+      - 'tests/browser/commercial-signed-url-cache-browser.cjs'
+      - '.github/workflows/commercial-storage-signed-cache-browser.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  chromium-expiry-cache-fixture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout isolated test branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Reject changes to live player APK and gateway
+        shell: bash
+        run: |
+          set -euo pipefail
+          BASE=87d907010db614d5459b6af9c7b421328e64f225
+          git cat-file -e "${BASE}^{commit}"
+          if ! git diff --quiet "${BASE}" HEAD -- \
+            player.js player.html player.css player.webmanifest \
+            android-player/ config.js sw.js \
+            index.html app.js master.html master.js \
+            supabase/functions/device-gateway/index.ts \
+            supabase/functions/device-control/ \
+            supabase/functions/device-monitoring/ \
+            supabase/functions/master-admin/index.ts \
+            netlify.toml vercel.json; then
+            echo "::error::Operational files changed; Chromium lab refused."
+            exit 1
+          fi
+          echo "Official player, APK and gateway preserved."
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Install temporary Chromium driver without lockfile modification
+        run: npm install --no-save --package-lock=false --ignore-scripts --no-audit --no-fund playwright-core@1.55.0
+
+      - name: Find preinstalled Chromium
+        shell: bash
+        run: |
+          set -euo pipefail
+          BIN="$(command -v google-chrome || command -v chromium || command -v chromium-browser || true)"
+          if [[ -z "$BIN" ]]; then
+            echo "::error::No local Chromium available; refusing remote fallback."
+            exit 1
+          fi
+          "$BIN" --version
+          echo "VISION_TEST_CHROMIUM=$BIN" >> "$GITHUB_ENV"
+
+      - name: Test revoked bearer URL versus actual Chromium cache and fresh proxy access
+        run: node tests/browser/commercial-signed-url-cache-browser.cjs
+
+# Only loopback synthetic APIs and media. No Supabase credentials, media uploads,
+# real device interactions, production player changes, migrations, deploys or releases.
