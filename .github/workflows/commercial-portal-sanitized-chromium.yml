@@ -12,6 +12,8 @@ on:
       - 'tests/browser/commercial-portal-sanitized-browser.cjs'
       - 'tests/browser/commercial-video-range-revocation-browser.cjs'
       - 'tests/browser/commercial-delivery-metrics-browser.cjs'
+      - 'tests/browser/commercial-delivery-sensitivity-browser.cjs'
+      - 'tests/fixtures/commercial-delivery-sensitivity.cjs'
       - 'tests/fixtures/commercial-delivery-metrics.cjs'
       - '.github/workflows/commercial-portal-sanitized-chromium.yml'
   workflow_dispatch:
@@ -97,6 +99,9 @@ jobs:
 
       - name: Measure signed versus proxy video GET Range telemetry without external services
         run: node tests/browser/commercial-delivery-metrics-browser.cjs
+
+      - name: Exercise 27 real Chromium MP4 Range and seeded cache scenarios
+        run: node tests/browser/commercial-delivery-sensitivity-browser.cjs
 
       - name: Attach screen captures for inspection
         if: always()
