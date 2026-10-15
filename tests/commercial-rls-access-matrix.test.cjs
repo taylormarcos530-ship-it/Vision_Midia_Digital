@@ -77,7 +77,7 @@ test('offline PostgreSQL RLS matrix: separate advertiser, Master, point and anon
    [campaigns.a.campaign,revA,campaigns.b.campaign,revB,id(20)]);
 
   await t.test('RLS enabled on five commercial tables; anonymous has no grants',async()=>{
-   const flags=(await db.query("SELECT c.relname,c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relname LIKE 'vision_commercial_%' OR (n.nspname='public' AND c.relname='vision_advertisers')")).rows;
+   const flags=(await db.query("SELECT c.relname,c.relrowsecurity FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname='public' AND c.relkind='r' AND (c.relname LIKE 'vision_commercial_%' OR c.relname='vision_advertisers')")).rows;
    assert.equal(flags.length,5);
    assert.ok(flags.every(x=>x.relrowsecurity===true));
    for(const table of tables){
