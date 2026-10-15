@@ -5,7 +5,7 @@
 REVOKE SELECT ON TABLE public.vision_commercial_revisions FROM authenticated;
 GRANT SELECT (
   id, campaign_id, name, media_type, storage_path,
-  duration_seconds, size_bytes, checksum, width, height, created_at
+  duration_seconds, size_bytes, width, height, created_at
 ) ON TABLE public.vision_commercial_revisions TO authenticated;
 
 -- The SECURITY DEFINER portal requires its OWN explicit safe projection:
@@ -33,7 +33,6 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
      'storage_path',r.storage_path,
      'duration_seconds',r.duration_seconds,
      'size_bytes',r.size_bytes,
-     'checksum',r.checksum,
      'width',r.width,
      'height',r.height,
      'created_at',r.created_at
