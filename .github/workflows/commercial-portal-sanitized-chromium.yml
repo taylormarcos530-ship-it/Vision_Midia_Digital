@@ -10,6 +10,7 @@ on:
       - 'anunciante.html'
       - 'commercial.css'
       - 'tests/browser/commercial-portal-sanitized-browser.cjs'
+      - 'tests/browser/commercial-video-range-revocation-browser.cjs'
       - '.github/workflows/commercial-portal-sanitized-chromium.yml'
   workflow_dispatch:
 
@@ -88,6 +89,9 @@ jobs:
 
       - name: Decode and play real generated MP4 plus invalid media fallback in Chromium
         run: node tests/browser/commercial-portal-sanitized-browser.cjs
+
+      - name: Verify Range 206 then 403 after revocation in actual Chromium
+        run: node tests/browser/commercial-video-range-revocation-browser.cjs
 
       - name: Attach screen captures for inspection
         if: always()
