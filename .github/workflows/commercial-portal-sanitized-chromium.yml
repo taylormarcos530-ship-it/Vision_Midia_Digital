@@ -71,7 +71,18 @@ jobs:
           "$BIN" --version
           echo "VISION_TEST_CHROMIUM=$BIN" >> "$GITHUB_ENV"
 
-      - name: Verify sanitized portal in actual browser, with local API fixtures
+      - name: Verify ephemeral MP4 encoder is available
+        shell: bash
+        run: |
+          set -euo pipefail
+          command -v ffmpeg
+          ffmpeg -hide_banner -version | head -n 1
+          ffmpeg -hide_banner -encoders 2>/dev/null | grep -qE '^[[:space:]]*V[.A-Z]+[[:space:]]+libx264[[:space:]]' || {
+            echo "::error::Missing local H264 encoder; do not substitute a fake MP4."
+            exit 1
+          }
+
+      - name: Decode and play real generated MP4 plus invalid media fallback in Chromium
         run: node tests/browser/commercial-portal-sanitized-browser.cjs
 
       - name: Attach screen captures for inspection
