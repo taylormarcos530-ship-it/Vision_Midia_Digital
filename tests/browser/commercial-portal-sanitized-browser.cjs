@@ -6,6 +6,8 @@ const http=require('node:http');
 const os=require('node:os');
 const path=require('node:path');
 const {chromium}=require('playwright-core');
+const {execFileSync}=require('node:child_process');
+let generatedMp4=null,mp4Directory=null,videoMode='valid';
 
 const imgPath='commercial-ads/00000000-0000-4000-8000-000000000301.webp';
 const videoPath='commercial-ads/00000000-0000-4000-8000-000000000302.mp4';
@@ -29,9 +31,25 @@ const server=http.createServer((req,res)=>{
   res.end(safeSvg);return;
  }
  if(u.pathname===videoUrl){
-  // A placeholder: the test verifies video controls and URL scope, not MP4 decoding.
-  res.writeHead(200,{'Content-Type':'video/mp4','Cache-Control':'no-store'});
-  res.end(Buffer.alloc(0));return;
+  if(videoMode==='missing'){res.writeHead(404,{'Cache-Control':'no-store'});res.end();return;}
+  const content=videoMode==='corrupt'?Buffer.from('not a valid MP4 fixture'):generatedMp4;
+  if(!content){res.writeHead(503);res.end('MP4 fixture was not generated');return;}
+  const range=/^bytes=(\d+)-(\d*)$/.exec(req.headers.range||'');
+  let first=0,last=content.length-1,status=200;
+  if(range){
+   first=Number(range[1]);
+   last=range[2]?Math.min(Number(range[2]),content.length-1):last;
+   if(first>last||first>=content.length){
+    res.writeHead(416,{'Content-Range':'bytes */'+content.length});res.end();return;
+   }
+   status=206;
+  }
+  res.writeHead(status,{
+   'Content-Type':'video/mp4','Accept-Ranges':'bytes',
+   'Content-Length':last-first+1,'Cache-Control':'no-store',
+   ...(status===206?{'Content-Range':`bytes ${first}-${last}/${content.length}`}:{})
+  });
+  res.end(content.subarray(first,last+1));return;
  }
  if(!allowed.has(u.pathname)){res.writeHead(404);res.end('No fixture');return;}
  try{
@@ -199,7 +217,68 @@ async function logout(browser,base){
   eq(s.pageErrors,[],'no browser exception on logout');
  }finally{await s.context.close();}
 }
+async function verifyRealMp4(browser,base){
+ videoMode='valid';
+ const s=await open(browser,base,390);
+ try{
+  await login(s.page);
+  await s.page.locator('.creative[data-revision="r-video"] video').waitFor();
+  const decoded=await s.page.evaluate(async()=>{
+   const video=document.querySelector('.creative[data-revision="r-video"] video');
+   video.muted=true;
+   video.preload='auto';
+   const waitFor=(event,deadline=15000)=>new Promise((resolve,reject)=>{
+    const timeout=setTimeout(()=>reject(new Error('Timed out waiting for '+event)),deadline);
+    const onError=()=>{clearTimeout(timeout);reject(new Error('Video decode error '+video.error?.code));};
+    video.addEventListener('error',onError,{once:true});
+    video.addEventListener(event,()=>{clearTimeout(timeout);video.removeEventListener('error',onError);resolve();},{once:true});
+   });
+   if(video.readyState<1)await waitFor('loadedmetadata');
+   const metadata={
+    duration:video.duration,width:video.videoWidth,height:video.videoHeight,
+    readyState:video.readyState
+   };
+   const ended=waitFor('ended');
+   await video.play();
+   await ended;
+   return {...metadata,ended:video.ended,currentTime:video.currentTime};
+  });
+  ok(decoded.duration>1&&decoded.duration<3,'true video metadata contains expected 1.5s duration');
+  eq([decoded.width,decoded.height],[320,180],'real MP4 decodes at expected dimensions');
+  ok(decoded.readyState>=1,'Chromium reports loaded MP4 metadata');
+  ok(decoded.ended,'Chromium reaches end of real MP4 playback');
+  ok(decoded.currentTime>=1,'real MP4 playback advances past one second');
+  eq(s.pageErrors,[],'no page exceptions during actual MP4 decode and playback');
+  eq(s.external,[],'real MP4 served exclusively over loopback');
+ }finally{await s.context.close();}
+}
+async function verifyBrokenMp4(browser,base,mode){
+ videoMode=mode;
+ const s=await open(browser,base,390);
+ try{
+  await login(s.page);
+  const slot=s.page.locator('.creative[data-revision="r-video"]');
+  await slot.getByText('Prévia indisponível no momento.').waitFor({timeout:15000});
+  eq(await slot.locator('video').count(),0,'broken MP4 removed from preview: '+mode);
+  ok(await s.page.locator('#dashboard').isVisible(),'dashboard survives '+mode+' MP4');
+  ok(await s.page.locator('.campaign').count()===3,'campaign list preserved for '+mode);
+  const metrics=await s.page.locator('.campaign').first().locator('.metrics strong').allTextContents();
+  ok(metrics.includes('2'),'metrics survive '+mode+' MP4');
+  eq(s.pageErrors,[],'no uncaught UI errors for '+mode+' MP4');
+  eq(s.external,[],'no external requests for '+mode+' MP4');
+ }finally{await s.context.close();videoMode='valid';}
+}
 async function run(){
+ mp4Directory=fs.mkdtempSync(path.join(os.tmpdir(),'vision-commercial-mp4-'));
+ const mp4File=path.join(mp4Directory,'fixture-commercial.mp4');
+ execFileSync('ffmpeg',[
+  '-hide_banner','-loglevel','error','-y','-f','lavfi',
+  '-i','testsrc2=size=320x180:rate=24','-t','1.5',
+  '-an','-c:v','libx264','-preset','ultrafast','-pix_fmt','yuv420p',
+  '-movflags','+faststart',mp4File
+ ],{timeout:30000});
+ generatedMp4=fs.readFileSync(mp4File);
+ ok(generatedMp4.length>1000,'nonempty real H264 MP4 fixture generated by ffmpeg');
  await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
  const base='http://127.0.0.1:'+server.address().port;
  let browser;
@@ -209,11 +288,20 @@ async function run(){
    args:['--no-sandbox','--disable-dev-shm-usage']});
   const folder=process.env.RUNNER_TEMP||os.tmpdir();
   for(const width of [320,390,768,1280])await baseline(browser,base,width,folder);
+  await verifyRealMp4(browser,base);
+  await verifyBrokenMp4(browser,base,'missing');
+  await verifyBrokenMp4(browser,base,'corrupt');
   await failures(browser,base);
   await logout(browser,base);
   console.log(JSON.stringify({result:'PASS',checks,
    viewports:[320,390,768,1280],network:'loopback-only',
-   note:'synthetic JWT, Storage signing and MP4 placeholder; physical video decoding is not tested'}));
- }finally{if(browser)await browser.close();server.close();}
+   mp4:'H264 real fixture decoded and ended in headless Chromium',
+   recovery:'404 and corrupt MP4 both fall back without blocking dashboard',
+   limitation:'synthetic Auth/Storage, no Android TV or Supabase real'}));
+ }finally{
+  if(browser)await browser.close();
+  server.close();
+  if(mp4Directory)fs.rmSync(mp4Directory,{recursive:true,force:true});
+ }
 }
 run().catch(err=>{console.error(err.stack||err);process.exitCode=1;});
