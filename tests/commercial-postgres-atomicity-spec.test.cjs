@@ -46,7 +46,7 @@ test('atomic receipt validates identity, row lock, transaction and conflict sema
 test('completed claim requires termination but remains only a player declaration',()=>{
  assert.match(sql,/CHECK \(NOT completed OR claimed_ended_at IS NOT NULL\)/);
  assert.match(doc,/RFC3339/);
- assert.match(doc,/não é medição auditada da tela/);
+ assert.match(doc,/não medição auditada da tela/);
  assert.match(doc,/completed=false/);
 });
 test('batch consolidation is independent and cannot block base playback',()=>{
