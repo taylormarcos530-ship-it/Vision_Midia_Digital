@@ -50,8 +50,10 @@ function failedPreview(slot,generation){
  replacePreview(slot);
  slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>');
 }
-export async function loadThumbnails(root,data,api){
+export async function loadThumbnails(root,data,api,isAuthorized=()=>true){
  for(const rev of data.revisions||[]){
+  // A prior session, dashboard or campaign refresh must not issue new preview requests.
+  if(!isAuthorized())return;
   // Only opaque revision identifiers are expected, never CSS selectors supplied by users.
   if(!rev||typeof rev.id!=='string'||!/^[A-Za-z0-9_-]{1,160}$/.test(rev.id))continue;
   const slot=root.querySelector('[data-revision="'+rev.id+'"]');
@@ -60,7 +62,7 @@ export async function loadThumbnails(root,data,api){
   // A slow signed URL or late media error can never replace a newer preview.
   const generation=(previewGenerations.get(slot)||0)+1;
   previewGenerations.set(slot,generation);
-  const current=()=>previewGenerations.get(slot)===generation&&slot.isConnected!==false;
+  const current=()=>isAuthorized()&&previewGenerations.get(slot)===generation&&slot.isConnected!==false;
   const path=commercialPreviewPath(rev.storage_path);
   if(!path){failedPreview(slot,generation);continue;}
   const signedPath='/storage/v1/object/sign/vision-media/'+path.split('/').map(encodeURIComponent).join('/');
