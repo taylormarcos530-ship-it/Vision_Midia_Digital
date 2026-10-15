@@ -27,4 +27,33 @@ export class CommercialAPI{
  masterCall(action,body={}){return this.request('/functions/v1/master-admin',{body:{action,...body}})}
  async logout(){const pending=this.request('/auth/v1/logout',{body:{},retry:false});this.clear();await pending;}
 }
-export async function loadThumbnails(root,data,api){for(const rev of data.revisions||[]){const slot=root.querySelector(`[data-revision="${CSS.escape(rev.id)}"]`);if(!slot||!rev.storage_path)continue;try{const signed=await api.request('/storage/v1/object/sign/vision-media/'+rev.storage_path.split('/').map(encodeURIComponent).join('/'),{body:{expiresIn:60}});const raw=signed.signedURL||signed.signedUrl;if(!raw)continue;const url=new URL(raw.startsWith('/object/')?'/storage/v1'+raw:raw,api.config.supabaseUrl);if(url.origin!==new URL(api.config.supabaseUrl).origin)continue;const el=document.createElement(rev.media_type==='video'?'video':'img');el.src=url.href;el.alt=rev.name;if(rev.media_type==='video'){el.controls=true;el.preload='metadata';el.playsInline=true;}slot.replaceChildren(el);}catch{slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>')}}}
+// Only immutable commercial snapshots may enter the advertiser signed-preview flow.
+// The server/Storage RLS must independently validate tenant and media access.
+export function commercialPreviewPath(value){
+ return typeof value==='string'&&
+  /^commercial-ads\/[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}(?:\.(?:png|jpe?g|webp|gif|mp4|mov|webm|m4v))?$/.test(value)
+  ?value:null;
+}
+export async function loadThumbnails(root,data,api){
+ for(const rev of data.revisions||[]){
+  if(!rev||typeof rev.id!=='string'||!rev.id)continue;
+  const slot=root.querySelector('[data-revision="'+CSS.escape(rev.id)+'"]');
+  if(!slot)continue;
+  const path=commercialPreviewPath(rev.storage_path);
+  if(!path)continue; // Do not sign original customer media or arbitrary Storage keys.
+  const signedPath='/storage/v1/object/sign/vision-media/'+path.split('/').map(encodeURIComponent).join('/');
+  try{
+   const signed=await api.request(signedPath,{body:{expiresIn:60}});
+   const raw=signed?.signedURL||signed?.signedUrl;
+   if(typeof raw!=='string'||!raw)continue;
+   const origin=new URL(api.config.supabaseUrl).origin;
+   const url=new URL(raw.startsWith('/object/')?'/storage/v1'+raw:raw,origin);
+   // Verify the signed resource matches the requested commercial copy, not just the host.
+   if(url.origin!==origin||url.pathname!==signedPath)continue;
+   const el=document.createElement(rev.media_type==='video'?'video':'img');
+   el.src=url.href;el.alt=rev.name||'Prévia comercial';
+   if(rev.media_type==='video'){el.controls=true;el.preload='metadata';el.playsInline=true;}
+   slot.replaceChildren(el);
+  }catch{slot.insertAdjacentHTML('beforeend','<small>Prévia indisponível no momento.</small>')}
+ }
+}
