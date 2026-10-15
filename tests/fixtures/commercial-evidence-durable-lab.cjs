@@ -76,30 +76,6 @@ function readState(dir,chain){
   throw e;
  }finally{if(fd!==undefined)fs.closeSync(fd)}
 }
-function saveAtomic(dir,state,{fault=null}={}){
- const lock=path.join(dir,'writer.lock');
- try{fs.mkdirSync(lock)}catch(e){if(e.code==='EEXIST')return 'LOCK_BUSY';throw e}
- let pending;
- try{
-  if(fault==='BEFORE_TEMP_WRITE')return 'SIMULATED_UNAVAILABLE';
-  pending=path.join(dir,'ledger-'+process.pid+'-'+Date.now()+'.tmp');
-  const bytes=Buffer.from(JSON.stringify(state)+'\n');
-  if(bytes.length>MAX)throw new Error('PERSISTED_STATE_TOO_LARGE');
-  const fd=fs.openSync(pending,fs.constants.O_WRONLY|fs.constants.O_CREAT|
-   fs.constants.O_EXCL|fs.constants.O_NOFOLLOW,0o600);
-  try{fs.writeFileSync(fd,bytes);fs.fsyncSync(fd)}finally{fs.closeSync(fd)}
-  if(fault==='AFTER_TEMP_SYNC')return 'SIMULATED_UNAVAILABLE';
-  fs.renameSync(pending,path.join(dir,'ledger.json'));
-  pending=null;
-  const fdDir=fs.openSync(dir,fs.constants.O_RDONLY|fs.constants.O_DIRECTORY);
-  try{fs.fsyncSync(fdDir)}finally{fs.closeSync(fdDir)}
-  if(fault==='AFTER_RENAME_BEFORE_ACK')return 'ACK_LOST_AFTER_COMMIT';
-  return 'COMMITTED';
- }finally{
-  if(pending){try{fs.unlinkSync(pending)}catch{}}
-  fs.rmdirSync(lock);
- }
-}
 function createDurableLabCustodian(chain,{directory,expectedPinnedHead=null}={}){
  const h=verifyChain(chain);
  if(!h.chainConsistent||h.historyNeedsReview)
