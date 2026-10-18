@@ -51,3 +51,10 @@ test('Operational panel is separate from Master and keeps its tenant access gate
   assert.match(app, /accessReason\(state\.subscription\)/);
   assert.doesNotMatch(script.slice(script.indexOf('function openOperationalArea('), script.indexOf('function setView(')), /restRequest|edgeRequest|fetch\(/);
 });
+
+test('Master keeps advertiser entry visible but disconnected from real commercial system', () => {
+  assert.match(html, /class="nav-button master-commercial-pending"[^>]+disabled aria-disabled="true"[^>]*>◈ Anunciantes · Em homologação<\/button>/);
+  assert.match(css, /\.master-sidebar \.master-commercial-pending:disabled\{cursor:not-allowed/);
+  assert.doesNotMatch(html, /href="\.\/master-advertisers\.html"/);
+  assert.doesNotMatch(html, /VISION_COMMERCIAL_CONFIG/);
+});
