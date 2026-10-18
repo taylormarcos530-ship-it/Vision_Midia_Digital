@@ -11,7 +11,9 @@ export async function commercialSavePublicPoint(admin,user,body){
  const consent=body.consent_confirmed===true;
  const share=body.share_location===true;
  // Test devices and installations in private homes can never be published by mistake.
- if(share&&/teste|casa|home|resid[eê]ncia/i.test(device.name))fail('private_test_device_location_blocked');
+ // Match private/test device naming, not legitimate business names such as "Casa de carne".
+ const privateDevice=/\bteste\b|^\s*casa\s*$|^\s*home\s*$|^\s*resid[eê]ncia\b/i.test(device.name);
+ if(share&&privateDevice)fail('private_test_device_location_blocked');
  const label=val(body.public_label,100),address=val(body.public_address,220),
   neighborhood=val(body.neighborhood,110),city=val(body.city,110);
  if(share&&(!consent||city.length<2||!label))fail('public_point_consent_required');
