@@ -224,7 +224,7 @@ test('only platform Master sees advertiser link button in media management',()=>
  assert.match(app,/url\.searchParams\.set\(linked\?'unlink_media':'link_media', media\.id\)/);
  assert.match(app,/window\.location\.assign\(url\.href\)/);
  assert.match(html,/\.\/app\.js\?v=50/);
- assert.match(html,/\.\/styles\.css\?v=47/);
+ assert.match(html,/\.\/styles\.css\?v=48/);
  assert.match(css,/\[data-link-media-advertiser\]/);
 });
 test('media shortcut requires advertiser choice and drafts a campaign with original media preselected',()=>{
@@ -250,7 +250,7 @@ test('Master push notification message is legible on mobile without changing mes
  assert.match(css,/#mn-message:focus/);
  assert.match(css,/-webkit-text-fill-color:#f8fafc !important/);
  assert.match(css,/caret-color:#f8fafc/);
- assert.match(html,/master\.css\?v=44/);
+ assert.match(html,/master\.css\?v=45/);
  assert.match(html,/id="mn-message"/);
  const script=fs.readFileSync('master.js','utf8');
  assert.match(script,/'#mn-message'/);
