@@ -54,6 +54,6 @@ test('upload progress reports percentage and keeps copy isolated from client med
  const master=fs.readFileSync('master-advertisers.mjs','utf8');
  assert.match(script,/xhr\.upload\.onprogress/);
  assert.match(master,/uploadCommercialSignedFile/);
- assert.match(master,/commercial-source\//);
+ assert.match(master,/commercial_prepare_source/);
  assert.match(master,/commercial_finalize_source/);
 });
