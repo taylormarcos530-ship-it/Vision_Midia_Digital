@@ -250,7 +250,7 @@ test('Master push notification message is legible on mobile without changing mes
  assert.match(css,/#mn-message:focus/);
  assert.match(css,/-webkit-text-fill-color:#f8fafc !important/);
  assert.match(css,/caret-color:#f8fafc/);
- assert.match(html,/master\.css\?v=45/);
+ assert.match(html,/master\.css\?v=46/);
  assert.match(html,/id="mn-message"/);
  const script=fs.readFileSync('master.js','utf8');
  assert.match(script,/'#mn-message'/);
@@ -298,5 +298,5 @@ test('Master plan title and Disponível are stacked as separate readable lines',
  assert.match(master,/<strong>\$\{esc\(p\.name\)\}<\/strong><small>\$\{esc\(p\.is_active\?'Disponível':'Inativo'\)\}<\/small>/);
  assert.match(css,/\.plan-card \.client-top > div:first-child\s*\{\s*display:flex;\s*flex-direction:column/);
  assert.match(css,/\.plan-card \.client-top > div:first-child > small\s*\{\s*display:block/);
- assert.match(html,/master\.css\?v=45/);
+ assert.match(html,/master\.css\?v=46/);
 });

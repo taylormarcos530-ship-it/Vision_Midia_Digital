@@ -767,3 +767,10 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .plan-card .client-top{gap:12px;align-items:flex-start;flex-wrap:wrap}
   .plan-card .client-top > div:first-child{min-width:120px;flex:1}
 }
+
+/* Mobile Master: status and navigation scroll normally, never covering page headings. */
+@media(max-width:720px){
+  body:not(.master-embedded) .master-sidebar{position:static;top:auto;height:auto}
+  body:not(.master-embedded) .master-topbar{position:static;top:auto;z-index:auto}
+  body:not(.master-embedded) .master-content{padding-top:18px}
+}

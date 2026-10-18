@@ -2339,13 +2339,22 @@
     return width > height ? 'Horizontal' : 'Vertical';
   }
 
+  // Coalesce simultaneous signed URL requests for the same secure media preview.
+  const pendingMediaPreviewUrls = new Map();
   async function signedMediaUrlCached(media) {
     const key = `${media.id}:${media.storage_path}`;
     const cached = state.mediaPreviewUrls.get(key);
     if (cached?.url && cached.expiresAt > Date.now() + 60_000) return cached.url;
-    const url = await getSignedMediaUrl(media.storage_path);
-    state.mediaPreviewUrls.set(key, { url, expiresAt: Date.now() + 12 * 60_000 });
-    return url;
+    const inflight = pendingMediaPreviewUrls.get(key);
+    if (inflight) return inflight;
+    const pending = getSignedMediaUrl(media.storage_path)
+      .then(url => {
+        state.mediaPreviewUrls.set(key, { url, expiresAt: Date.now() + 12 * 60_000 });
+        return url;
+      })
+      .finally(() => { pendingMediaPreviewUrls.delete(key); });
+    pendingMediaPreviewUrls.set(key, pending);
+    return pending;
   }
 
 
@@ -2519,7 +2528,7 @@
   let previewJobsActive = 0;
   let deferredPreviewObserver = null;
   function drainVisiblePreviewJobs() {
-    while (previewJobsActive < 2 && deferredPreviewJobs.length) {
+    while (previewJobsActive < 3 && deferredPreviewJobs.length) {
       const job = deferredPreviewJobs.shift();
       if (!job.target.isConnected || job.target.dataset.loadingPath !== job.path) continue;
       previewJobsActive++;
@@ -2575,7 +2584,7 @@
         if (queued) deferredPreviewJobs.push(queued);
       }
       drainVisiblePreviewJobs();
-    }, {rootMargin:'140px'});
+    }, {rootMargin:'200px'});
     previewJobsByNode.set(target,job);
     deferredPreviewObserver.observe(target);
   }

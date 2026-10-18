@@ -3,8 +3,8 @@ test('customer dashboard defers media/playlist thumbnails until viewport',()=>{
  const s=fs.readFileSync('app.js','utf8');
  assert.match(s,/function deferVisibleMediaPreview\(/);
  assert.match(s,/new IntersectionObserver\(entries =>/);
- assert.match(s,/rootMargin:'140px'/);
- assert.match(s,/previewJobsActive < 2/);
+ assert.match(s,/rootMargin:'200px'/);
+ assert.match(s,/previewJobsActive < 3/);
  assert.match(s,/deferVisibleMediaPreview\(target, media, false\)/);
  assert.match(s,/deferVisibleMediaPreview\(target,media\)/);
  assert.match(s,/target\.dataset\.loadingPath !== path/);
@@ -22,5 +22,5 @@ test('thumbnail optimization never changes playlist ordering or playback command
 
 test('mobile PWA receives new lazy-preview runtime under cache-busting app.js version',()=>{
  const index=fs.readFileSync('index.html','utf8');
- assert.match(index,/src="\.\/app\.js\?v=50"/);
+ assert.match(index,/src="\.\/app\.js\?v=51"/);
 });
