@@ -13,3 +13,25 @@ test('wrong PNG or dimensions leave current icon intact',async()=>{const {s,run}
 test('atomic save publishes immutable revision; old image remains available',async()=>{const {run}=await handler();const a=await (await run(req({icons:icons(),expected_revision:null}))).json();assert.ok(a.revision);let m=await (await run(new Request('https://example.test/manifest.webmanifest'))).json();assert.match(m.icons[1].src,new RegExp(a.revision));const old=m.icons[1].src;await run(req({icons:icons(),expected_revision:a.revision}));const asset=await run(new Request('https://example.test'+old));assert.equal(asset.status,200);assert.equal(asset.headers.get('content-type'),'image/png');assert.match(asset.headers.get('cache-control'),/immutable/);});
 test('stale writer receives conflict without replacing published revision',async()=>{const {run}=await handler();const a=await (await run(req({icons:icons(),expected_revision:null}))).json();assert.equal((await run(req({icons:icons(),expected_revision:null}))).status,409);const current=await (await run(new Request('https://example.test/app-icon-config'))).json();assert.equal(current.revision,a.revision);});
 test('cross-origin writes rejected before persistence',async()=>{const {s,run}=await handler();const r=req({icons:icons()});r.headers.set('origin','https://evil.test');assert.equal((await run(r)).status,403);assert.equal(s.data.size,0);});
+
+test('global panel logo can be changed by Master without changing installed PWA icon',async()=>{
+ const {run}=await handler();
+ const previous=await (await run(new Request('https://example.test/manifest.webmanifest'))).json();
+ const save=await run(req({kind:'panel-logo',icons:icons(),expected_logo_revision:null}));
+ assert.equal(save.status,200);
+ const data=await save.json();
+ const current=await (await run(new Request('https://example.test/app-icon-config'))).json();
+ assert.equal(current.revision,null);
+ assert.equal(current.panel_logo.revision,data.revision);
+ assert.equal(current.panel_logo.src,'/app-icons/'+data.revision+'/512.png');
+ const file=await run(new Request('https://example.test'+current.panel_logo.src));
+ assert.equal(file.status,200);
+ assert.equal(file.headers.get('content-type'),'image/png');
+ const latest=await (await run(new Request('https://example.test/manifest.webmanifest'))).json();
+ assert.deepEqual(latest.icons,previous.icons);
+ assert.equal((await run(req({kind:'panel-logo',icons:icons(),expected_logo_revision:null}))).status,409);
+});
+test('global brand update is denied to non-Master roles',async()=>{
+ const {run}=await handler('support');
+ assert.equal((await run(req({kind:'panel-logo',icons:icons(),expected_logo_revision:null}))).status,403);
+});
