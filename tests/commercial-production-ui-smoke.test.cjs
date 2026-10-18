@@ -221,10 +221,10 @@ test('only platform Master sees advertiser link button in media management',()=>
  assert.match(app,/state\.isPlatformAdmin && \["image","video"\]\.includes\(media\.media_type\)/);
  assert.match(app,/data-link-media-advertiser/);
  assert.match(app,/Somente o Master Vision pode vincular anúncios comerciais/);
- assert.match(app,/destination|url\.searchParams\.set\('link_media', media\.id\)/);
+ assert.match(app,/url\.searchParams\.set\(linked\?'unlink_media':'link_media', media\.id\)/);
  assert.match(app,/window\.location\.assign\(url\.href\)/);
- assert.match(html,/\.\/app\.js\?v=49/);
- assert.match(html,/\.\/styles\.css\?v=46/);
+ assert.match(html,/\.\/app\.js\?v=50/);
+ assert.match(html,/\.\/styles\.css\?v=47/);
  assert.match(css,/\[data-link-media-advertiser\]/);
 });
 test('media shortcut requires advertiser choice and drafts a campaign with original media preselected',()=>{
