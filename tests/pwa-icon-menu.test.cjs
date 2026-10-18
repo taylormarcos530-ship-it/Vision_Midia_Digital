@@ -3,7 +3,7 @@ for(const standalone of [false,true])test('icon editor opens from '+(standalone?
  const added=[];const nav={append:e=>added.push(e)};let opens=0;const parts=new Map();
  const document={hidden:false,head:{append(){}},body:{append(){}},addEventListener(){},querySelector(selector){if(selector==='.master-sidebar nav')return standalone?nav:null;if(selector==='#saas-admin-nav')return standalone?null:nav;return null;},createElement(tag){return{style:{},setAttribute(){},showModal(){opens++;},close(){},querySelector(selector){if(!parts.has(selector))parts.set(selector,{});return parts.get(selector);}}}};
  vm.runInNewContext(fs.readFileSync('pwa-icon.js','utf8'),{document,window:{addEventListener(){}},fetch:async()=>({ok:true,json:async()=>({revision:null,icons:[]})})});
- assert.equal(added.length,1);assert.equal(added[0].className,standalone?'nav-button':'nav-item');await added[0].onclick();assert.equal(opens,1);
+ assert.equal(added.length,2);assert.equal(added[0].className,standalone?'nav-button':'nav-item');assert.equal(added[1].className,standalone?'nav-button':'nav-item');await added[0].onclick();await added[1].onclick();assert.equal(opens,2);
 });
 
 test('global logo editor is separate from existing PWA icon editor',()=>{
