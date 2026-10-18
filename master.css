@@ -730,3 +730,41 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .mini-row{flex-wrap:wrap;min-width:0}
   .mini-row>div{min-width:0;overflow-wrap:anywhere}
 }
+
+/* Isolated Master navigation repair: keep desktop/tablet sidebar, use a drawer on phones. */
+.master-nav-section{display:block;margin:15px 12px 4px;color:#8192b5;font-size:10px;font-weight:900;letter-spacing:.12em}
+.master-sidebar .nav-button[href]{text-decoration:none}
+.master-title-area{display:flex;align-items:center;min-width:0;gap:12px}
+.master-mobile-menu-toggle,.master-menu-backdrop{display:none}
+@media (min-width:721px) and (max-width:1050px){
+  .master-shell{grid-template-columns:225px minmax(0,1fr)}
+  .master-sidebar .brand div{display:flex;font-size:14px}
+  .master-sidebar .nav-button:not(.danger){font-size:13px;justify-content:flex-start}
+  .master-sidebar .sidebar-foot strong,.master-sidebar .sidebar-foot small,.master-sidebar .sidebar-foot a{display:initial}
+}
+@media (max-width:720px){
+  .master-sidebar{
+    position:fixed;left:0;top:0;bottom:0;z-index:60;
+    width:min(86vw,320px);height:100dvh;max-height:100dvh;
+    display:flex;flex-direction:column;padding:18px 13px;
+    border-right:1px solid #28354e;border-bottom:0;overflow-y:auto;
+    transform:translateX(-105%);transition:transform .2s ease;
+    visibility:hidden;
+  }
+  .master-sidebar.is-open{transform:translateX(0);visibility:visible}
+  .master-sidebar .sidebar-brand{display:flex}
+  .master-sidebar .brand div{font-size:14px}
+  .master-sidebar .sidebar-foot{display:grid;margin-top:auto}
+  .master-sidebar .sidebar-foot strong,.master-sidebar .sidebar-foot small,.master-sidebar .sidebar-foot a{display:block}
+  .master-sidebar nav{display:grid;gap:5px}
+  .master-sidebar .nav-button:not(.danger){font-size:13px;justify-content:flex-start;white-space:normal;text-align:left}
+  .master-sidebar .nav-button{padding:10px 12px}
+  .master-menu-backdrop.is-open{display:block;position:fixed;inset:0;z-index:55;border:0;background:rgba(0,0,0,.62);cursor:pointer}
+  .master-mobile-menu-toggle{display:grid;place-items:center;flex:none}
+  .master-topbar{top:0;height:68px;z-index:15}
+  .master-topbar h1{font-size:17px}
+  .master-topbar .master-title-area small{font-size:9px}
+  .top-actions{gap:5px}
+  .top-actions .pill{font-size:10px;padding:6px}
+}
+@media (prefers-reduced-motion:reduce){.master-sidebar{transition:none!important}}

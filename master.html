@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#0b1020" />
   <title>Vision Mídia Digital • Master</title>
-  <link rel="stylesheet" href="./master.css?v=43" />
+  <link rel="stylesheet" href="./master.css?v=47" />
   <script src="./pwa-icon.js" defer></script>
   <link rel="stylesheet" href="./pwa-install.css" />
   <script src="./pwa-install.js" defer></script>
@@ -32,21 +32,27 @@
   </section>
 
   <div id="master-shell" class="master-shell hidden">
-    <aside class="master-sidebar">
+    <aside id="master-sidebar" class="master-sidebar">
       <div class="brand sidebar-brand"><span>V</span><div><strong>Vision</strong><small>SaaS Master</small></div></div>
       <nav>
         <button class="nav-button active" data-master-view="dashboard">▦ Dashboard</button>
         <button class="nav-button" data-master-view="clients">▣ Clientes</button>
         <button class="nav-button" data-master-view="plans">◇ Planos</button>
+        <span class="master-nav-section">OPERAÇÃO DAS TVs</span>
+        <a class="nav-button" href="./index.html" data-operational-view="devices">▣ TVs / Player ↗</a>
+        <a class="nav-button" href="./index.html" data-operational-view="media">▧ Mídias ↗</a>
+        <a class="nav-button" href="./index.html" data-operational-view="playlists">▶ Playlists ↗</a>
+        <a class="nav-button" href="./index.html" data-operational-view="monitoring">◉ Monitoramento ↗</a>
         <button class="nav-button" data-master-view="audit">≡ Auditoria</button>
         <a class="nav-button nav-download-link" href="./downloads.html">⇩ Aplicativos / Downloads</a>
       </nav>
       <div class="sidebar-foot"><small id="master-role-label">Master</small><strong id="master-email-label">—</strong><a href="./index.html">Painel do cliente ↗</a><button id="master-logout" class="nav-button danger">↪ Sair</button></div>
     </aside>
+    <button id="master-menu-backdrop" class="master-menu-backdrop" type="button" tabindex="-1" aria-label="Fechar menu lateral"></button>
 
     <main class="master-main">
       <header class="master-topbar">
-        <div><small id="master-kicker">PLATAFORMA</small><h1 id="master-title">Dashboard SaaS</h1></div>
+        <div class="master-title-area"><button id="master-menu-toggle" class="icon-button master-mobile-menu-toggle" type="button" aria-label="Abrir menu lateral" aria-controls="master-sidebar" aria-expanded="false">☰</button><div><small id="master-kicker">PLATAFORMA</small><h1 id="master-title">Dashboard SaaS</h1></div></div>
         <div class="top-actions"><span id="master-connection" class="pill neutral">● Sincronização</span><button id="master-refresh" class="icon-button">↻</button></div>
       </header>
 
@@ -412,7 +418,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=45" defer></script>
+  <script src="./master.js?v=47" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>

@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "release/vision-master-ui-20261018": false
+    }
+  },
   "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [
