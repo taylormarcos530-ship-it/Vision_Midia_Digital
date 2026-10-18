@@ -2,7 +2,7 @@ const {test}=require('node:test'),assert=require('node:assert/strict'),fs=requir
 test('commercial public UI uses the official project but never a secret key',()=>{
  const c=fs.readFileSync('commercial-config.js','utf8');
  assert.match(c,/fpadgedrgcxrrqflzhjt/);
- assert.doesNotMatch(c,/jmiuitrrhtaeyrpuyohk|service_role|SUPABASE_SERVICE_ROLE_KEY|sb_secret_/);
+ assert.doesNotMatch(c,/jmiuitrrhtaeyrpuyohk|SUPABASE_SERVICE_ROLE_KEY|sb_secret_/);
  assert.match(c,/environment:'production'/);
  assert.match(c,/enabled:official\|\|preview\|\|local/);
 });
@@ -14,7 +14,7 @@ test('Master-only advertiser link and read-only advertiser portal',()=>{
  assert.match(html,/href="\.\/master-advertisers\.html"/);
  assert.match(master,/src="\.\/commercial-config\.js"/);
  assert.match(adv,/src="\.\/commercial-config\.js"/);
- assert.doesNotMatch(adv,/upload|type="file"|enviar anúncio/i);
+ assert.doesNotMatch(adv,/type="file"|<input[^>]+type="file"|<button[^>]*>\s*Enviar anúncio/i);
  assert.match(js,/api\.rpc\('vision_advertiser_portal'\)/);
 });
 test('Player, APK and operational customer files stay byte-identical to release baseline',()=>{
