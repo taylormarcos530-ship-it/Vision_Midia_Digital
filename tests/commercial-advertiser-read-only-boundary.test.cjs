@@ -12,7 +12,8 @@ test('advertiser pages are report-only, including staging',()=>{
  for(const page of ['anunciante.html','anunciante-homologacao.html']){
   const html=read(page);
   assert.match(html,/id="advertiser-read-only-note"/);
-  assert.match(html,/O envio e a publicação de anúncios comerciais são feitos pela equipe Vision/);
+  assert.match(html,/O painel não permite enviar anúncios/);
+  assert.match(html,/Você não pode carregar, substituir ou publicar anúncios por esta conta/);
   assert.doesNotMatch(html,/<input[^>]+type=['"]file['"]|<form[^>]+enctype=['"]multipart\/form-data/);
  }
 });
