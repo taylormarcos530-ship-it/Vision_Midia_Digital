@@ -762,6 +762,9 @@
         }
       }
       renderAll();
+      if (window.VISION_MENU_PANEL_ENABLED === true) {
+        window.dispatchEvent(new Event('vision-menu-panel-updated'));
+      }
       // Keep this card deterministic even if another renderer is skipped.
       renderDevicePlanUsage();
       updateConnectionStatus(true);
@@ -5180,6 +5183,32 @@
       state.playlistEditorRenderSignature = '';
       if ($('#playlist-media-search')) $('#playlist-media-search').value = '';
     });
+  }
+
+  // Optional Vision Menu read-only panel bridge. Disabled by default; no network or DOM side effects otherwise.
+  if (window.VISION_MENU_PANEL_ENABLED === true) {
+    import('./vision-menu-lab/panel-bridge.mjs')
+      .then(({ mountVisionMenuPreview }) => mountVisionMenuPreview({
+        doc: document,
+        win: window,
+        getContext: () => ({
+          signedIn: Boolean(state.session?.access_token && state.user?.id && state.company?.id && !$('#app-shell').classList.contains('hidden')),
+          company: state.company ? {
+            id: state.company.id, name: state.company.name, status: state.company.status,
+          } : null,
+          role: state.companyRole,
+          devices: state.devices.map(({ id, name, company_id, status, retired_at }) => ({ id, name, company_id, status, retired_at })),
+          media: state.media.map(({ id, name, company_id, media_type, processing_status, storage_path, size_bytes }) =>
+            ({ id, name, company_id, media_type, processing_status, storage_path, size_bytes })),
+          assignments: state.deviceAssignments.map(({ company_id, device_id, playlist_id }) =>
+            ({ company_id, device_id, playlist_id })),
+          campaigns: state.campaigns.map(({ company_id, is_active, all_devices }) =>
+            ({ company_id, is_active, all_devices })),
+          campaignTargets: state.campaignDevices.map(({ company_id, device_id }) =>
+            ({ company_id, device_id })),
+        }),
+      }))
+      .catch(error => console.warn('Vision Menu preview unavailable; normal panel preserved.', error));
   }
 
   bootstrap().catch(error => {
