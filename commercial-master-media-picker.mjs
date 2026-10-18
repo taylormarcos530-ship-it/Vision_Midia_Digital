@@ -21,7 +21,7 @@ export function normalizeSignedPreview(raw,base){
  }catch{return null;}
 }
 export function createCommercialMediaPicker({api,grid,search,status,selected,preview,count,filters,select}){
- let entries=[],filter='vision',value='',generation=0;
+ let entries=[],filter='vision',value='',generation=0,thumbnailObserver=null;
  const urls=new Map();
  const current=()=>generation;
  const asset=id=>entries.find(x=>x.id===id);
@@ -57,6 +57,7 @@ export function createCommercialMediaPicker({api,grid,search,status,selected,pre
  };
  const render=async()=>{
   const version=++generation;
+  if(thumbnailObserver){thumbnailObserver.disconnect();thumbnailObserver=null;}
   const term=search.value.trim().toLocaleLowerCase('pt-BR');
   filters.forEach(button=>button.setAttribute('aria-pressed',String(button.dataset.mediaFilter===filter)));
   const matching=entries.filter(x=>(filter==='all'||x.origin===filter)&&
@@ -86,7 +87,24 @@ export function createCommercialMediaPicker({api,grid,search,status,selected,pre
    }
   }
   if(version!==current())return;
-  for(const item of visible)thumb(item,urls.get(item.id));
+  // Lazy thumbnails: mobile never preloads every 20–30 MB video in the scrollable gallery.
+  if(typeof IntersectionObserver!=='undefined'){
+   thumbnailObserver=new IntersectionObserver(changes=>{
+    for(const entry of changes){
+     if(!entry.isIntersecting)continue;
+     thumbnailObserver.unobserve(entry.target);
+     const item=asset(entry.target.dataset.thumbnail);
+     if(item)thumb(item,urls.get(item.id));
+    }
+   },{root:grid,rootMargin:'50px'});
+   for(const item of visible){
+    if(!urls.has(item.id))continue;
+    const slot=grid.querySelector('[data-thumbnail="'+item.id+'"]');
+    if(slot)thumbnailObserver.observe(slot);
+   }
+  }else{
+   for(const item of visible)thumb(item,urls.get(item.id));
+  }
   if(!status.textContent.includes('indisponíveis'))status.textContent='Toque na mídia para selecionar. Vídeos mostram uma prévia sem iniciar a reprodução.';
   previewSelected();
  };
@@ -118,7 +136,7 @@ export function createCommercialMediaPicker({api,grid,search,status,selected,pre
    search.value='';
    render();
   },
-  close(){++generation;urls.clear();entries=[];value='';preview.replaceChildren();}
+  close(){++generation;if(thumbnailObserver){thumbnailObserver.disconnect();thumbnailObserver=null;}urls.clear();entries=[];value='';preview.replaceChildren();}
  };
 }
 // XHR gives genuine upload progress on Android/mobile (fetch does not expose it).
