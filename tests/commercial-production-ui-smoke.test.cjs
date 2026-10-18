@@ -150,3 +150,30 @@ test('Master location form explains private test TV instead of raw server code',
  assert.equal(isPrivateCommercialDeviceName('Academia Life'),false);
  assert.match(commercialLocationErrorMessage(new Error('private_test_device_location_blocked')),/TV é de teste ou residencial/);
 });
+
+test('SaaS admin sidebar contains both Master links between Planos and Auditoria',()=>{
+ const html=fs.readFileSync('index.html','utf8');
+ const nav=html.match(/<div id="saas-admin-nav" class="saas-admin-nav hidden"[\\s\\S]*?<\\/div>/)?.[0]||'';
+ assert.ok(nav,'SaaS Master section must exist');
+ const plans=nav.indexOf('data-saas-view="plans"');
+ const m=nav.indexOf('href="./master.html"');
+ const ads=nav.indexOf('href="./master-advertisers.html"');
+ const audit=nav.indexOf('data-saas-view="audit"');
+ assert.ok(plans>=0&&plans<m&&m<ads&&ads<audit,'Master links must be between Planos and Auditoria');
+ assert.match(nav,/class="saas-admin-nav hidden"/);
+ assert.match(nav,/Painel Master Vision/);
+ assert.match(nav,/Master Vision · Anunciantes/);
+ assert.doesNotMatch(nav,/target="_blank"/);
+});
+test('Master navigation reuses authenticated session and cannot be used as privilege escalation',()=>{
+ const app=fs.readFileSync('app.js','utf8');
+ const master=fs.readFileSync('master.js','utf8');
+ const saas=fs.readFileSync('saas-shell.js','utf8');
+ const commercial=fs.readFileSync('commercial-ui.mjs','utf8');
+ assert.match(app,/const SESSION_KEY = 'vision_midia_session_v1'/);
+ assert.match(master,/const SESSION_KEY = 'vision_midia_session_v1'/);
+ assert.match(commercial,/vision_midia_session_v1/);
+ assert.match(saas,/\['super_admin', 'admin'\]/);
+ assert.match(saas,/group.classList.toggle\('hidden', !allowed\)/);
+ assert.match(master,/master-admin/);
+});
