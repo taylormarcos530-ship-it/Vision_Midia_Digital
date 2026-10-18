@@ -4,8 +4,44 @@ export const date=value=>value?value.slice(0,10).split('-').reverse().join('/'):
 export const time=value=>value?new Intl.DateTimeFormat('pt-BR',{dateStyle:'short',timeStyle:'short',timeZone:'America/Sao_Paulo'}).format(new Date(value)):'Nenhuma exibição registrada';
 export function campaignState(c,today){const days=Math.max(0,Math.round((Date.parse(c.end_date+'T12:00:00Z')-Date.parse(today+'T12:00:00Z'))/86400000)+1);return {label:c.status==='draft'?'Rascunho':c.status==='paused'?'Pausada':c.end_date<today?'Encerrada':c.start_date>today?'Agendada':'Ativa',days};}
 export function campaignSummary(data,id){const rows=(data.daily||[]).filter(r=>r.campaign_id===id);const points={},days={};let total=0,today=0,last=null;for(const r of rows){const n=Number(r.completed_count)||0;total+=n;if(r.day===data.today)today+=n;points[r.device_id]=(points[r.device_id]||0)+n;days[r.day]=(days[r.day]||0)+n;if(r.last_completed_at&&(!last||r.last_completed_at>last))last=r.last_completed_at;}return {total,today,last,points,days};}
+// Counts are based on completed TV playback events, not browser preview plays.
+// Group by immutable creative revision and by day/TV, never by filename.
+export function creativeDailyBreakdown(data,campaignId){
+ const revisions=(data.revisions||[]).filter(r=>r.campaign_id===campaignId);
+ const rows=(data.daily||[]).filter(r=>r.campaign_id===campaignId);
+ const points=new Map((data.targets||[]).filter(t=>t.campaign_id===campaignId)
+  .map(t=>[t.device_id,t.point_name+' · '+t.device_name]));
+ return revisions.map(revision=>{
+  const daily=rows.filter(row=>row.revision_id===revision.id);
+  let completed=0,today=0;
+  const history=daily.map(row=>{
+   const count=Math.max(0,Number(row.completed_count)||0);
+   completed+=count;
+   if(row.day===data.today)today+=count;
+   return {day:row.day,point:points.get(row.device_id)||'TV vinculada anteriormente',completed:count};
+  }).sort((a,b)=>b.day.localeCompare(a.day)||a.point.localeCompare(b.point,'pt-BR'));
+  return {id:revision.id,name:revision.name||'Anúncio sem nome',
+   media_type:revision.media_type,created_at:revision.created_at,
+   total:completed,today,history};
+ }).sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')));
+}
+export function renderCreativeBreakdown(data,campaignId){
+ const items=creativeDailyBreakdown(data,campaignId);
+ if(!items.length)return '<section class="creative-breakdown"><h3>Exibições por mídia</h3><p class="muted">Nenhuma mídia comercial vinculada.</p></section>';
+ return '<section class="creative-breakdown" aria-label="Exibições por cada mídia comercial"><h3>Exibições por mídia</h3>'+
+ '<p class="muted">Os números aumentam somente quando o Player conclui a exibição na TV. Assistir à prévia no navegador não é contabilizado.</p>'+
+ items.map(item=>'<article class="creative-entry" data-creative-id="'+esc(item.id)+'"><div class="creative-entry-head">'+
+ '<div><strong>'+esc(item.name)+'</strong><small>'+(item.media_type==='video'?'Vídeo':'Imagem')+'</small></div>'+
+ '<button type="button" class="commercial-watch" data-watch-revision="'+esc(item.id)+'">▶ Ver prévia</button></div>'+
+ '<div class="creative-entry-counts"><span>Hoje <b>'+number(item.today)+'</b></span><span>Total <b>'+number(item.total)+'</b></span></div>'+
+ '<details data-history-revision="'+esc(item.id)+'"><summary>Histórico por dia e TV</summary>'+
+ '<div class="table-scroll"><table><thead><tr><th>Dia</th><th>Ponto</th><th>Exibições</th></tr></thead><tbody>'+
+ (item.history.map(row=>'<tr><td>'+date(row.day)+'</td><td>'+esc(row.point)+'</td><td>'+number(row.completed)+'</td></tr>').join('')||
+ '<tr><td colspan="3">Nenhuma exibição comercial concluída.</td></tr>')+
+ '</tbody></table></div></details></article>').join('')+'</section>';
+}
 const deliveryLabels={pending_player_check:'Aguardando confirmação da TV',no_base_playlist:'TV sem playlist disponível',shuffle_preserved:'Modo aleatório preservado; anúncio não inserido',single_preserved:'Modo de mídia única preservado; anúncio não inserido',scheduled_base_preserved:'Agenda da playlist preservada; anúncio não inserido',legacy_player:'Player sem suporte à validade do anúncio',timezone_preserved:'Fuso do ponto não suportado nesta etapa',no_active_campaign:'Sem anúncio elegível neste momento',manifest_ready:'Anúncio incluído na programação',media_unavailable:'Uma ou mais mídias comerciais indisponíveis'};
-export function renderCampaigns(data,showDelivery=false){return (data.campaigns||[]).map(c=>{const s=campaignSummary(data,c.id),status=campaignState(c,data.today);const targets=(data.targets||[]).filter(t=>t.campaign_id===c.id);const revision=(data.revisions||[]).find(r=>r.id===c.current_revision_id);return `<article class="campaign" data-campaign-id="${esc(c.id)}"><div class="campaign-head"><div><span class="eyebrow">CAMPANHA</span><h2>${esc(c.name)}</h2></div><span class="badge ${status.label==='Ativa'?'active':''}">${esc(status.label)}</span></div><div class="campaign-body"><div class="creative" data-revision="${esc(c.current_revision_id)}"><span>▶</span><strong>${esc(revision?.name||'Mídia não disponível')}</strong><small>Prévia da propaganda</small></div><div class="metrics"><div><span>Exibições hoje</span><strong>${number(s.today)}</strong></div><div><span>Total de exibições</span><strong>${number(s.total)}</strong></div><div class="last"><span>Última exibição registrada</span><b>${esc(time(s.last))}</b></div></div></div><div class="period"><span>Início <b>${date(c.start_date)}</b></span><span>Vencimento <b>${date(c.end_date)}</b></span><span>Dias restantes <b>${number(status.days)}</b></span></div><h3>Seus pontos de divulgação</h3><div class="points">${targets.map(t=>`<div class="point"><div><strong>${esc(t.point_name)}</strong><small>${esc(t.device_name)}${t.active?'':' · vínculo encerrado'}</small><small>Última conexão: ${t.last_seen_at?esc(time(t.last_seen_at)):'sem registro'}</small><small class="commercial-live-indicator ${t.commercial_on_screen?'active':''}">${t.commercial_on_screen?'● Anúncio sinalizado em reprodução pela TV':'◯ Sem confirmação de anúncio em tela'}</small>${t.public_location? `<small class="commercial-point-address">📍 ${esc([t.public_location.label,t.public_location.address,t.public_location.neighborhood,t.public_location.city].filter(Boolean).join(' · '))}</small>`:''}${showDelivery?`<small>Programação: ${esc(deliveryLabels[t.delivery_status]||deliveryLabels.pending_player_check)}</small>`:''}</div><span class="badge ${t.online?'active':''}">TV ${t.online?'ONLINE':'OFFLINE'}</span><b>${number(s.points[t.device_id])}<small>exibições</small></b></div>`).join('')||'<p>Nenhum ponto vinculado.</p>'}</div><details><summary>Histórico diário</summary><div class="table-scroll"><table><thead><tr><th>Dia</th><th>Exibições concluídas</th></tr></thead><tbody>${Object.entries(s.days).sort(([a],[b])=>b.localeCompare(a)).map(([day,n])=>`<tr><td>${date(day)}</td><td>${number(n)}</td></tr>`).join('')||'<tr><td colspan="2">Ainda não há reproduções registradas.</td></tr>'}</tbody></table></div></details></article>`;}).join('')||'<div class="empty"><h2>Sua publicidade, acompanhada de perto.</h2><p>Quando a Vision vincular uma campanha ao seu cadastro, ela aparecerá aqui.</p></div>';}
+export function renderCampaigns(data,showDelivery=false){return (data.campaigns||[]).map(c=>{const s=campaignSummary(data,c.id),status=campaignState(c,data.today);const targets=(data.targets||[]).filter(t=>t.campaign_id===c.id);const revision=(data.revisions||[]).find(r=>r.id===c.current_revision_id);return `<article class="campaign" data-campaign-id="${esc(c.id)}"><div class="campaign-head"><div><span class="eyebrow">CAMPANHA</span><h2>${esc(c.name)}</h2></div><span class="badge ${status.label==='Ativa'?'active':''}">${esc(status.label)}</span></div><div class="campaign-body"><div class="creative" data-revision="${esc(c.current_revision_id)}"><span>▶</span><strong>${esc(revision?.name||'Mídia não disponível')}</strong><small>Prévia da propaganda</small></div><div class="metrics"><div><span>Exibições hoje</span><strong>${number(s.today)}</strong></div><div><span>Total de exibições</span><strong>${number(s.total)}</strong></div><div class="last"><span>Última exibição registrada</span><b>${esc(time(s.last))}</b></div></div></div><div class="period"><span>Início <b>${date(c.start_date)}</b></span><span>Vencimento <b>${date(c.end_date)}</b></span><span>Dias restantes <b>${number(status.days)}</b></span></div><h3>Seus pontos de divulgação</h3><div class="points">${targets.map(t=>`<div class="point"><div><strong>${esc(t.point_name)}</strong><small>${esc(t.device_name)}${t.active?'':' · vínculo encerrado'}</small><small>Última conexão: ${t.last_seen_at?esc(time(t.last_seen_at)):'sem registro'}</small><small class="commercial-live-indicator ${t.commercial_on_screen?'active':''}">${t.commercial_on_screen?'● Anúncio sinalizado em reprodução pela TV':'◯ Sem confirmação de anúncio em tela'}</small>${t.public_location? `<small class="commercial-point-address">📍 ${esc([t.public_location.label,t.public_location.address,t.public_location.neighborhood,t.public_location.city].filter(Boolean).join(' · '))}</small>`:''}${showDelivery?`<small>Programação: ${esc(deliveryLabels[t.delivery_status]||deliveryLabels.pending_player_check)}</small>`:''}</div><span class="badge ${t.online?'active':''}">TV ${t.online?'ONLINE':'OFFLINE'}</span><b>${number(s.points[t.device_id])}<small>exibições</small></b></div>`).join('')||'<p>Nenhum ponto vinculado.</p>'}</div>${renderCreativeBreakdown(data,c.id)}<details><summary>Histórico diário</summary><div class="table-scroll"><table><thead><tr><th>Dia</th><th>Exibições concluídas</th></tr></thead><tbody>${Object.entries(s.days).sort(([a],[b])=>b.localeCompare(a)).map(([day,n])=>`<tr><td>${date(day)}</td><td>${number(n)}</td></tr>`).join('')||'<tr><td colspan="2">Ainda não há reproduções registradas.</td></tr>'}</tbody></table></div></details></article>`;}).join('')||'<div class="empty"><h2>Sua publicidade, acompanhada de perto.</h2><p>Quando a Vision vincular uma campanha ao seu cadastro, ela aparecerá aqui.</p></div>';}
 // Preserve signed previews and playing videos on metrics-only refresh.
 // The card is replaced only when its commercial revision changes.
 export function sameCommercialRevision(previous,next){
@@ -23,11 +59,18 @@ export function updateCommercialCards(root,data,showDelivery=false){
   const existing=old.get(next.getAttribute('data-campaign-id'));
   if(existing&&sameCommercialRevision(existing,next)){
    // Preserve the original .creative subtree and its media network request.
-   for(const selector of ['.campaign-head','.metrics','.period','.points','details']){
+   for(const selector of ['.campaign-head','.metrics','.period','.points','.creative-breakdown','details']){
     const before=existing.querySelector(selector);
     const after=next.querySelector(selector);
     if(!before||!after)continue;
     if(selector==='details'&&before.open)after.open=true;
+    if(selector==='.creative-breakdown'){
+     const opened=new Set(Array.from(before.querySelectorAll('[data-history-revision][open]'))
+      .map(el=>el.getAttribute('data-history-revision')));
+     after.querySelectorAll('[data-history-revision]').forEach(el=>{
+      if(opened.has(el.getAttribute('data-history-revision')))el.open=true;
+     });
+    }
     before.replaceWith(after);
    }
    desired.push(existing);

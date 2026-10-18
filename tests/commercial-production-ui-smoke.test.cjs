@@ -99,3 +99,37 @@ test('advertiser shows telemetry and only consent-filtered locations, never raw 
  assert.match(s,/Sem confirmação de anúncio em tela/);
  assert.match(s,/Anúncio sinalizado em reprodução/);
 });
+
+test('each ad revision has its own completed counts per day and TV, no preview impressions',async()=>{
+ const {creativeDailyBreakdown,renderCreativeBreakdown}=await import('../commercial-ui.mjs');
+ const data={today:'2026-10-18',campaigns:[{id:'c1'}],
+  revisions:[{id:'r1',campaign_id:'c1',name:'Video A',media_type:'video',created_at:'2026-10-18'},
+    {id:'r2',campaign_id:'c1',name:'Foto B',media_type:'image',created_at:'2026-10-17'},
+    {id:'rOther',campaign_id:'c2',name:'Outsider',created_at:'2026-10-17'}],
+  targets:[{campaign_id:'c1',device_id:'tv1',point_name:'Academia',device_name:'TV frente'}],
+  daily:[{campaign_id:'c1',revision_id:'r1',device_id:'tv1',day:'2026-10-18',completed_count:3},
+   {campaign_id:'c1',revision_id:'r1',device_id:'tv1',day:'2026-10-17',completed_count:4},
+   {campaign_id:'c1',revision_id:'r2',device_id:'tv1',day:'2026-10-18',completed_count:5},
+   {campaign_id:'c2',revision_id:'rOther',device_id:'tv1',day:'2026-10-18',completed_count:300}]};
+ const rows=creativeDailyBreakdown(data,'c1');
+ assert.equal(rows.length,2);
+ const video=rows.find(x=>x.id==='r1'),image=rows.find(x=>x.id==='r2');
+ assert.equal(video.total,7);assert.equal(video.today,3);
+ assert.equal(video.history.length,2);assert.equal(video.history[0].point,'Academia · TV frente');
+ assert.equal(image.total,5);assert.equal(image.today,5);
+ const ui=renderCreativeBreakdown(data,'c1');
+ assert.match(ui,/data-watch-revision="r1"/);
+ assert.match(ui,/data-watch-revision="r2"/);
+ assert.doesNotMatch(ui,/Outsider|300/);
+});
+test('owned creative preview never claims to broadcast a real TV or fake the count',()=>{
+ const script=fs.readFileSync('advertiser-portal.mjs','utf8');
+ const markup=fs.readFileSync('anunciante.html','utf8');
+ assert.match(script,/commercialPreviewPath/);
+ assert.match(script,/latestPortalData\?\.revisions/);
+ assert.match(script,/Não é transmissão da TV e não contabiliza exibições/);
+ assert.match(markup,/id="commercial-revision-dialog"/);
+ assert.match(markup,/commercial-r3-20261018/);
+ assert.match(script,/commercial-r3-20261018/);
+ assert.doesNotMatch(script,/createSignedUrl\\(.*service_role/);
+});
