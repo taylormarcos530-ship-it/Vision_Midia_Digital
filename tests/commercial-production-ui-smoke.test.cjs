@@ -139,7 +139,7 @@ test('Master location form explains private test TV instead of raw server code',
  const script=fs.readFileSync('master-advertisers.mjs','utf8');
  const {isPrivateCommercialDeviceName,commercialLocationErrorMessage}=await import('../commercial-point-privacy.mjs');
  assert.match(html,/id="public-point-sharing-notice"/);
- assert.match(html,/master-advertisers\.mjs\?v=location-safe-20261018/);
+ assert.match(html,/master-advertisers\.mjs\?v=ad-link-20261018/);
  assert.match(script,/f\.elements\.share_location\.disabled=isPrivate/);
  assert.match(script,/f\.elements\.consent_confirmed\.disabled=isPrivate/);
  assert.match(script,/commercialLocationErrorMessage\(error\)/);
