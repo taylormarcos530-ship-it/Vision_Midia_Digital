@@ -9,7 +9,7 @@ test('synthetic token is authenticated, time-limited and bound to a virtual UUID
  const proof=await issueVirtualToken(tokenSecret,uuid,90);const verified=await verifyVirtualToken(tokenSecret,proof);
  assert.equal(verified.deviceId,uuid);assert.ok(verified.nonce);
  assert.equal(await verifyVirtualToken('WRONG-TEST-KEY',proof),null);
- assert.equal(await verifyVirtualToken(tokenSecret,proof.replace(/.$/,'0')),null);
+ assert.equal(await verifyVirtualToken(tokenSecret,proof.replace(/.$/,proof.endsWith('0')?'1':'0')),null);
  assert.equal(await verifyVirtualToken(tokenSecret,proof,verified.expiresAt),null);
  assert.equal(await verifyVirtualToken(tokenSecret,proof,verified.expiresAt-121),null);
  await assert.rejects(issueVirtualToken(tokenSecret,uuid,121));
