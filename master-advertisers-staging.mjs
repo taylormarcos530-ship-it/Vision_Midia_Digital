@@ -52,5 +52,18 @@ $('#advertisers').onclick=async e=>{const b=e.target.closest('button');if(!b)ret
   message('Anunciante restaurado, mas desativado. Ative manualmente somente quando desejar liberar o acesso.');
  }
 }catch(error){message(error.message,true)}finally{b.disabled=false}};
+// Staging-only probe: no customer upload, playlist or TV commands.
+$('#staging-storage-probe').onclick=async e=>{
+ const button=e.currentTarget, output=$('#staging-storage-probe-result');
+ if(!api.session()){output.textContent='Entre com sua conta Master de homologação antes de testar.';return;}
+ button.disabled=true;output.textContent='Verificando Storage privado de homologação…';
+ try{
+  const r=await api.masterCall('commercial_storage_probe');
+  if(!r.ok||!r.uploaded||!r.copied||!r.signed_read_verified||!r.cleanup_verified)
+   throw new Error('O teste não passou por todas as verificações.');
+  output.textContent='APROVADO: arquivo real enviado, copiado, lido por URL assinada e removido. Nenhuma TV ou playlist foi alterada.';
+ }catch(e){output.textContent='Teste incompleto: '+String(e?.message||'falha no Storage')+'. Não envie campanhas reais.';}
+ finally{button.disabled=false;}
+};
 $('#logout').onclick=async()=>{generation++;busy=false;state=null;$('#admin').hidden=true;$('#advertisers').replaceChildren();$('#report-campaigns').replaceChildren();try{await api.logout()}catch{}$('#master-login').hidden=false;message('Você saiu do painel.');};
 if(demo){$('#master-login').hidden=true;$('#admin').hidden=false;$('#master-demo-banner').hidden=false;$('#new-advertiser').disabled=true;$('#logout').hidden=true;document.querySelector('#admin a.button').href='./anunciante-homologacao.html?demo=1';load()}else if(api.session())load();else{$('#master-login').hidden=false;if(!api.config?.enabled)message('Homologação ainda não conectada. O sistema em produção permanece intacto.');}
