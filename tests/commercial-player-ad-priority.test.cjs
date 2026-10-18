@@ -41,7 +41,7 @@ test('reconnection with unchanged point content and changing ad revision does no
 
 test('real commercial manifest builder inserts two signed ads after base positions 3 and 6 without early priority',async()=>{
  const {augmentCommercial}=await import('../supabase/functions/_shared/commercial.mjs');
- const baseItems=Array.from({length:6},(_,i)=>item('point-'+(i+1)));
+ const baseItems=Array.from({length:6},(_,i)=>({id:'base-'+(i+1),media:{id:'point-'+(i+1)}}));
  const base={playlist:{id:'fixture-point-playlist',shuffle:false,repeat_mode:'all'},
   items:baseItems,updatedAt:'fixture-update'};
  const rows=Array.from({length:5},(_,i)=>({
