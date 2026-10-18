@@ -26,3 +26,7 @@
 .commercial-live-indicator{font-size:11px!important;color:#aebed2}
 .commercial-live-indicator.active{color:#64deb3}
 .commercial-point-address{font-size:12px!important;line-height:1.5;color:#d8e3f3;overflow-wrap:anywhere}
+
+.point-sharing-notice{border:1px solid #536784;border-radius:9px;padding:10px;color:#d5e1f0;font-size:13px;line-height:1.5}
+.point-sharing-notice.private-device-warning{border-color:#e0af48;background:rgba(224,175,72,.08);color:#ffe3a4}
+#public-points-form input:disabled{opacity:.55}

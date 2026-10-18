@@ -133,3 +133,20 @@ test('owned creative preview never claims to broadcast a real TV or fake the cou
  assert.match(script,/commercial-r3-20261018/);
  assert.doesNotMatch(script,/sb_secret_/);
 });
+
+test('Master location form explains private test TV instead of raw server code',async()=>{
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ const script=fs.readFileSync('master-advertisers.mjs','utf8');
+ const {isPrivateCommercialDeviceName,commercialLocationErrorMessage}=await import('../commercial-point-privacy.mjs');
+ assert.match(html,/id="public-point-sharing-notice"/);
+ assert.match(html,/master-advertisers\.mjs\?v=location-safe-20261018/);
+ assert.match(script,/f\.elements\.share_location\.disabled=isPrivate/);
+ assert.match(script,/f\.elements\.consent_confirmed\.disabled=isPrivate/);
+ assert.match(script,/commercialLocationErrorMessage\(error\)/);
+ assert.equal(isPrivateCommercialDeviceName('Teste casa'),true);
+ assert.equal(isPrivateCommercialDeviceName('TV de teste'),true);
+ assert.equal(isPrivateCommercialDeviceName('Casa'),true);
+ assert.equal(isPrivateCommercialDeviceName('Casa de carne'),false);
+ assert.equal(isPrivateCommercialDeviceName('Academia Life'),false);
+ assert.match(commercialLocationErrorMessage(new Error('private_test_device_location_blocked')),/TV é de teste ou residencial/);
+});

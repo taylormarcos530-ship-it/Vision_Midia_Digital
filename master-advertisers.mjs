@@ -1,6 +1,7 @@
 import {CommercialAPI,esc,renderCampaigns,loadThumbnails} from './commercial-ui.mjs';
 import {createMasterDemoSession} from './commercial-master-demo.mjs';
 import {createCommercialMediaPicker,uploadCommercialSignedFile} from './commercial-master-media-picker.mjs';
+import {isPrivateCommercialDeviceName,commercialLocationErrorMessage} from './commercial-point-privacy.mjs';
 const api=new CommercialAPI(true),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1',demoSession=demo?createMasterDemoSession():null;let state=null,busy=false,generation=0;
 function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
 const mediaPicker=createCommercialMediaPicker({api,
@@ -39,8 +40,12 @@ function showPointForm(){
  const form=$('#public-points-form');
  const comp=new Map((state?.companies||[]).map(row=>[row.id,row.name]));
  form.elements.device_id.innerHTML=(state?.devices||[]).map(d=>
-  '<option value="'+esc(d.id)+'">'+esc(comp.get(d.company_id)||'Estabelecimento')+' · '+esc(d.name)+'</option>').join('');
+  '<option value="'+esc(d.id)+'">'+esc(comp.get(d.company_id)||'Estabelecimento')+' · '+esc(d.name)+
+  (isPrivateCommercialDeviceName(d.name)?' · Privada / teste':'')+'</option>').join('');
  if(!form.elements.device_id.options.length){message('Nenhuma TV cadastrada.',true);return;}
+ // Prefer a business display to avoid selecting a private test box by accident.
+ const business=(state?.devices||[]).find(d=>!isPrivateCommercialDeviceName(d.name));
+ if(business)form.elements.device_id.value=business.id;
  loadPointForm();$('#public-points-dialog').showModal();
 }
 function loadPointForm(){
@@ -49,6 +54,16 @@ function loadPointForm(){
  for(const k of ['public_label','public_address','neighborhood','city'])f.elements[k].value=row?.[k]||'';
  f.elements.share_location.checked=Boolean(row?.share_location&&row?.consent_confirmed_at);
  f.elements.consent_confirmed.checked=Boolean(row?.share_location&&row?.consent_confirmed_at);
+ const device=(state?.devices||[]).find(d=>d.id===f.elements.device_id.value);
+ const isPrivate=isPrivateCommercialDeviceName(device?.name);
+ const sharingNotice=$('#public-point-sharing-notice');
+ sharingNotice.textContent=isPrivate
+  ?'TV de teste ou residencial: o endereço fica privado. Para divulgar a localização, selecione a TV física do estabelecimento.'
+  :'Somente divulgue um endereço comercial verdadeiro com autorização do estabelecimento.';
+ sharingNotice.classList.toggle('private-device-warning',isPrivate);
+ f.elements.share_location.disabled=isPrivate;
+ f.elements.consent_confirmed.disabled=isPrivate;
+ if(isPrivate){f.elements.share_location.checked=false;f.elements.consent_confirmed.checked=false;}
  f.querySelector('.form-error').textContent='';
 }
 $('#public-points-button').onclick=()=>{if(!demo)showPointForm()};
@@ -59,6 +74,10 @@ $('#public-points-form').onsubmit=async e=>{
  const values=Object.fromEntries(new FormData(f).entries());
  values.share_location=f.elements.share_location.checked;
  values.consent_confirmed=f.elements.consent_confirmed.checked;
+ const selectedDevice=(state?.devices||[]).find(d=>d.id===values.device_id);
+ if(values.share_location&&isPrivateCommercialDeviceName(selectedDevice?.name)){
+  f.querySelector('.form-error').textContent='Esta TV é de teste ou residencial. Selecione a TV física do estabelecimento.';return;
+ }
  if(values.share_location&&!values.consent_confirmed){
   f.querySelector('.form-error').textContent='Confirme a autorização do estabelecimento.';return;
  }
@@ -69,7 +88,7 @@ $('#public-points-form').onsubmit=async e=>{
   $('#public-points-dialog').close();
   await load();
   message(res.share_location?'Endereço comercial autorizado e publicado para os anunciantes vinculados.':'Localização mantida privada.');
- }catch(error){f.querySelector('.form-error').textContent=error.message;}
+ }catch(error){f.querySelector('.form-error').textContent=commercialLocationErrorMessage(error);}
  finally{b.disabled=false;}
 };
 $('#reload').onclick=load;$('#search').oninput=render;$('#show-archived').onchange=render;$('#close-report').onclick=()=>{$('#report').hidden=true;$('#report-campaigns').replaceChildren()};
