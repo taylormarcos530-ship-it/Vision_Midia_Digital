@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "fix/advertiser-portal-safety-20261013": false
+    }
+  },
   "cleanUrls": false,
   "trailingSlash": false,
   "rewrites": [

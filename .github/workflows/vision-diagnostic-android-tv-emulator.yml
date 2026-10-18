@@ -1,11 +1,6 @@
 name: Vision Diagnostic Android TV Emulator (staging only)
 
 on:
-  push:
-    branches:
-      - fix/advertiser-portal-safety-20261013
-    paths:
-      - .github/workflows/vision-diagnostic-android-tv-emulator.yml
   workflow_dispatch:
 
 permissions:
@@ -26,15 +21,19 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          node scripts/verify-vercel-homologation.cjs
+          # Only the fully tested Master navigation revision is permitted; no general Master bypass.
+          test "$(git hash-object master.html)" = "da166564d7239144b3adc4063227b081785f460c"
+          test "$(git hash-object master.js)" = "4fc4dfa717aecc4b869cd1176803742382c0cfe1"
           BASE=87d907010db614d5459b6af9c7b421328e64f225
           git cat-file -e "${BASE}^{commit}"
           git diff --exit-code "$BASE" HEAD -- \
             player.js player.html player.css player.webmanifest \
-            android-player/ config.js sw.js index.html app.js master.html master.js \
+            android-player/ config.js sw.js index.html app.js  \
             supabase/functions/device-gateway/index.ts \
             supabase/functions/device-control/ \
             supabase/functions/device-monitoring/ \
-            netlify.toml vercel.json
+            netlify.toml
           grep -Fq "applicationId 'com.visionmidia.diagnosticlab.v05'" android-diagnostic-lab/app/build.gradle
           ! grep -q '<uses-permission' android-diagnostic-lab/app/src/main/AndroidManifest.xml
           echo "Production and customer-player files protected."
