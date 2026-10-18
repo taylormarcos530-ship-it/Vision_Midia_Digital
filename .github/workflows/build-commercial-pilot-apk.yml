@@ -1,0 +1,123 @@
+name: Vision Commercial Pilot Android APK
+
+on:
+  push:
+    branches:
+      - fix/advertiser-staging-security-gate-20261018
+    paths:
+      - '.github/workflows/build-commercial-pilot-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-commercial-pilot:
+    name: Verify candidate and package isolated Android pilot
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      VISION_COMMERCIAL_ENABLED: 'false'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Check isolated source and safety gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/fix/advertiser-staging-security-gate-20261018'
+          grep -Fq 'supports_commercial_rounds: true' player.js
+          grep -Fq 'findNewPointMediaPriority' player.js
+          grep -Fq 'nextCommercialCycle' player.js
+          node --check player.js
+          echo 'Android PILOT only; never publish to production or install on Life fundo.'
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install Node dependencies
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Full offline regression
+        run: npm test
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Prepare SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Package isolated PILOT identity in CI workspace only
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          script = Path('player.js')
+          code = script.read_text()
+          before = "const APP_VERSION = 'vision-player-web-1.5.11';"
+          after = "const APP_VERSION = 'vision-player-web-1.5.12-commercial-pilot';"
+          assert code.count(before) == 1, 'Unexpected source version; refuse pilot build'
+          script.write_text(code.replace(before, after))
+
+          gradle = Path('android-player/app/build.gradle')
+          source = gradle.read_text()
+          edits = {
+            'versionCode 23':'versionCode 24',
+            "versionName '1.5.11'":"versionName '1.5.12'",
+            "debug {\n            versionNameSuffix '-preview'":
+              "debug {\n            applicationIdSuffix '.commercialpilot'\n            versionNameSuffix '-pilot'\n            manifestPlaceholders = [playerLabel: 'Vision Comercial PILOTO', setupScheme: 'visionmidia']"
+          }
+          for old,new in edits.items():
+            assert source.count(old)==1, f'Unexpected Android build config: {old}'
+            source=source.replace(old,new)
+          gradle.write_text(source)
+          PY
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+          node --check android-player/app/src/main/assets/player.js
+          grep -Fq "vision-player-web-1.5.12-commercial-pilot" android-player/app/src/main/assets/player.js
+
+      - name: Build standalone debug pilot APK
+        run: gradle -p android-player --no-daemon assembleDebug
+
+      - name: Inspect APK identity, version and integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          input=android-player/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$input"
+          mkdir -p /tmp/vision-commercial-pilot
+          cp "$input" /tmp/vision-commercial-pilot/Vision-Comercial-PILOTO-1.5.12.apk
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$input" | tee /tmp/vision-commercial-pilot/badging.txt
+          grep -Fq "com.visionmidia.player.commercialpilot" /tmp/vision-commercial-pilot/badging.txt
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$input"
+          sha256sum /tmp/vision-commercial-pilot/Vision-Comercial-PILOTO-1.5.12.apk > /tmp/vision-commercial-pilot/SHA256.txt
+          cat > /tmp/vision-commercial-pilot/LEIA-PRIMEIRO.txt <<'EOF'
+          VISION COMERCIAL PILOTO - APK separado para testes no proprio TV Box.
+          Versao 1.5.12-pilot; pacote com.visionmidia.player.commercialpilot.
+          Nao substitui o Vision Player oficial e nao deve ser instalado na TV Life.
+          O servidor comercial permanece DESATIVADO para todas as TVs.
+          Este build prova apenas compatibilidade/ciclos do Player.
+          Use cadastro e dispositivo exclusivamente de homologacao.
+          EOF
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-Comercial-PILOTO-1.5.12
+          path: /tmp/vision-commercial-pilot/
+          if-no-files-found: error
+          retention-days: 30
