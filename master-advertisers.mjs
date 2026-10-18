@@ -2,7 +2,7 @@ import {CommercialAPI,esc,renderCampaigns,loadThumbnails} from './commercial-ui.
 import {createMasterDemoSession} from './commercial-master-demo.mjs';
 import {createCommercialMediaPicker,uploadCommercialSignedFile} from './commercial-master-media-picker.mjs';
 import {isPrivateCommercialDeviceName,commercialLocationErrorMessage} from './commercial-point-privacy.mjs';
-const api=new CommercialAPI(true),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1',demoSession=demo?createMasterDemoSession():null;let state=null,busy=false,generation=0;
+const api=new CommercialAPI(true),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1',demoSession=demo?createMasterDemoSession():null;let state=null,busy=false,generation=0;let mediaLinkProcessed=false,pendingMediaLink=null;
 function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
 const mediaPicker=createCommercialMediaPicker({api,
  grid:$('#commercial-media-grid'),search:$('#commercial-media-search'),
@@ -30,10 +30,49 @@ function render(){
  // Only local Excluir/Restaurar and Ver resultados run in demo; all other actions remain disabled.
  if(demo)$('#advertisers').querySelectorAll('button:not([data-report]):not([data-archive]):not([data-restore])').forEach(b=>b.disabled=true);
 }
-async function load(){if(busy)return;busy=true;const ownGeneration=generation;try{const loaded=demo?demoSession.list():await api.masterCall('commercial_list');if(ownGeneration!==generation)return;state=loaded;$('#master-login').hidden=true;$('#admin').hidden=false;render();message(demo?'Demonstração: dados fictícios. Excluir e Restaurar funcionam só nesta página; ao recarregar o navegador, tudo volta ao início.':'Dados atualizados.');}catch(e){if(ownGeneration!==generation)return;$('#admin').hidden=true;$('#advertisers').replaceChildren();$('#report-campaigns').replaceChildren();if(e.status===401)$('#master-login').hidden=false;message(e.message,true)}finally{busy=false}}
+async function load(){if(busy)return;busy=true;const ownGeneration=generation;try{const loaded=demo?demoSession.list():await api.masterCall('commercial_list');if(ownGeneration!==generation)return;state=loaded;$('#master-login').hidden=true;$('#admin').hidden=false;render();offerMediaLink();message(demo?'Demonstração: dados fictícios. Excluir e Restaurar funcionam só nesta página; ao recarregar o navegador, tudo volta ao início.':'Dados atualizados.');}catch(e){if(ownGeneration!==generation)return;$('#admin').hidden=true;$('#advertisers').replaceChildren();$('#report-campaigns').replaceChildren();if(e.status===401)$('#master-login').hidden=false;message(e.message,true)}finally{busy=false}}
 function advertiser(id){const a=state.advertisers.find(x=>x.id===id);const f=$('#advertiser-form');f.reset();f.elements.id.value=a?.id||'';f.elements.name.value=a?.name||'';f.elements.email.value=a?.email||'';f.elements.email.disabled=!!a;f.elements.status.value=a?.status||'active';$('#advertiser-state').hidden=!a;$('#advertiser-title').textContent=a?'Editar anunciante':'Novo anunciante';f.querySelector('.form-error').textContent='';$('#advertiser-dialog').showModal();}
-async function campaign(advertiserId,existing){const f=$('#campaign-form');f.reset();f.elements.id.value=existing?.id||'';f.elements.advertiser_id.value=advertiserId;f.elements.name.value=existing?.name||'';f.elements.status.value=existing?.status||'draft';f.elements.start_date.value=existing?.start_date||'';f.elements.end_date.value=existing?.end_date||'';f.querySelector('.form-error').textContent='';const company=new Map(state.companies.map(c=>[c.id,c.name]));f.elements.media_id.innerHTML='<option value="">Selecione a mídia</option>'+(state.sources||[]).map(m=>`<option value="${esc(m.id)}">Vision comercial · ${esc(m.name)}</option>`).join('')+state.media.map(m=>`<option value="${esc(m.id)}">${esc(company.get(m.company_id)||'Vision')} · ${esc(m.name)}</option>`).join('');let targets=[];if(existing){const r=await api.masterCall('commercial_report',{id:advertiserId});const rev=(state.revisions||[]).find(x=>x.id===existing.current_revision_id);f.elements.media_id.value=rev?.source_media_id||'';targets=r.targets.filter(t=>t.campaign_id===existing.id&&t.active).map(t=>t.device_id);}
+async function campaign(advertiserId,existing,prefillMediaId=''){const f=$('#campaign-form');f.reset();f.elements.id.value=existing?.id||'';f.elements.advertiser_id.value=advertiserId;f.elements.name.value=existing?.name||'';f.elements.status.value=existing?.status||'draft';f.elements.start_date.value=existing?.start_date||'';f.elements.end_date.value=existing?.end_date||'';f.querySelector('.form-error').textContent='';const company=new Map(state.companies.map(c=>[c.id,c.name]));f.elements.media_id.innerHTML='<option value="">Selecione a mídia</option>'+(state.sources||[]).map(m=>`<option value="${esc(m.id)}">Vision comercial · ${esc(m.name)}</option>`).join('')+state.media.map(m=>`<option value="${esc(m.id)}">${esc(company.get(m.company_id)||'Vision')} · ${esc(m.name)}</option>`).join('');let targets=[];if(existing){const r=await api.masterCall('commercial_report',{id:advertiserId});const rev=(state.revisions||[]).find(x=>x.id===existing.current_revision_id);f.elements.media_id.value=rev?.source_media_id||'';targets=r.targets.filter(t=>t.campaign_id===existing.id&&t.active).map(t=>t.device_id);}
+if(!existing && prefillMediaId){
+ const selected=[...(state.media||[]),...(state.sources||[])].find(media=>media.id===prefillMediaId);
+ if(selected && ['image','video'].includes(selected.media_type)){
+  f.elements.media_id.value=selected.id;
+  f.elements.name.value=selected.name||'Anúncio comercial';
+ }
+}
 $('#device-options').innerHTML=state.devices.map(d=>`<label class="device-choice"><input type="checkbox" name="device_ids" value="${esc(d.id)}" ${targets.includes(d.id)?'checked':''}><span>${esc(company.get(d.company_id)||'Ponto')} · ${esc(d.name)}</span></label>`).join('')||'<p>Nenhuma TV disponível.</p>';$('#campaign-dialog').showModal();mediaPicker.open(state,f.elements.media_id.value);}
+function offerMediaLink(){
+ if(mediaLinkProcessed||demo||!state)return;
+ const params=new URLSearchParams(location.search);
+ const id=params.get('link_media');
+ if(!id)return;
+ mediaLinkProcessed=true;
+ const nextUrl=new URL(location.href);
+ nextUrl.searchParams.delete('link_media');
+ history.replaceState(history.state,'',nextUrl.pathname+nextUrl.search+nextUrl.hash);
+ if(!/^[0-9a-f-]{36}$/i.test(id))return message('Identificador de mídia inválido. Abra novamente pela gestão.',true);
+ const media=(state.media||[]).find(x=>x.id===id&&['image','video'].includes(x.media_type));
+ if(!media)return message('Esta mídia não está disponível para anúncio. Verifique a empresa e a biblioteca.',true);
+ const advertisers=(state.advertisers||[]).filter(x=>!x.archived_at&&x.status==='active');
+ if(!advertisers.length)return message('Cadastre primeiro um anunciante ativo para vincular a mídia.',true);
+ pendingMediaLink=media;
+ $('#link-media-title').textContent=media.name;
+ $('#link-media-advertiser').innerHTML=advertisers.map(x=>'<option value="'+esc(x.id)+'">'+esc(x.name)+'</option>').join('');
+ $('#link-media-advertiser-dialog').showModal();
+}
+$('#link-media-advertiser-form').onsubmit=async e=>{
+ e.preventDefault();
+ if(!pendingMediaLink)return;
+ const id=$('#link-media-advertiser').value;
+ if(!(state.advertisers||[]).some(x=>x.id===id&&!x.archived_at&&x.status==='active'))return;
+ const selectedMedia=pendingMediaLink;
+ pendingMediaLink=null;
+ $('#link-media-advertiser-dialog').close();
+ await campaign(id,null,selectedMedia.id);
+ message('Mídia pré-selecionada. Confirme as datas e TVs e clique em Salvar campanha para vincular ao anunciante.');
+};
+$('#link-media-advertiser-dialog').addEventListener('close',()=>{pendingMediaLink=null;});
+
 $('#new-advertiser').onclick=()=>{if(!demo)advertiser()};
 
 function showPointForm(){
