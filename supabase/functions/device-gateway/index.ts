@@ -1,4 +1,5 @@
 import { augmentCommercial, refreshCommercialDaily, decorateCommercialRows } from '../_shared/commercial.mjs'
+import { commercialPilotDeviceAllowed } from '../_shared/commercial-pilot-allowlist.mjs'
 import { createClient } from 'npm:@supabase/supabase-js@2'
 
 const corsHeaders = {
@@ -665,7 +666,7 @@ Deno.serve(async (req) => {
 
       // Optional additive layer; existing playlist resolution and fallback remain unchanged.
       primary = await augmentCommercial(admin, device, primary, supportsItemSchedules,
-        Deno.env.get('VISION_COMMERCIAL_ENABLED') === 'true', resolved.program?.timezone)
+        commercialPilotDeviceAllowed(device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED'), Deno.env.get('VISION_COMMERCIAL_PILOT_DEVICE_IDS')), resolved.program?.timezone)
 
       const versionSource = JSON.stringify({
         device_config: [device.orientation, device.settings || {}, device.fallback_playlist_id || null],
@@ -757,12 +758,12 @@ Deno.serve(async (req) => {
         media_name: event.media_id ? (mediaNames.get(event.media_id) || 'Mídia removida') : null,
       }))
 
-      const labeledRows = await decorateCommercialRows(admin, device.id, rows, Deno.env.get('VISION_COMMERCIAL_ENABLED') === 'true')
+      const labeledRows = await decorateCommercialRows(admin, device.id, rows, commercialPilotDeviceAllowed(device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED'), Deno.env.get('VISION_COMMERCIAL_PILOT_DEVICE_IDS')))
       const { error: logError } = await admin
         .from('playback_logs')
         .upsert(labeledRows, { onConflict: 'device_id,client_event_id', ignoreDuplicates: true })
       if (logError) return json({ error: 'playback_log_failed', message: logError.message }, 400)
-      await refreshCommercialDaily(admin, device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED') === 'true')
+      await refreshCommercialDaily(admin, device.id, commercialPilotDeviceAllowed(device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED'), Deno.env.get('VISION_COMMERCIAL_PILOT_DEVICE_IDS')))
       return json({ ok: true, accepted: rows.length })
     }
 
