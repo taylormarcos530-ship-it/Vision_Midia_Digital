@@ -1,0 +1,72 @@
+name: Vision Commercial Final Isolated Regression
+
+on:
+  push:
+    branches:
+      - fix/advertiser-staging-security-gate-20261018
+    paths:
+      - '.github/workflows/commercial-final-isolated-regression.yml'
+      - 'player.js'
+      - 'supabase/functions/_shared/commercial.mjs'
+      - 'supabase/functions/device-gateway/index.ts'
+      - 'tests/**'
+      - 'package.json'
+      - 'package-lock.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: commercial-final-isolated-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  offline-node-regression:
+    name: Node 22 full offline regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      VISION_COMMERCIAL_ENABLED: 'false'
+      VISION_COMMERCIAL_PILOT_DEVICE_IDS: ''
+    steps:
+      - name: Check out only the isolated branch
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Refuse unintended branch execution
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/fix/advertiser-staging-security-gate-20261018"
+          echo "Read-only validation; no production secrets, migrations, Edge, APK or deploy."
+
+      - name: Set up Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies from committed lockfile
+        run: npm ci --ignore-scripts --no-audit --no-fund
+
+      - name: Check production candidate JavaScript syntax without running it
+        run: |
+          node --check player.js
+          node --check supabase/functions/_shared/commercial.mjs
+
+      - name: Full regression of isolated repository (no remote credentials)
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm test 2>&1 | tee "${RUNNER_TEMP}/vision-commercial-regression.log"
+
+      - name: Upload regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: vision-commercial-final-regression
+          path: ${{ runner.temp }}/vision-commercial-regression.log
+          if-no-files-found: ignore
+          retention-days: 7
