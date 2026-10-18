@@ -1,0 +1,36 @@
+name: Commercial portal release baseline tests
+on:
+  push:
+    branches: [release/vision-commercial-ui-20261018]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  safety-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: npm test
+      - name: Syntax for commercial portal modules
+        run: |
+          node --check commercial-ui.mjs
+          node --check master-advertisers.mjs
+          node --check advertiser-portal.mjs
+          node --check commercial-config.js
+      - name: Confirm never ship candidate Player in UI release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF}" = "refs/heads/release/vision-commercial-ui-20261018"
+          git diff --name-only 921f365b7f1ee5c7da7c96b74b3cdf1462e180c3 HEAD | tee /tmp/release-files.txt
+          if grep -E '^(player\.js|downloads/|supabase/|sw\.js|api/)' /tmp/release-files.txt; then
+            echo 'Operational file included in UI-only release'; exit 1
+          fi
