@@ -16,7 +16,7 @@ test('manifest updates do not wait for background cache',async()=>{
  let cacheResolve;const cacheWait=new Promise(r=>cacheResolve=r);const manifest={version:'new',items:[{media:{id:'new',type:'image'}}]};
  const state={deviceToken:'token',manifest:{version:'old',items:[{media:{id:'old'}}]},playlistNonce:0};
  const c=vm.createContext({state,enforceLocalAccess:()=>false,gateway:async()=>manifest,applyDeviceSettings:async()=>{},cacheManifestAssets:()=>cacheWait,itemScheduleActive:()=>true,Date,MANIFEST_KEY:'manifest',writeJson(){},showPlayback(){},queueDeviceEvent(){},navigator:{onLine:true},setStatus(){},ensurePlaybackLoop(){},console,isAccessError:()=>false});
- vm.runInContext(fn(player,'syncManifest'),c);let done=false;const p=c.syncManifest().then(()=>done=true);await new Promise(r=>setImmediate(r));assert.equal(done,true);assert.equal(state.manifest,manifest);assert.equal(state.priorityMediaId,'new');cacheResolve();await p;
+ vm.runInContext(fn(player,'findNewPointMediaPriority')+'\n'+fn(player,'syncManifest'),c);let done=false;const p=c.syncManifest().then(()=>done=true);await new Promise(r=>setImmediate(r));assert.equal(done,true);assert.equal(state.manifest,manifest);assert.equal(state.priorityMediaId,'new');cacheResolve();await p;
 });
 test('linking media immediately requests sync for affected TVs',async()=>{
  const app=fs.readFileSync(require('node:path').join(__dirname,'../app.js'),'utf8'),calls=[];
