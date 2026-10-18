@@ -2,10 +2,11 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { commercialMaster } from '../_shared/commercial-master.mjs'
 import { stagingStorageProbe } from '../_shared/commercial-staging-storage-probe.mjs'
+import { virtualDeviceTrial } from '../_shared/commercial-staging-virtual-trial.mjs'
 const STAGING_URL = 'https://jmiuitrrhtaeyrpuyohk.supabase.co';
 const C = {'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'};
 const json=(body,status=200)=>new Response(JSON.stringify(body),{status,headers:{...C,'Content-Type':'application/json','Cache-Control':'no-store'}});
-const allowed = new Set(['whoami','commercial_list','commercial_create_advertiser','commercial_update_advertiser','commercial_reset_access','commercial_archive_advertiser','commercial_restore_advertiser','commercial_report','commercial_storage_probe']);
+const allowed = new Set(['whoami','commercial_list','commercial_create_advertiser','commercial_update_advertiser','commercial_reset_access','commercial_archive_advertiser','commercial_restore_advertiser','commercial_report','commercial_storage_probe','commercial_virtual_trial']);
 Deno.serve(async(req)=>{
  if(req.method==='OPTIONS')return new Response('ok',{headers:C});
  if(req.method!=='POST')return json({error:'method_not_allowed'},405);
@@ -29,6 +30,9 @@ Deno.serve(async(req)=>{
   if(!master||master.status!=='active'||!['admin','super_admin'].includes(master.role))return json({error:'master_forbidden'},403);
   if(action==='whoami')return json({ok:true,role:master.role,email:identity.user.email});
   if(action==='commercial_storage_probe')return json(await stagingStorageProbe(admin));
+  if(action==='commercial_virtual_trial')return json(await virtualDeviceTrial({
+   admin,actorId:identity.user.id,authorization,url,publishableKey:pub,secret,fetcher:fetch
+  }));
   const result=await commercialMaster(admin,identity.user,master.role,body);
   return json(result);
  }catch(error){

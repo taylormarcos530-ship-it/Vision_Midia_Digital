@@ -65,5 +65,18 @@ $('#staging-storage-probe').onclick=async e=>{
  }catch(e){output.textContent='Teste incompleto: '+String(e?.message||'falha no Storage')+'. Não envie campanhas reais.';}
  finally{button.disabled=false;}
 };
+// Run the complete authenticated virtual TV + Storage trial in staging only.
+$('#staging-virtual-trial').onclick=async e=>{
+ const button=e.currentTarget,output=$('#staging-virtual-trial-result');
+ if(!api.session()){output.textContent='Entre com o Master de homologação primeiro.';return;}
+ button.disabled=true;output.textContent='Validando TV virtual, anúncio, Storage e relatório. Aguarde…';
+ try{
+  const r=await api.masterCall('commercial_virtual_trial');
+  if(!r.ok||!r.cleanup_verified||!r.signed_media_verified||r.valid_completions!==2)
+   throw new Error('Validação parcial');
+  output.textContent='APROVADO: TV virtual autenticada, anúncio entregue, imagem assinada conferida, 2 exibições válidas sem duplicação e dados temporários removidos. Nenhuma TV real alterada.';
+ }catch(error){output.textContent='NÃO CONCLUÍDO: '+String(error?.message||'erro de homologação')+'. Não usar em produção.';}
+ finally{button.disabled=false;}
+};
 $('#logout').onclick=async()=>{generation++;busy=false;state=null;$('#admin').hidden=true;$('#advertisers').replaceChildren();$('#report-campaigns').replaceChildren();try{await api.logout()}catch{}$('#master-login').hidden=false;message('Você saiu do painel.');};
 if(demo){$('#master-login').hidden=true;$('#admin').hidden=false;$('#master-demo-banner').hidden=false;$('#new-advertiser').disabled=true;$('#logout').hidden=true;document.querySelector('#admin a.button').href='./anunciante-homologacao.html?demo=1';load()}else if(api.session())load();else{$('#master-login').hidden=false;if(!api.config?.enabled)message('Homologação ainda não conectada. O sistema em produção permanece intacto.');}
