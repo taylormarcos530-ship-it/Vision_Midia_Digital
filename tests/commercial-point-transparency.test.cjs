@@ -47,5 +47,22 @@ test('public point location is consent-gated and advertiser scoped in commercial
  await db.exec('reset role');
  const b=await portal(3);
  assert.equal(b.targets.length,0);
+ // Archiving removes a campaign from advertiser views and disables every linked TV.
+ await db.exec(fs.readFileSync('supabase/sql/vision-commercial-campaign-archive-20261018.sql','utf8'));
+ await assert.rejects(()=>db.query('select public.vision_commercial_archive_campaign($1,$2)',[id(2),id(50)]),/master_forbidden/);
+ const archived=(await db.query('select public.vision_commercial_archive_campaign($1,$2) x',[id(1),id(50)])).rows[0].x;
+ assert.equal(archived.archived,true);
+ assert.equal((await db.query('select status from vision_commercial_campaigns where id=$1',[id(50)])).rows[0].status,'paused');
+ assert.equal((await db.query('select count(*)::int n from vision_commercial_targets where campaign_id=$1 and active',[id(50)])).rows[0].n,0);
+ const hidden=await portal(2);
+ assert.equal(hidden.campaigns.length,0);
+ assert.equal(hidden.revisions.length,0);
+ assert.equal(hidden.targets.length,0);
+ await assert.rejects(()=>db.exec("update vision_commercial_campaigns set status='active' where id='"+id(50)+"'"),/archived_campaign_locked/);
+ const restored=(await db.query('select public.vision_commercial_restore_campaign($1,$2) x',[id(1),id(50)])).rows[0].x;
+ assert.equal(restored.status,'draft');
+ assert.equal((await db.query('select status from vision_commercial_campaigns where id=$1',[id(50)])).rows[0].status,'draft');
+ assert.equal((await db.query('select count(*)::int n from vision_commercial_targets where campaign_id=$1 and active',[id(50)])).rows[0].n,0);
+ assert.equal((await portal(2)).campaigns.length,1);
  }finally{await db.close();}
 });
