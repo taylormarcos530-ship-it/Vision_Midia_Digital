@@ -224,7 +224,7 @@ test('only platform Master sees advertiser link button in media management',()=>
  assert.match(app,/url\.searchParams\.set\(linked\?'unlink_media':'link_media', media\.id\)/);
  assert.match(app,/window\.location\.assign\(url\.href\)/);
  assert.match(html,/\.\/app\.js\?v=51/);
- assert.match(html,/\.\/styles\.css\?v=48/);
+ assert.match(html,/\.\/styles\.css\?v=49/);
  assert.match(css,/\[data-link-media-advertiser\]/);
 });
 test('media shortcut requires advertiser choice and drafts a campaign with original media preselected',()=>{
@@ -250,7 +250,7 @@ test('Master push notification message is legible on mobile without changing mes
  assert.match(css,/#mn-message:focus/);
  assert.match(css,/-webkit-text-fill-color:#f8fafc !important/);
  assert.match(css,/caret-color:#f8fafc/);
- assert.match(html,/master\.css\?v=46/);
+ assert.match(html,/master\.css\?v=47/);
  assert.match(html,/id="mn-message"/);
  const script=fs.readFileSync('master.js','utf8');
  assert.match(script,/'#mn-message'/);
@@ -289,7 +289,7 @@ test('mobile playlist media controls use grid on the actual media-row parent rat
  assert.match(stylesheet,/\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro\s*\{\s*display:grid/);
  assert.match(stylesheet,/@media \(max-width:760px\)\s*\{\s*\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro\s*\{\s*display:grid;\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
  assert.match(stylesheet,/\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro > \.advertiser-link-button\s*\{\s*grid-column:1\/-1/);
- assert.match(index,/styles\.css\?v=48/);
+ assert.match(index,/styles\.css\?v=49/);
 });
 test('Master plan title and Disponível are stacked as separate readable lines',()=>{
  const css=fs.readFileSync('master.css','utf8');
@@ -298,5 +298,5 @@ test('Master plan title and Disponível are stacked as separate readable lines',
  assert.match(master,/<strong>\$\{esc\(p\.name\)\}<\/strong><small>\$\{esc\(p\.is_active\?'Disponível':'Inativo'\)\}<\/small>/);
  assert.match(css,/\.plan-card \.client-top > div:first-child\s*\{\s*display:flex;\s*flex-direction:column/);
  assert.match(css,/\.plan-card \.client-top > div:first-child > small\s*\{\s*display:block/);
- assert.match(html,/master\.css\?v=46/);
+ assert.match(html,/master\.css\?v=47/);
 });
