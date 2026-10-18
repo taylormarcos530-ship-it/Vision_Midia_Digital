@@ -741,3 +741,29 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
 }
 #mn-message::placeholder{color:#a5b5cc !important;opacity:1}
 #mn-message::selection{color:#fff;background:#3157a9}
+
+/* Master Plans: visually separate the name and availability label on phones. */
+.plan-card .client-top > div:first-child{
+  display:flex;
+  flex-direction:column;
+  align-items:flex-start;
+  gap:7px;
+  min-width:0;
+}
+.plan-card .client-top > div:first-child > strong{
+  display:block;
+  line-height:1.3;
+  font-weight:800;
+  overflow-wrap:anywhere;
+}
+.plan-card .client-top > div:first-child > small{
+  display:block;
+  color:#a8bdd9;
+  font-size:13px;
+  line-height:1.35;
+  margin:0;
+}
+@media(max-width:480px){
+  .plan-card .client-top{gap:12px;align-items:flex-start;flex-wrap:wrap}
+  .plan-card .client-top > div:first-child{min-width:120px;flex:1}
+}

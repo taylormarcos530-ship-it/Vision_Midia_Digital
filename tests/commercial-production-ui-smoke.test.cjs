@@ -279,3 +279,24 @@ test('Master selects precise associated campaign to unlink advertiser media with
  assert.match(s,/commercial_archive_campaign/);
  assert.match(fs.readFileSync('master-advertisers.html','utf8'),/id="unlink-media-dialog"/);
 });
+
+test('mobile playlist media controls use grid on the actual media-row parent rather than flex',()=>{
+ const stylesheet=fs.readFileSync('styles.css','utf8');
+ const markup=fs.readFileSync('app.js','utf8');
+ const index=fs.readFileSync('index.html','utf8');
+ assert.match(markup,/class="media-row-compact media-row-pro"/);
+ assert.match(markup,/class="media-actions media-actions-pro"/);
+ assert.match(stylesheet,/\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro\s*\{\s*display:grid/);
+ assert.match(stylesheet,/@media \(max-width:760px\)\s*\{\s*\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro\s*\{\s*display:grid;\s*grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+ assert.match(stylesheet,/\.media-row-compact\.media-row-pro > \.media-actions\.media-actions-pro > \.advertiser-link-button\s*\{\s*grid-column:1\/-1/);
+ assert.match(index,/styles\.css\?v=48/);
+});
+test('Master plan title and Disponível are stacked as separate readable lines',()=>{
+ const css=fs.readFileSync('master.css','utf8');
+ const master=fs.readFileSync('master.js','utf8');
+ const html=fs.readFileSync('master.html','utf8');
+ assert.match(master,/<strong>\$\{esc\(p\.name\)\}<\/strong><small>\$\{esc\(p\.is_active\?'Disponível':'Inativo'\)\}<\/small>/);
+ assert.match(css,/\.plan-card \.client-top > div:first-child\s*\{\s*display:flex;\s*flex-direction:column/);
+ assert.match(css,/\.plan-card \.client-top > div:first-child > small\s*\{\s*display:block/);
+ assert.match(html,/master\.css\?v=45/);
+});

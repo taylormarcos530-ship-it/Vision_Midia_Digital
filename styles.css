@@ -2403,3 +2403,59 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 .media-actions-pro>.advertiser-link-button{grid-column:1/-1;min-height:46px;font-weight:750;border:1px solid #bc9346;background:rgba(255,196,82,.10);color:#ffcf78}
 .media-actions-pro>.advertiser-link-button.is-advertiser-linked{border-color:#60d0af;color:#8be8c7;background:rgba(70,183,151,.12)}
 @media(max-width:760px){.media-actions-pro{grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.media-actions-pro>.small-icon-button{min-height:48px;padding:10px;font-size:13px}.media-actions-pro>.advertiser-link-button{grid-column:1/-1}}
+
+
+/* V50 mobile layout: the original ".media-row-compact .media-actions"
+   declared display:flex (higher specificity), so grid-column was ignored.
+   Target the REAL parent and both action classes to override it. */
+.media-row-compact.media-row-pro > .media-actions.media-actions-pro{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  justify-content:stretch;
+  align-items:stretch;
+  gap:10px;
+  width:100%;
+  max-width:100%;
+  min-width:0;
+}
+.media-row-compact.media-row-pro > .media-actions.media-actions-pro > .small-icon-button{
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  box-sizing:border-box;
+  min-width:0;
+  max-width:100%;
+  width:100%;
+  min-height:48px;
+  margin:0;
+  padding:10px 8px;
+  flex:none;
+  font-size:12px;
+  line-height:1.35;
+  text-align:center;
+  white-space:normal;
+  overflow-wrap:break-word;
+  word-break:normal;
+}
+.media-row-compact.media-row-pro > .media-actions.media-actions-pro > .advertiser-link-button{
+  grid-column:1/-1;
+  font-weight:750;
+  min-height:46px;
+}
+@media (max-width:760px){
+  .media-row-compact.media-row-pro > .media-actions.media-actions-pro{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+  }
+  .media-row-compact.media-row-pro > .media-actions.media-actions-pro > .small-icon-button{
+    min-height:50px;
+    font-size:14px;
+    padding:10px 8px;
+  }
+  .media-row-compact.media-row-pro > .media-actions.media-actions-pro > .advertiser-link-button{
+    grid-column:1/-1;
+    font-size:14px;
+    min-height:48px;
+  }
+}
