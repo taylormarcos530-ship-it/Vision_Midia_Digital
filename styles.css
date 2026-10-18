@@ -2387,3 +2387,12 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 .media-actions-pro button{font-size:clamp(10px,2.8vw,12px);padding:8px 2px}
 #media-duration-dialog{width:min(420px,calc(100vw - 24px));padding:18px}
 #media-duration-seconds{width:100%;min-height:44px}
+
+/* Exclusive Master workflow, separate from customer playlist controls. */
+.media-actions-pro [data-link-media-advertiser]{
+  grid-column:span 2;
+  white-space:normal;
+  color:#ffcf76;
+  border-color:rgba(255,195,82,.40);
+  background:rgba(255,195,82,.09);
+}
