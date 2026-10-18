@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#171011" />
+  <title>Vision Menu — Simulador de publicação isolada</title>
+  <link rel="stylesheet" href="./publish-lab.css" />
+  <script type="module" src="./publish-lab.js"></script>
+</head>
+<body>
+  <header class="bar"><span class="brand">VISION <strong>MENU DIGITAL</strong></span><strong class="flag">LABORATÓRIO · SEM ACESSO A TVS REAIS</strong></header>
+  <main>
+    <h1>Publicação de teste, sem risco à programação</h1>
+    <p>Este simulador não usa login, banco de dados, Supabase, APIs ou TVs reais. Os identificadores, usuários, mídias e TVs abaixo são fictícios.</p>
+    <div class="steps">
+      <section class="panel">
+        <div class="number">1</div>
+        <h2>Editar preços e salvar</h2>
+        <p>Use o editor isolado existente para alterar os preços, depois clique em <strong>Salvar rascunho local</strong>. Volte aqui para importar o rascunho.</p>
+        <a class="link" href="./index.html" target="_blank" rel="noopener">Abrir editor de preços ↗</a>
+        <label for="company">Empresa fictícia</label>
+        <select id="company"><option value="demo-butcher">Açougue Demonstrativo</option></select>
+        <label for="media">Vídeo da biblioteca fictícia</label>
+        <select id="media"><option value="video-butcher-demo">Vídeo promocional fictício</option><option value="">Sem vídeo (bloqueia publicação)</option></select>
+        <button id="import" type="button">Importar rascunho salvo</button>
+        <small id="draft-description">Nenhum rascunho importado. Salve no editor ou use os produtos demonstrativos.</small>
+        <button id="save" type="button" class="primary">Salvar versão fictícia</button>
+      </section>
+      <section class="panel">
+        <div class="number">2</div>
+        <h2>Selecionar uma TV fictícia</h2>
+        <label for="device">Dispositivo de laboratório</label>
+        <select id="device"></select>
+        <p class="hint">TVs com playlist ou anúncios ficam bloqueadas. Nenhuma programação será alterada.</p>
+        <button id="preflight" type="button">Verificar publicação</button>
+        <div id="check-result" class="result" aria-live="polite">Verificação ainda não executada.</div>
+      </section>
+      <section class="panel">
+        <div class="number">3</div>
+        <h2>Simular publicação</h2>
+        <label class="check"><input type="checkbox" id="confirm" /> Entendo que esta publicação acontece somente em memória nesta página e não chega a nenhuma TV real.</label>
+        <button id="publish" type="button" class="primary" disabled>Simular publicação</button>
+        <button id="disable" type="button" disabled>Desativar menu na TV simulada</button>
+        <div id="publish-result" class="result" aria-live="polite">Menu fictício desativado por padrão.</div>
+      </section>
+    </div>
+    <section class="panel bottom">
+      <h2>Resultado do dispositivo selecionado</h2>
+      <pre id="device-status" aria-label="Estado fictício da TV">Sem publicação fictícia.</pre>
+      <h3>Auditoria simulada</h3>
+      <pre id="audit-status">Sem operações.</pre>
+      <p class="hint">Dados descartados quando a página é recarregada. Prévia não é autorização de deploy, migration ou alteração no player.</p>
+    </section>
+  </main>
+</body>
+</html>
