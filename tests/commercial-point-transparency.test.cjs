@@ -66,3 +66,12 @@ test('public point location is consent-gated and advertiser scoped in commercial
  assert.equal((await portal(2)).campaigns.length,1);
  }finally{await db.close();}
 });
+
+test('campaign archive migration has valid PostgreSQL quoted triggers and portal visibility guard',()=>{
+ const sql=fs.readFileSync('supabase/sql/vision-commercial-campaign-archive-20261018.sql','utf8');
+ assert.match(sql,/returns trigger language plpgsql set search_path='' as \${2}/);
+ assert.match(sql,/archived_campaign_locked/);
+ assert.match(sql,/vision_commercial_archive_campaign/);
+ assert.match(sql,/vision_commercial_restore_campaign/);
+ assert.equal((sql.match(/c\.archived_at IS NULL/g)||[]).length,4);
+});
