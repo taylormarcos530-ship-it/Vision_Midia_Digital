@@ -57,3 +57,16 @@ test('upload progress reports percentage and keeps copy isolated from client med
  assert.match(master,/commercial_prepare_source/);
  assert.match(master,/commercial_finalize_source/);
 });
+
+test('advertiser refresh updates metrics without discarding previously loaded preview',()=>{
+ const ui=fs.readFileSync('commercial-ui.mjs','utf8');
+ const page=fs.readFileSync('advertiser-portal.mjs','utf8');
+ assert.match(ui,/data-campaign-id=/);
+ assert.match(ui,/export function updateCommercialCards/);
+ assert.match(ui,/sameCommercialRevision/);
+ assert.match(ui,/for\(const selector of \['\.campaign-head','\.metrics','\.period','\.points','details'\]\)/);
+ assert.match(ui,/if\(slot\.querySelector\('img,video'\)\)continue/);
+ assert.match(page,/updateCommercialCards\(\$\('#campaigns'\),data\)/);
+ assert.doesNotMatch(page,/\$\('#campaigns'\)\.innerHTML=renderCampaigns/);
+ assert.match(page,/Aguardando a primeira exibição comercial concluída/);
+});
