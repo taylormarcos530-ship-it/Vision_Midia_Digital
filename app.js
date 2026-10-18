@@ -2348,6 +2348,62 @@
     return url;
   }
 
+
+  // Master-only verification. Never infer advertiser links from local playlists.
+  let advertiserMediaLinks=null,advertiserLinksRequestedAt=0,advertiserLinksPending=null;
+  function displayAdvertiserLinks(){
+    document.querySelectorAll('[data-link-media-advertiser], [data-unlink-media-advertiser]').forEach(button=>{
+      const mediaId=button.dataset.linkMediaAdvertiser||button.dataset.unlinkMediaAdvertiser;
+      const linked=advertiserMediaLinks?.get(mediaId);
+      const loaded=advertiserMediaLinks!==null;
+      button.disabled=!loaded;
+      button.textContent=!loaded?'Consultando…':linked?.length?'Desvincular anunciante':'Vincular anunciante';
+      button.title=linked?.length
+       ?'Vinculado a '+linked.map(x=>x.advertiserName+' · '+x.name).join(', ')+'. Selecione a campanha antes de desvincular.'
+       :'Vincular anunciante sem editar a playlist';
+      if(linked?.length){
+       button.dataset.unlinkMediaAdvertiser=mediaId;
+       delete button.dataset.linkMediaAdvertiser;
+       button.classList.add('is-advertiser-linked');
+      }else{
+       button.dataset.linkMediaAdvertiser=mediaId;
+       delete button.dataset.unlinkMediaAdvertiser;
+       button.classList.remove('is-advertiser-linked');
+      }
+    });
+  }
+  async function refreshAdvertiserMediaLinks(force=false){
+    if(!state.isPlatformAdmin){advertiserMediaLinks=null;return;}
+    if(advertiserLinksPending)return advertiserLinksPending;
+    if(!force&&Date.now()-advertiserLinksRequestedAt<20000)return;
+    advertiserLinksRequestedAt=Date.now();
+    const identity=state.user?.id;
+    advertiserLinksPending=(async()=>{
+      try{
+        const data=await functionRequest('master-admin',{body:{action:'commercial_list'}});
+        if(state.user?.id!==identity||!state.isPlatformAdmin)return;
+        const revisionIds=new Map((data.revisions||[]).map(x=>[x.id,x.source_media_id]));
+        const advertisers=new Map((data.advertisers||[]).map(x=>[x.id,x]));
+        const links=new Map();
+        for(const c of data.campaigns||[]){
+          if(c.archived_at||!c.current_revision_id)continue;
+          const mediaId=revisionIds.get(c.current_revision_id);
+          const adv=advertisers.get(c.advertiser_id);
+          if(!mediaId||!adv||adv.archived_at)continue;
+          if(!links.has(mediaId))links.set(mediaId,[]);
+          links.get(mediaId).push({id:c.id,name:c.name,advertiserName:adv.name});
+        }
+        advertiserMediaLinks=links;
+      }catch(error){
+        if(state.user?.id===identity){
+          advertiserMediaLinks=null;
+          console.warn('Commercial link status unavailable:',String(error?.message||error));
+        }
+      }finally{if(state.user?.id===identity)displayAdvertiserLinks();}
+    })();
+    try{await advertiserLinksPending;}finally{advertiserLinksPending=null;}
+  }
+
   function currentMediaRenderSignature() {
     const mediaPart = state.media.map(media => [
       media.id, media.storage_path, media.source_url, media.media_type, media.updated_at, media.name, media.width, media.height, media.size_bytes, media.duration_seconds
@@ -2596,12 +2652,14 @@
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
-          ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button" type="button" data-link-media-advertiser="${media.id}" aria-label="Vincular esta mídia a um anunciante">Vincular anunciante</button>` : ""}
+          ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button advertiser-link-button" type="button" data-link-media-advertiser="${media.id}" disabled>Consultando…</button>` : ""}
         </div>
       </article>`;
     }).join('');
 
     state.media.forEach(media => updateMediaPlaylistAction(media.id));
+    displayAdvertiserLinks();
+    if(state.isPlatformAdmin&&state.activeView==='media')void refreshAdvertiserMediaLinks();
     hydrateMediaPreviews();
   }
 
@@ -3370,6 +3428,7 @@
     $('#view-kicker').textContent = titles[view]?.[0] || '';
     $('#view-title').textContent = titles[view]?.[1] || '';
     $('#sidebar').classList.remove('open');
+    if (view === 'media' && state.isPlatformAdmin) void refreshAdvertiserMediaLinks();
     if (view === 'reports' && !state.report && !state.reportLoading) loadPlaybackReport({ quiet: true });
     if (view === 'inbox') loadNotificationInbox({ quiet: true }).catch(() => null);
   }
@@ -5067,13 +5126,16 @@
       if (editDevice) return openEditDeviceDialog(editDevice.dataset.editDevice);
       const deleteDeviceButton = event.target.closest('[data-delete-device]');
       if (deleteDeviceButton) return deleteDevice(deleteDeviceButton.dataset.deleteDevice);
-      const mediaAdvertiserButton = event.target.closest('[data-link-media-advertiser]');
+      const mediaAdvertiserButton = event.target.closest('[data-link-media-advertiser], [data-unlink-media-advertiser]');
       if (mediaAdvertiserButton) {
         if (!state.isPlatformAdmin) return toast('Acesso restrito', 'Somente o Master Vision pode vincular anúncios comerciais.', 'error');
-        const media = state.media.find(m => m.id === mediaAdvertiserButton.dataset.linkMediaAdvertiser);
+        const mediaId=mediaAdvertiserButton.dataset.linkMediaAdvertiser||mediaAdvertiserButton.dataset.unlinkMediaAdvertiser;
+        if(!advertiserMediaLinks)return toast('Verificação indisponível','Atualize a página para confirmar os vínculos comerciais.','error');
+        const media = state.media.find(m => m.id === mediaId);
         if (!media || !['image','video'].includes(media.media_type)) return;
+        const linked=advertiserMediaLinks.get(media.id)?.length>0;
         const url = new URL('./master-advertisers.html', location.href);
-        url.searchParams.set('link_media', media.id);
+        url.searchParams.set(linked?'unlink_media':'link_media', media.id);
         window.location.assign(url.href);
         return;
       }
