@@ -223,7 +223,7 @@ test('only platform Master sees advertiser link button in media management',()=>
  assert.match(app,/Somente o Master Vision pode vincular anúncios comerciais/);
  assert.match(app,/url\.searchParams\.set\(linked\?'unlink_media':'link_media', media\.id\)/);
  assert.match(app,/window\.location\.assign\(url\.href\)/);
- assert.match(html,/\.\/app\.js\?v=50/);
+ assert.match(html,/\.\/app\.js\?v=51/);
  assert.match(html,/\.\/styles\.css\?v=48/);
  assert.match(css,/\[data-link-media-advertiser\]/);
 });
