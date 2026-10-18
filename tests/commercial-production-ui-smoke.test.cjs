@@ -70,3 +70,13 @@ test('advertiser refresh updates metrics without discarding previously loaded pr
  assert.doesNotMatch(page,/\$\('#campaigns'\)\.innerHTML=renderCampaigns/);
  assert.match(page,/Aguardando a primeira exibição comercial concluída/);
 });
+
+test('advertiser scripts share explicit version to avoid stale service worker module graph',()=>{
+ const markup=fs.readFileSync('anunciante.html','utf8');
+ const script=fs.readFileSync('advertiser-portal.mjs','utf8');
+ const a=markup.match(/advertiser-portal\.mjs\?v=([a-z0-9-]+)/);
+ const b=script.match(/commercial-ui\.mjs\?v=([a-z0-9-]+)/);
+ assert.ok(a);
+ assert.ok(b);
+ assert.equal(a[1],b[1]);
+});
