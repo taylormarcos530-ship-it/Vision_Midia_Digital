@@ -38,3 +38,32 @@ test('reconnection with unchanged point content and changing ad revision does no
  assert.equal(next[3].id,'rev-new');
  assert.equal(next[7].id,'rev-new-2');
 });
+
+test('real commercial manifest builder inserts two signed ads after base positions 3 and 6 without early priority',async()=>{
+ const {augmentCommercial}=await import('../supabase/functions/_shared/commercial.mjs');
+ const baseItems=Array.from({length:6},(_,i)=>item('point-'+(i+1)));
+ const base={playlist:{id:'fixture-point-playlist',shuffle:false,repeat_mode:'all'},
+  items:baseItems,updatedAt:'fixture-update'};
+ const rows=Array.from({length:5},(_,i)=>({
+  id:'ad-'+i,storage_path:'commercial-ads/'+i+'.webp',name:'Anúncio '+i,
+  media_type:'image',duration_seconds:15,checksum:'hash-'+i,
+  size_bytes:100,width:1920,height:1080,
+  start_date:'2026-10-01',end_date:'2026-10-31'
+ }));
+ const admin={
+  async rpc(name){return {data:name==='vision_commercial_manifest'?rows:null,error:null}},
+  storage:{from(bucket){
+   assert.equal(bucket,'vision-media');
+   return {async createSignedUrls(paths){
+    return {data:paths.map(path=>({path,signedUrl:'https://mock.invalid/signed/'+path})),error:null};
+   }};
+  }}
+ };
+ const generated=await augmentCommercial(admin,{id:'fixture-tv'},base,true,true);
+ assert.equal(generated.items.length,8);
+ assert.deepEqual(generated.items.filter(row=>row.commercial).map(row=>row.id),['ad-0','ad-1']);
+ assert.deepEqual(generated.items.map(row=>row.commercial===true),[false,false,false,true,false,false,false,true]);
+ assert.equal(generated.items[3].media.url,'https://mock.invalid/signed/commercial-ads/0.webp');
+ assert.equal(priority(baseItems,generated.items,'America/Sao_Paulo'),null);
+ assert.deepEqual(base.items,baseItems,'the original point playlist is not edited');
+});
