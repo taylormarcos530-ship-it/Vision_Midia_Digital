@@ -79,6 +79,12 @@ export async function commercialMaster(admin,user,role,body){
  if(action==='commercial_media_previews')return commercialMasterPreviews(admin,body.ids);
  if(action==='commercial_prepare_source')return commercialPrepareSource(admin,user,body);
  if(action==='commercial_finalize_source')return commercialFinalizeSource(admin,user,body);
+ if(action==='commercial_archive_campaign'||action==='commercial_restore_campaign'){
+  const campaignId=clean(body.id,36);
+  if(!/^[0-9a-f-]{36}$/i.test(campaignId))throw fail('invalid_campaign_id');
+  const actionName=action==='commercial_archive_campaign'?'vision_commercial_archive_campaign':'vision_commercial_restore_campaign';
+  return requireData(await admin.rpc(actionName,{p_actor:user.id,p_campaign:campaignId}));
+ }
  if(action==='commercial_save_campaign')return saveCommercialWithSnapshot(admin,user.id,body.campaign);
  if(action==='commercial_report')return {ok:true,...requireData(await admin.rpc('vision_commercial_master_report',{p_actor:user.id,p_advertiser:body.id}))};
  throw fail('unknown_commercial_action');
