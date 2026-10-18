@@ -6,7 +6,7 @@ test('mobile Master bars scroll without covering Plans heading',()=>{
  const html=fs.readFileSync('master.html','utf8');
  assert.match(css,/@media\(max-width:720px\)\s*\{\s*body:not\(\.master-embedded\) \.master-sidebar\{position:static;top:auto/);
  assert.match(css,/body:not\(\.master-embedded\) \.master-topbar\{position:static;top:auto;z-index:auto\}/);
- assert.match(html,/master\.css\?v=46/);
+ assert.match(html,/master\.css\?v=47/);
 });
 test('web PWA coalesces signed requests and preloads visible media carefully',()=>{
  const app=fs.readFileSync('app.js','utf8');
