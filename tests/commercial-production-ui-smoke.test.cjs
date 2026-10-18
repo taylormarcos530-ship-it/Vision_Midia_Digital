@@ -34,3 +34,26 @@ test('Master owns signed upload and customer never receives media upload control
  assert.match(j,/state\.sources/);
  assert.doesNotMatch(client,/type="file"/);
 });
+
+test('Master offers visual selection with image and video previews and keeps native fallback',()=>{
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ const js=fs.readFileSync('master-advertisers.mjs','utf8');
+ const picker=fs.readFileSync('commercial-master-media-picker.mjs','utf8');
+ assert.match(html,/data-media-filter="vision"/);
+ assert.match(html,/id="commercial-media-grid"/);
+ assert.match(html,/id="commercial-media-preview"/);
+ assert.match(html,/Escolher pelo nome \(lista alternativa\)/);
+ assert.match(js,/createCommercialMediaPicker/);
+ assert.match(picker,/commercial_media_previews/);
+ assert.match(picker,/document\.createElement\(item\.media_type==='video'\?'video':'img'\)/);
+ assert.match(picker,/element\.preload='metadata'/);
+ assert.doesNotMatch(fs.readFileSync('anunciante.html','utf8'),/data-media-filter/);
+});
+test('upload progress reports percentage and keeps copy isolated from client media',()=>{
+ const script=fs.readFileSync('commercial-master-media-picker.mjs','utf8');
+ const master=fs.readFileSync('master-advertisers.mjs','utf8');
+ assert.match(script,/xhr\.upload\.onprogress/);
+ assert.match(master,/uploadCommercialSignedFile/);
+ assert.match(master,/commercial-source\//);
+ assert.match(master,/commercial_finalize_source/);
+});
