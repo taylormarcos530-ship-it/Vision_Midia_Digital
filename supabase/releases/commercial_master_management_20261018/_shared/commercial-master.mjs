@@ -1,5 +1,6 @@
 import {saveCommercialWithSnapshot} from './commercial-media.mjs';
 import {commercialPrepareSource,commercialFinalizeSource} from './commercial-source.mjs';
+import {commercialMasterPreviews} from './commercial-preview.mjs';
 const fail=(message,status=400)=>Object.assign(new Error(message),{status});
 const requireData=result=>{if(result.error)throw result.error;return result.data;};
 const clean=(value,max)=>String(value??'').trim().slice(0,max);
@@ -72,6 +73,7 @@ export async function commercialMaster(admin,user,role,body){
   requireData(await admin.from('vision_advertisers').update({name,status}).eq('id',advertiser.id));
   return {ok:true};
  }
+ if(action==='commercial_media_previews')return commercialMasterPreviews(admin,body.ids);
  if(action==='commercial_prepare_source')return commercialPrepareSource(admin,user,body);
  if(action==='commercial_finalize_source')return commercialFinalizeSource(admin,user,body);
  if(action==='commercial_save_campaign')return saveCommercialWithSnapshot(admin,user.id,body.campaign);
