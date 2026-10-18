@@ -58,7 +58,15 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          if [ -z "$SDKMANAGER" ]; then
+            echo "Android sdkmanager not found"; exit 1
+          fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
 
       - name: Package isolated PILOT identity in CI workspace only
         shell: bash
