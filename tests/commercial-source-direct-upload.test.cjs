@@ -28,7 +28,7 @@ test('commercial source never alters point library and remains Master-only',asyn
  const calls=[];
  const admin={from:table=>{
   assert.equal(table,'vision_commercial_sources');
-  const q={select:()=>q,eq:()=>q,maybeSingle:async()=>({data:{id:'source-1',storage_path:'commercial-source/mock.png',media_type:'image',checksum_sha256:'hash',updated_at:'2026-10-18T00:00:00Z'},error:null})};
+  const q={select:cols=>{assert.doesNotMatch(cols,/processing_status/);return q;},eq:()=>q,maybeSingle:async()=>({data:{id:'source-1',storage_path:'commercial-source/mock.png',media_type:'image',checksum_sha256:'hash',updated_at:'2026-10-18T00:00:00Z'},error:null})};
   return q;
  },storage:{from:()=>({copy:async(a,b)=>{calls.push([a,b]);return {error:null}}})},
  rpc:async(name,args)=>{assert.equal(name,'vision_commercial_save_campaign');assert.equal(args.p_data.commercial_source_id,'source-1');return {data:{id:'campaign',snapshot_used:true},error:null};}};
