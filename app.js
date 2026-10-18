@@ -2596,6 +2596,7 @@
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
+          ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button" type="button" data-link-media-advertiser="${media.id}" aria-label="Vincular esta mídia a um anunciante">Anunciante</button>` : ""}
         </div>
       </article>`;
     }).join('');
@@ -5066,6 +5067,16 @@
       if (editDevice) return openEditDeviceDialog(editDevice.dataset.editDevice);
       const deleteDeviceButton = event.target.closest('[data-delete-device]');
       if (deleteDeviceButton) return deleteDevice(deleteDeviceButton.dataset.deleteDevice);
+      const mediaAdvertiserButton = event.target.closest('[data-link-media-advertiser]');
+      if (mediaAdvertiserButton) {
+        if (!state.isPlatformAdmin) return toast('Acesso restrito', 'Somente o Master Vision pode vincular anúncios comerciais.', 'error');
+        const media = state.media.find(m => m.id === mediaAdvertiserButton.dataset.linkMediaAdvertiser);
+        if (!media || !['image','video'].includes(media.media_type)) return;
+        const url = new URL('./master-advertisers.html', location.href);
+        url.searchParams.set('link_media', media.id);
+        window.location.assign(url.href);
+        return;
+      }
       const openMediaButton = event.target.closest('[data-open-media]');
       if (openMediaButton) return openMedia(openMediaButton.dataset.openMedia);
       const rotateMediaButton = event.target.closest('[data-rotate-media]');
