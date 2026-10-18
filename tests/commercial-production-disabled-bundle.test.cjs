@@ -5,7 +5,7 @@ test('production commercial gateway is hard disabled in all 3 paths independent 
  const src=read('device-gateway/index.ts');
  assert.match(src,/const COMMERCIAL_RELEASE_APPROVED = false;/);
  assert.equal((src.match(/COMMERCIAL_RELEASE_APPROVED && commercialPilotDeviceAllowed/g)||[]).length,3);
- for(const s of ['manifest','playback_batch','vision_commercial_refresh_daily','decorateCommercialRows','augmentCommercial'])
+ for(const s of ['manifest','playback_batch','refreshCommercialDaily','decorateCommercialRows','augmentCommercial'])
    assert.ok(src.includes(s),'must preserve '+s);
  assert.ok(!src.includes('jmiuitrrhtaeyrpuyohk'),'production must not point to staging');
 });
