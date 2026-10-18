@@ -55,6 +55,12 @@ test('public point location is consent-gated and advertiser scoped in commercial
  assert.equal((await db.query('select status from vision_commercial_campaigns where id=$1',[id(50)])).rows[0].status,'paused');
  assert.equal((await db.query('select count(*)::int n from vision_commercial_targets where campaign_id=$1 and active',[id(50)])).rows[0].n,0);
  const hidden=await portal(2);
+ await db.exec('set role authenticated');
+ await db.query("select set_config('request.jwt.claim.sub',$1,false)",[id(2)]);
+ try{
+  assert.equal((await db.query('select id from vision_commercial_campaigns')).rows.length,0);
+  assert.equal((await db.query('select device_id from vision_commercial_targets')).rows.length,0);
+ }finally{await db.exec('reset role');}
  assert.equal(hidden.campaigns.length,0);
  assert.equal(hidden.revisions.length,0);
  assert.equal(hidden.targets.length,0);
