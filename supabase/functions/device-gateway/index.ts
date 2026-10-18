@@ -666,7 +666,8 @@ Deno.serve(async (req) => {
 
       // Optional additive layer; existing playlist resolution and fallback remain unchanged.
       primary = await augmentCommercial(admin, device, primary, supportsItemSchedules,
-        commercialPilotDeviceAllowed(device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED'), Deno.env.get('VISION_COMMERCIAL_PILOT_DEVICE_IDS')), resolved.program?.timezone)
+        commercialPilotDeviceAllowed(device.id, Deno.env.get('VISION_COMMERCIAL_ENABLED'), Deno.env.get('VISION_COMMERCIAL_PILOT_DEVICE_IDS')) && body?.supports_commercial_rounds === true,
+        resolved.program?.timezone, body?.commercial_cycle)
 
       const versionSource = JSON.stringify({
         device_config: [device.orientation, device.settings || {}, device.fallback_playlist_id || null],

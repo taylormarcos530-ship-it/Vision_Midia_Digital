@@ -36,7 +36,7 @@ export function interleave(primary, ads, every = 3, cycle = 0) {
 export async function bounded(operation, timeoutMs=1500) {
  let timer;try{return await Promise.race([Promise.resolve().then(operation),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('commercial_timeout')),timeoutMs)})]);}finally{clearTimeout(timer);}
 }
-export async function augmentCommercial(admin,device,primary,supportsSchedules,enabled,timeZone='America/Sao_Paulo') {
+export async function augmentCommercial(admin,device,primary,supportsSchedules,enabled,timeZone='America/Sao_Paulo',commercialCycle=0) {
  if (!enabled) return primary;
  const reason=!supportsSchedules?'legacy_player':commercialEligibility(primary)||(timeZone!=='America/Sao_Paulo'?'timezone_preserved':null);
  if(reason){await reportCommercialDelivery(admin,device.id,reason);return primary;}
@@ -54,7 +54,7 @@ export async function augmentCommercial(admin,device,primary,supportsSchedules,e
    media:{id:r.id,name:r.name,type:r.media_type,url:urls.get(r.storage_path),size_bytes:r.size_bytes,checksum:r.checksum+':'+r.id,width:r.width,height:r.height}
   }));
   await reportCommercialDelivery(admin,device.id,ads.length===data.length?'manifest_ready':'media_unavailable');
-  return interleave(primary,ads);
+  return interleave(primary,ads,3,commercialCycle);
  });
  }catch(error){console.warn('commercial manifest unavailable; preserving base playlist',error?.message);return primary;}
 }

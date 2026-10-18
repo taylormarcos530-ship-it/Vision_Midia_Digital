@@ -12,6 +12,7 @@
   const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
   const PAIRING_KEY = 'vision_player_pairing_v1';
   const MANIFEST_KEY = 'vision_player_manifest_v1';
+  const COMMERCIAL_CYCLE_KEY = 'vision_player_commercial_cycle_v1';
   const MEDIA_CACHE = 'vision-player-media-v1';
   const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
   const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
@@ -49,6 +50,14 @@
     cachePrefetchVersion: null,
     runtimeFallbackVersion: null,
     priorityMediaId: null,
+    // Per-device completed commercial rounds. Only valid for the cached paired TV.
+    commercialCycle: (() => {
+      const saved = readJson(COMMERCIAL_CYCLE_KEY);
+      const cachedDeviceId = readJson(MANIFEST_KEY)?.device?.id;
+      return cachedDeviceId && saved?.device_id === cachedDeviceId &&
+        Number.isSafeInteger(saved.cycle) && saved.cycle >= 0 && saved.cycle < 1_000_000
+        ? saved.cycle : 0;
+    })(),
     pairingStartInFlight: false,
     pairingRetryTimer: null,
     pairingRateLimitedUntil: 0,
@@ -841,10 +850,25 @@
     return candidate?.media.id || null;
   }
 
+  // Advance only after a FULL, successful round containing actual commercial media.
+  // An interrupted/failed item does not consume its advertiser's next turn.
+  function nextCommercialCycle(queue, completedCount, repeatMode, currentCycle) {
+    if (!Array.isArray(queue) || !queue.length || repeatMode === 'single' || repeatMode === 'none' ||
+        !queue.some(item => item?.commercial === true) || completedCount !== queue.length) return null;
+    const cycle = Number.isSafeInteger(currentCycle) && currentCycle >= 0 ? currentCycle : 0;
+    return (cycle + 1) % 1_000_000;
+  }
+
   async function syncManifest() {
     if (!state.deviceToken) return;
     try {
-      const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
+      const manifest = await gateway({
+        action: 'manifest',
+        supports_item_schedules: true,
+        supports_commercial_rounds: true,
+        commercial_cycle: Number.isSafeInteger(state.commercialCycle) && state.commercialCycle >= 0
+          ? state.commercialCycle : 0,
+      });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
       await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
       if (changed) state.priorityMediaId = null;
@@ -1314,6 +1338,15 @@
           if (nonce !== state.playlistNonce) continue;
         }
 
+        // Refresh inventory strictly at the round boundary; no mid-item ad switching.
+        const nextCycle = nextCommercialCycle(queue, completedCount, playlist.repeat_mode, state.commercialCycle);
+        if (nextCycle !== null && nonce === state.playlistNonce) {
+          state.commercialCycle = nextCycle;
+          if (manifest?.device?.id) writeJson(COMMERCIAL_CYCLE_KEY, { device_id: manifest.device.id, cycle: nextCycle });
+          try { await syncManifest(); } catch { /* Continue cached base content offline. */ }
+          if (nonce !== state.playlistNonce) continue;
+        }
+
         if (playlist.repeat_mode === 'none') {
           const completedVersion = manifest?.version;
           showIdle('Playlist concluída', 'Aguardando uma alteração na programação.');
@@ -1381,6 +1414,8 @@
     try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
+    writeJson(COMMERCIAL_CYCLE_KEY, null);
+    state.commercialCycle = 0;
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
     state.pairing = null;
