@@ -7,5 +7,6 @@ test('service_role correction only adjusts a guarded trigger execution privilege
  assert.match(script,/c\.name=''LAB-VIRTUAL-'' \|\| OLD\.checksum/);
  assert.match(script,/RAISE EXCEPTION ''immutable_revision''/);
  assert.match(script,/ALTER FUNCTION private\.vision_revision_immutable\(\) SECURITY DEFINER;/);
- assert.doesNotMatch(script,/GRANT |DROP |DISABLE TRIGGER|TRUNCATE|COMMIT|fpadgedrgcxrrqflzhjt/i);
+ const executable=script.replace(/^--.*$/gm,'');
+ assert.doesNotMatch(executable,/GRANT |DROP |DISABLE TRIGGER|TRUNCATE|COMMIT|fpadgedrgcxrrqflzhjt/i);
 });
