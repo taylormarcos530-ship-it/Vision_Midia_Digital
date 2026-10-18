@@ -30,3 +30,24 @@
 .point-sharing-notice{border:1px solid #536784;border-radius:9px;padding:10px;color:#d5e1f0;font-size:13px;line-height:1.5}
 .point-sharing-notice.private-device-warning{border-color:#e0af48;background:rgba(224,175,72,.08);color:#ffe3a4}
 #public-points-form input:disabled{opacity:.55}
+
+/* Destructive account control is separate from per-campaign actions. */
+.advertiser-main-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:16px 0}
+.advertiser-main-actions button{min-height:44px;min-width:0;line-height:1.4;white-space:normal;padding:10px}
+.advertiser-campaigns{border-top:1px solid #334860;padding-top:14px;margin-top:14px}
+.advertiser-campaigns h3{font-size:14px;margin:0 0 12px}
+.commercial-campaign-entry{border:1px solid #374c69;background:#0a1a2d;border-radius:12px;padding:12px;margin:12px 0}
+.commercial-campaign-entry-header{display:flex;align-items:flex-start;gap:10px}
+.commercial-campaign-entry-header strong{overflow-wrap:anywhere}
+.commercial-campaign-entry-state{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px;color:#b7c6d9;font-size:12px}
+.commercial-campaign-entry-state button{min-height:42px}
+.commercial-campaign-entry-state .subtle-danger{background:#332130;color:#ffc6c8}
+.advertiser-account-danger{border-top:1px dashed #526079;margin-top:18px;padding-top:14px}
+.advertiser-account-danger summary{cursor:pointer;color:#dfb6c0;font-weight:700}
+.advertiser-account-danger p{font-size:13px;color:#aab9cc}
+.advertiser-account-danger>.danger{min-height:44px}
+.commercial-safe-dialog{width:min(94vw,470px);max-height:90vh;overflow:auto}
+.commercial-delete-target{padding:12px;border:1px solid #485873;border-radius:10px;background:#0d1b30}
+.commercial-delete-target strong{display:block;color:#fff;overflow-wrap:anywhere}
+.commercial-confirm-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:460px){.commercial-campaign-entry-state{display:grid;grid-template-columns:1fr}.commercial-campaign-entry-state button{width:100%}.commercial-confirm-actions button{flex:1}}

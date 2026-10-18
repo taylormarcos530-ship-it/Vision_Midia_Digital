@@ -21,14 +21,38 @@ function render(){
   const allCampaigns=state.campaigns.filter(c=>c.advertiser_id===a.id);const campaigns=allCampaigns.filter(c=>showArchived||!c.archived_at);
   return `<article class="advertiser"><div class="campaign-head"><h2>${esc(a.name)}</h2><span class="badge ${!archived&&a.status==='active'?'active':''}">${archived?'Excluído':a.status==='active'?'Ativo':'Desativado'}</span></div>
   <p>${esc(a.email)} · ${allCampaigns.filter(c=>!c.archived_at).length} campanhas</p>
-  <div class="toolbar">${archived
+  <div class="toolbar advertiser-main-actions">${archived
     ? `<button data-report="${esc(a.id)}">Ver histórico</button><button data-restore="${esc(a.id)}">Restaurar anunciante</button>`
-    : `<button data-edit="${esc(a.id)}">Editar / ${a.status==='active'?'desativar':'ativar'}</button><button data-campaign="${esc(a.id)}">+ Campanha</button><button data-report="${esc(a.id)}">Ver resultados</button><button data-reset="${esc(a.id)}">Redefinir acesso</button><button class="danger" data-archive="${esc(a.id)}">Excluir anunciante</button>`}</div>
-  <div>${campaigns.map(c=>`<p class="commercial-campaign-row">${archived||c.archived_at?esc(c.name):`<button data-edit-campaign="${esc(c.id)}">${esc(c.name)}</button>`} · ${c.archived_at?'Excluída':esc({active:'Ativa',draft:'Rascunho',paused:'Pausada'}[c.status]||c.status)} ${archived?'':c.archived_at?`<button data-restore-campaign="${esc(c.id)}">Restaurar campanha</button>`:`<button class="danger" data-archive-campaign="${esc(c.id)}">Excluir campanha</button>`}</p>`).join('')}</div>
+    : `<button data-edit="${esc(a.id)}">Editar / ${a.status==='active'?'desativar':'ativar'}</button><button data-campaign="${esc(a.id)}">+ Campanha</button><button data-report="${esc(a.id)}">Ver resultados</button><button data-reset="${esc(a.id)}">Redefinir acesso</button>`}</div>
+  <div class="advertiser-campaigns"><h3>Campanhas do anunciante</h3>${campaigns.map(c=>`<section class="commercial-campaign-entry"><div class="commercial-campaign-entry-header"><strong>Campanha: ${esc(c.name)}</strong>${archived||c.archived_at?esc(c.name):`<button data-edit-campaign="${esc(c.id)}">Editar campanha</button>`}</div><div class="commercial-campaign-entry-state">${c.archived_at?'Excluída':esc({active:'Ativa',draft:'Rascunho',paused:'Pausada'}[c.status]||c.status)} ${archived?'':c.archived_at?`<button data-restore-campaign="${esc(c.id)}">Restaurar campanha</button>`:`<button class="danger subtle-danger" data-archive-campaign="${esc(c.id)}">Excluir somente esta campanha</button>`}</div></section>`).join('')||'<p class="muted">Nenhuma campanha.</p>'}</div>
+  ${archived?'':`<details class="advertiser-account-danger"><summary>Ações do cadastro do anunciante</summary><p>Excluir o cadastro bloqueia o acesso deste anunciante e interrompe todas as campanhas. Para excluir apenas uma campanha, utilize a opção dentro dela.</p><button class="danger" data-archive="${esc(a.id)}">Excluir cadastro do anunciante</button></details>`}
   </article>`;
  }).join('')||'<div class="empty">Nenhum anunciante encontrado.</div>';
  // Only local Excluir/Restaurar and Ver resultados run in demo; all other actions remain disabled.
  if(demo)$('#advertisers').querySelectorAll('button:not([data-report]):not([data-archive]):not([data-restore])').forEach(b=>b.disabled=true);
+}
+async function confirmCommercialRemoval(type,name,details){
+ const dialog=$('#commercial-remove-confirm');
+ $('#commercial-remove-title').textContent=type==='anunciante'?'Excluir cadastro do anunciante':'Excluir somente a campanha';
+ $('#commercial-remove-details').textContent=details;
+ $('#commercial-remove-name').textContent=name;
+ const typed=$('#commercial-remove-input'),ok=$('#commercial-remove-confirm-button');
+ typed.value='';ok.disabled=true;
+ return new Promise(resolve=>{
+  let approved=false;
+  const validate=()=>{ok.disabled=typed.value.trim()!==name;};
+  const confirm=()=>{approved=true;dialog.close();};
+  const closed=()=>{
+   typed.removeEventListener('input',validate);
+   ok.removeEventListener('click',confirm);
+   dialog.removeEventListener('close',closed);
+   resolve(approved);
+  };
+  typed.addEventListener('input',validate);
+  ok.addEventListener('click',confirm);
+  dialog.addEventListener('close',closed);
+  dialog.showModal();
+ });
 }
 async function load(){if(busy)return;busy=true;const ownGeneration=generation;try{const loaded=demo?demoSession.list():await api.masterCall('commercial_list');if(ownGeneration!==generation)return;state=loaded;$('#master-login').hidden=true;$('#admin').hidden=false;render();offerMediaLink();message(demo?'Demonstração: dados fictícios. Excluir e Restaurar funcionam só nesta página; ao recarregar o navegador, tudo volta ao início.':'Dados atualizados.');}catch(e){if(ownGeneration!==generation)return;$('#admin').hidden=true;$('#advertisers').replaceChildren();$('#report-campaigns').replaceChildren();if(e.status===401)$('#master-login').hidden=false;message(e.message,true)}finally{busy=false}}
 function advertiser(id){const a=state.advertisers.find(x=>x.id===id);const f=$('#advertiser-form');f.reset();f.elements.id.value=a?.id||'';f.elements.name.value=a?.name||'';f.elements.email.value=a?.email||'';f.elements.email.disabled=!!a;f.elements.status.value=a?.status||'active';$('#advertiser-state').hidden=!a;$('#advertiser-title').textContent=a?'Editar anunciante':'Novo anunciante';f.querySelector('.form-error').textContent='';$('#advertiser-dialog').showModal();}
@@ -41,16 +65,44 @@ if(!existing && prefillMediaId){
  }
 }
 $('#device-options').innerHTML=state.devices.map(d=>`<label class="device-choice"><input type="checkbox" name="device_ids" value="${esc(d.id)}" ${targets.includes(d.id)?'checked':''}><span>${esc(company.get(d.company_id)||'Ponto')} · ${esc(d.name)}</span></label>`).join('')||'<p>Nenhuma TV disponível.</p>';$('#campaign-dialog').showModal();mediaPicker.open(state,f.elements.media_id.value);}
+function offerMediaUnlink(mediaId){
+ if(!/^[0-9a-f-]{36}$/i.test(mediaId))return message('Identificador de mídia inválido.',true);
+ const media=(state.media||[]).find(x=>x.id===mediaId&&['image','video'].includes(x.media_type));
+ if(!media)return message('Mídia não encontrada nesta biblioteca. Atualize a página.',true);
+ const sources=new Map((state.revisions||[]).map(rev=>[rev.id,rev.source_media_id]));
+ const adv=new Map((state.advertisers||[]).map(row=>[row.id,row]));
+ const linked=(state.campaigns||[]).filter(c=>!c.archived_at&&sources.get(c.current_revision_id)===mediaId&&!adv.get(c.advertiser_id)?.archived_at);
+ if(!linked.length)return message('Esta mídia não possui campanhas vinculadas no momento.',true);
+ $('#unlink-media-title').textContent=media.name;
+ $('#unlink-media-campaign').innerHTML=linked.map(c=>'<option value="'+esc(c.id)+'">'+esc(adv.get(c.advertiser_id)?.name||'Anunciante')+' · '+esc(c.name)+'</option>').join('');
+ $('#unlink-media-dialog').showModal();
+}
+$('#unlink-media-form').onsubmit=async e=>{
+ e.preventDefault();
+ const campaignId=$('#unlink-media-campaign').value;
+ const selected=(state?.campaigns||[]).find(c=>c.id===campaignId&&!c.archived_at);
+ if(!selected)return;
+ $('#unlink-media-dialog').close();
+ if(!await confirmCommercialRemoval('campanha',selected.name,'Desvincular arquiva somente esta campanha e interrompe a entrega. O anunciante e a mídia permanecem cadastrados; os relatórios não são apagados.'))return;
+ try{
+  await api.masterCall('commercial_archive_campaign',{id:campaignId});
+  await load();
+  message('Mídia desvinculada da campanha selecionada, com histórico preservado.');
+ }catch(error){message('Falha ao desvincular: '+error.message,true);}
+};
 function offerMediaLink(){
  if(mediaLinkProcessed||demo||!state)return;
  const params=new URLSearchParams(location.search);
- const id=params.get('link_media');
+ const id=params.get('link_media')||params.get('unlink_media');
  if(!id)return;
+ const unlink=params.has('unlink_media');
  mediaLinkProcessed=true;
  const nextUrl=new URL(location.href);
  nextUrl.searchParams.delete('link_media');
+ nextUrl.searchParams.delete('unlink_media');
  history.replaceState(history.state,'',nextUrl.pathname+nextUrl.search+nextUrl.hash);
  if(!/^[0-9a-f-]{36}$/i.test(id))return message('Identificador de mídia inválido. Abra novamente pela gestão.',true);
+ if(unlink)return offerMediaUnlink(id);
  const media=(state.media||[]).find(x=>x.id===id&&['image','video'].includes(x.media_type));
  if(!media)return message('Esta mídia não está disponível para anúncio. Verifique a empresa e a biblioteca.',true);
  const advertisers=(state.advertisers||[]).filter(x=>!x.archived_at&&x.status==='active');
@@ -140,7 +192,7 @@ $('#campaign-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e
 $('#advertisers').onclick=async e=>{const b=e.target.closest('button');if(!b)return;if(demo&&!b.dataset.report&&!b.dataset.archive&&!b.dataset.restore)return;const ownGeneration=generation;b.disabled=true;try{if(b.dataset.edit)advertiser(b.dataset.edit);if(b.dataset.campaign)await campaign(b.dataset.campaign);if(b.dataset.editCampaign){const c=state.campaigns.find(x=>x.id===b.dataset.editCampaign);await campaign(c.advertiser_id,c)}if(b.dataset.report){const data=demo?demoSession.report(b.dataset.report):await api.masterCall('commercial_report',{id:b.dataset.report});if(ownGeneration!==generation)return;$('#report-title').textContent='Resultados · '+data.advertiser.name;$('#report-campaigns').innerHTML=renderCampaigns(data,true);$('#report').hidden=false;$('#report').scrollIntoView({behavior:'smooth'});if(!demo)await loadThumbnails($('#report-campaigns'),data,api)}if(b.dataset.archiveCampaign){
   const c=state.campaigns.find(x=>x.id===b.dataset.archiveCampaign&&!x.archived_at);
   if(!c)throw new Error('Campanha não encontrada.');
-  if(confirm('Excluir a campanha "'+c.name+'"? Ela será pausada e desvinculada das TVs. Mídias e exibições anteriores ficam preservadas e você poderá restaurá-la.')){
+  if(await confirmCommercialRemoval('campanha',c.name,'Somente esta campanha será pausada e arquivada. O anunciante continuará ativo; a mídia e o histórico serão preservados.')){
    await api.masterCall('commercial_archive_campaign',{id:c.id});
    if(ownGeneration!==generation)return;
    await load();
@@ -158,7 +210,7 @@ $('#advertisers').onclick=async e=>{const b=e.target.closest('button');if(!b)ret
  if(b.dataset.reset){const a=state.advertisers.find(x=>x.id===b.dataset.reset);if(confirm(`Redefinir a senha de ${a.name}?`)){const r=await api.masterCall('commercial_reset_access',{id:a.id});if(ownGeneration!==generation)return;access(r,a.email)}}if(b.dataset.archive){
   const a=state.advertisers.find(x=>x.id===b.dataset.archive&&!x.archived_at);
   if(!a)throw new Error('Anunciante não encontrado.');
-  if(confirm(`Excluir o anunciante "${a.name}"? O acesso ao portal será bloqueado e os anúncios deixarão de entrar nas novas programações. Histórico, campanhas e mídias ficam preservados, e o cadastro poderá ser restaurado.`)){
+  if(await confirmCommercialRemoval('anunciante',a.name,'A conta do anunciante será bloqueada e TODAS as campanhas dele serão interrompidas. O histórico e as mídias serão preservados.')){
    if(demo)demoSession.archive(a.id);else await api.masterCall('commercial_archive_advertiser',{id:a.id});
    if(ownGeneration!==generation)return;
    await load();

@@ -256,3 +256,26 @@ test('Master push notification message is legible on mobile without changing mes
  assert.match(script,/'#mn-message'/);
  assert.match(script,/sendMasterNotification/);
 });
+
+test('commercial delete actions are separated by entity and require exact-name confirmation',()=>{
+ const s=fs.readFileSync('master-advertisers.mjs','utf8');
+ const h=fs.readFileSync('master-advertisers.html','utf8');
+ assert.match(s,/advertiser-account-danger/);
+ assert.match(s,/Excluir cadastro do anunciante/);
+ assert.match(s,/Excluir somente esta campanha/);
+ assert.match(s,/confirmCommercialRemoval\('campanha'/);
+ assert.match(s,/confirmCommercialRemoval\('anunciante'/);
+ assert.match(s,/typed\.value\.trim\(\)!==name/);
+ assert.match(h,/id="commercial-remove-confirm"/);
+ assert.match(h,/id="commercial-remove-input"/);
+ assert.match(h,/ad-link-20261018-b/);
+});
+test('Master selects precise associated campaign to unlink advertiser media without deleting history',()=>{
+ const s=fs.readFileSync('master-advertisers.mjs','utf8');
+ assert.match(s,/function offerMediaUnlink\(mediaId\)/);
+ assert.match(s,/params\.get\('unlink_media'\)/);
+ assert.match(s,/sources\.get\(c\.current_revision_id\)===mediaId/);
+ assert.match(s,/id:campaignId/);
+ assert.match(s,/commercial_archive_campaign/);
+ assert.match(fs.readFileSync('master-advertisers.html','utf8'),/id="unlink-media-dialog"/);
+});
