@@ -20,10 +20,13 @@ async function unlinkOrphan(admin,path){
  }catch{/* An unverified copy must not be deleted if an RPC may have committed. */}
 }
 export async function saveCommercialWithSnapshot(admin,actorId,campaign){
- if(!campaign||typeof campaign!=='object'||!campaign.media_id||!campaign.advertiser_id)
+ if(!campaign||typeof campaign!=='object'||(!campaign.media_id&&!campaign.commercial_source_id)||!campaign.advertiser_id)
   throw commercialError('invalid_campaign');
- const media=unwrap(await admin.from('media_assets').select('id,storage_path,processing_status,media_type,checksum_sha256,updated_at').eq('id',campaign.media_id).maybeSingle());
- if(!media||media.processing_status!=='ready'||!['image','video'].includes(media.media_type)||!media.storage_path)
+ const table=campaign.commercial_source_id?'vision_commercial_sources':'media_assets';
+ const sourceId=campaign.commercial_source_id||campaign.media_id;
+ const media=unwrap(await admin.from(table).select('id,storage_path,processing_status,media_type,checksum_sha256,updated_at')
+  .eq('id',sourceId).maybeSingle());
+ if(!media||(!campaign.commercial_source_id&&media.processing_status!=='ready')||!['image','video'].includes(media.media_type)||!media.storage_path)
   throw commercialError('ready_image_or_video_required');
  let previous=null;
  if(campaign.id){

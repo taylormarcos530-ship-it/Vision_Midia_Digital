@@ -1,4 +1,5 @@
 import {saveCommercialWithSnapshot} from './commercial-media.mjs';
+import {commercialPrepareSource,commercialFinalizeSource} from './commercial-source.mjs';
 const fail=(message,status=400)=>Object.assign(new Error(message),{status});
 const requireData=result=>{if(result.error)throw result.error;return result.data;};
 const clean=(value,max)=>String(value??'').trim().slice(0,max);
@@ -11,14 +12,15 @@ export async function commercialMaster(admin,user,role,body){
  if(!['admin','super_admin'].includes(role))throw fail('master_forbidden',403);
  const action=body.action;
  if(action==='commercial_list'){
-  const [advertisers,campaigns,devices,media,companies,revisions]=await Promise.all([
+  const [advertisers,campaigns,devices,media,companies,revisions,sources]=await Promise.all([
    admin.from('vision_advertisers').select('*').order('created_at',{ascending:false}),
    admin.from('vision_commercial_campaigns').select('*').order('created_at',{ascending:false}),
    admin.from('devices').select('id,company_id,name,last_seen_at').is('retired_at',null),
    admin.from('media_assets').select('id,company_id,name,media_type').eq('processing_status','ready').in('media_type',['image','video']),
    admin.from('companies').select('id,name'),
-   admin.from('vision_commercial_revisions').select('id,campaign_id,source_media_id')]);
-  return {ok:true,advertisers:requireData(advertisers),campaigns:requireData(campaigns),devices:requireData(devices),media:requireData(media),companies:requireData(companies),revisions:requireData(revisions)};
+   admin.from('vision_commercial_revisions').select('id,campaign_id,source_media_id'),
+   admin.from('vision_commercial_sources').select('id,name,media_type,storage_path,size_bytes')]);
+  return {ok:true,advertisers:requireData(advertisers),campaigns:requireData(campaigns),devices:requireData(devices),media:requireData(media),companies:requireData(companies),revisions:requireData(revisions),sources:requireData(sources)};
  }
  if(action==='commercial_create_advertiser'){
   const name=clean(body.name,140),email=clean(body.email,320).toLowerCase();
@@ -70,6 +72,8 @@ export async function commercialMaster(admin,user,role,body){
   requireData(await admin.from('vision_advertisers').update({name,status}).eq('id',advertiser.id));
   return {ok:true};
  }
+ if(action==='commercial_prepare_source')return commercialPrepareSource(admin,user,body);
+ if(action==='commercial_finalize_source')return commercialFinalizeSource(admin,user,body);
  if(action==='commercial_save_campaign')return saveCommercialWithSnapshot(admin,user.id,body.campaign);
  if(action==='commercial_report')return {ok:true,...requireData(await admin.rpc('vision_commercial_master_report',{p_actor:user.id,p_advertiser:body.id}))};
  throw fail('unknown_commercial_action');
