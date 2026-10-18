@@ -831,6 +831,16 @@
     })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
 
+  // Preserve the point's original order: commercial insertions are never
+  // urgent customer media, even when their revision IDs first appear in a manifest.
+  function findNewPointMediaPriority(previousItems, nextItems, timeZone) {
+    const previousIds = new Set((previousItems || []).map(item => item.media?.id).filter(Boolean));
+    const candidate = (nextItems || []).find(item =>
+      item?.commercial !== true && item?.media?.id &&
+      !previousIds.has(item.media.id) && itemScheduleActive(item, timeZone));
+    return candidate?.media.id || null;
+  }
+
   async function syncManifest() {
     if (!state.deviceToken) return;
     try {
@@ -839,8 +849,7 @@
       await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
       if (changed) state.priorityMediaId = null;
       if (changed && state.manifest && state.manifest?.playlist?.id === manifest?.playlist?.id) {
-        const previousIds = new Set((state.manifest.items || []).map(item => item.media?.id));
-        state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
+        state.priorityMediaId = findNewPointMediaPriority(state.manifest.items, manifest.items, manifest?.program?.timezone);
       }
       state.manifest = manifest;
       void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));

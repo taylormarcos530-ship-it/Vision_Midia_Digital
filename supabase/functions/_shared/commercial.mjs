@@ -49,7 +49,7 @@ export async function augmentCommercial(admin,device,primary,supportsSchedules,e
   if(signed.error)throw signed.error;
   const urls=new Map((signed.data||[]).filter(r=>r.signedUrl&&!r.error).map(r=>[r.path,r.signedUrl]));
   const ads=data.filter(r=>urls.has(r.storage_path)).map(r=>({
-   id:r.id,essential:false,position:0,duration_seconds:r.duration_seconds,
+   id:r.id,commercial:true,essential:false,position:0,duration_seconds:r.duration_seconds,
    schedule:{enabled:true,start_date:r.start_date,end_date:r.end_date,start_time:null,end_time:null,weekdays:[0,1,2,3,4,5,6]},
    media:{id:r.id,name:r.name,type:r.media_type,url:urls.get(r.storage_path),size_bytes:r.size_bytes,checksum:r.checksum+':'+r.id,width:r.width,height:r.height}
   }));
