@@ -22,3 +22,15 @@ test('Player, APK and operational customer files stay byte-identical to release 
  assert.match(docs,/baseline 921f365b7f1ee5c7da7c96b74b3cdf1462e180c3/);
  assert.match(docs,/unchanged: player\.js/);
 });
+
+test('Master owns signed upload and customer never receives media upload control',()=>{
+ const h=fs.readFileSync('master-advertisers.html','utf8');
+ const j=fs.readFileSync('master-advertisers.mjs','utf8');
+ const client=fs.readFileSync('anunciante.html','utf8');
+ assert.match(h,/id="commercial-source-upload"/);
+ assert.match(j,/commercial_prepare_source/);
+ assert.match(j,/commercial_finalize_source/);
+ assert.match(j,/storage\/v1\/object\/upload\/sign\/vision-media/);
+ assert.match(j,/state\.sources/);
+ assert.doesNotMatch(client,/type="file"/);
+});
