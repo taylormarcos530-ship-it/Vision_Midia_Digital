@@ -215,3 +215,44 @@ test('commercial Master offers reversible campaign deletion without deleting fil
  assert.match(html,/Mostrar anunciantes e campanhas excluídos/);
  assert.doesNotMatch(ui,/removeItem\(.*campaign|delete.*from\('vision_commercial_campaigns'\)/);
 });
+
+test('only platform Master sees advertiser link button in media management',()=>{
+ const app=fs.readFileSync('app.js','utf8'),html=fs.readFileSync('index.html','utf8'),css=fs.readFileSync('styles.css','utf8');
+ assert.match(app,/state\.isPlatformAdmin && \["image","video"\]\.includes\(media\.media_type\)/);
+ assert.match(app,/data-link-media-advertiser/);
+ assert.match(app,/Somente o Master Vision pode vincular anúncios comerciais/);
+ assert.match(app,/destination|url\.searchParams\.set\('link_media', media\.id\)/);
+ assert.match(app,/window\.location\.assign\(url\.href\)/);
+ assert.match(html,/\.\/app\.js\?v=49/);
+ assert.match(html,/\.\/styles\.css\?v=46/);
+ assert.match(css,/\[data-link-media-advertiser\]/);
+});
+test('media shortcut requires advertiser choice and drafts a campaign with original media preselected',()=>{
+ const main=fs.readFileSync('master-advertisers.mjs','utf8');
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ assert.match(main,/function offerMediaLink\(/);
+ assert.match(main,/link_media/);
+ assert.match(main,/mediaLinkProcessed/);
+ assert.match(main,/!x\.archived_at&&x\.status==='active'/);
+ assert.match(main,/function campaign\(/);
+ assert.match(main,/prefillMediaId/);
+ assert.match(main,/f\.elements\.media_id\.value=selected\.id/);
+ assert.match(main,/await campaign\(id,null,selectedMedia\.id\)/);
+ assert.match(main,/Somente|Confirme as datas e TVs e clique em Salvar campanha/);
+ assert.match(html,/id="link-media-advertiser-dialog"/);
+ assert.match(html,/id="link-media-advertiser-form"/);
+ assert.match(html,/id="link-media-advertiser"/);
+ assert.match(html,/master-advertisers\.mjs\?v=ad-link-20261018/);
+ assert.doesNotMatch(main,/window\.localStorage\.setItem\('service_role'/);
+});
+test('Master push notification message is legible on mobile without changing message delivery',()=>{
+ const css=fs.readFileSync('master.css','utf8'),html=fs.readFileSync('master.html','utf8');
+ assert.match(css,/#mn-message:focus/);
+ assert.match(css,/-webkit-text-fill-color:#f8fafc !important/);
+ assert.match(css,/caret-color:#f8fafc/);
+ assert.match(html,/master\.css\?v=44/);
+ assert.match(html,/id="mn-message"/);
+ const script=fs.readFileSync('master.js','utf8');
+ assert.match(script,/'#mn-message'/);
+ assert.match(script,/sendMasterNotification/);
+});
