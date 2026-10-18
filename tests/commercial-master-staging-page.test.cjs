@@ -18,5 +18,5 @@ test('created access points at advertiser STAGING, never official login',()=>{
 test('Master QA cannot submit campaigns or enable commercial programming',()=>{
   assert.match(js,/data-campaign\],button\[data-edit-campaign/);
   assert.match(js,/demo=false/);
-  assert.equal(vercel.git.deploymentEnabled['fix/advertiser-staging-security-gate-20261018'],false);
+  assert.deepEqual(vercel.git.deploymentEnabled,{'fix/advertiser-portal-safety-20261013':false});
 });
