@@ -34,6 +34,7 @@ async function createDOM(){
   el,timers,urls,document,win,docEvents,windowEvents,
   click:id=>el(id).listeners.click(),
   select(id,file){el(id).files=file?[file]:[];el(id).listeners.change()},
+  selectMany(id,files){el(id).files=files;el(id).listeners.change()},
   tick(ms){const entry=[...timers.entries()].find(([_,e])=>e.delay===ms);assert.ok(entry,'expected '+ms+'ms tick');timers.delete(entry[0]);entry[1].fn()}
  };
 }
@@ -64,9 +65,10 @@ test('local video advances only through its actual ended callback, not the fixtu
  const firstCallback=d.el('media-video').onended;
  firstCallback();
  assert.match(d.el('media-round').textContent,/item 2 de 8/);
+ assert.equal(d.el('media-video').hidden,true,'item 2 uses a fictitious frame, not the same uploaded video');
  firstCallback();
  assert.match(d.el('media-round').textContent,/item 2 de 8/);
- d.el('media-video').onended();
+ d.tick(2000);
  assert.match(d.el('media-round').textContent,/item 3 de 8/);
  d.win.addEventListener&&d.windowEvents.get('pagehide')();
  assert.equal(d.urls.size,0,'blob URLs must be released when page closes');
@@ -132,7 +134,8 @@ test('two separate selected files get visible independent previews and commercia
  d.click('media-start');
  assert.equal(d.el('media-video').hidden,false);
  assert.equal(d.timers.size,0);
- for(let i=0;i<3;i++)d.el('media-video').onended();
+ d.el('media-video').onended();
+ d.tick(2000);d.tick(2000);
  assert.match(d.el('media-round').textContent,/item 4 de 8/);
  assert.match(d.el('media-current').textContent,/Publicidade comercial/);
  assert.equal(d.el('media-photo').hidden,false);
@@ -223,4 +226,75 @@ test('background browser tab cancels fake reconnect/reboot and never advances hi
  d.document.hidden=true;d.docEvents.get('visibilitychange')();
  assert.equal(d.timers.size,0);
  assert.equal(d.el('media-live').textContent,'PAUSADO');
+});
+
+test('six separate point assets play in assigned slots, never reuse the same video, and keep ad at item 4',async()=>{
+ const d=await createDOM();
+ const videoA={size:5000,type:'video/mp4',name:'primeiro.mp4'};
+ const imageB={size:1000,type:'image/png',name:'segundo.png'};
+ const videoC={size:6000,type:'video/webm',name:'terceiro.webm'};
+ d.select('media-base-file',videoA);
+ d.selectMany('media-base-file',[imageB,videoC]);
+ d.select('media-commercial-file',{size:900,type:'image/png',name:'anuncio.png'});
+ assert.equal(d.urls.size,4);
+ assert.match(d.el('media-base-loaded').textContent,/3 mídias carregadas/);
+ assert.match(d.el('media-base-order').textContent,/1\. primeiro\.mp4\n2\. segundo\.png\n3\. terceiro\.webm/);
+ d.click('media-start');
+ const srcA=d.el('media-video').src;
+ assert.equal(srcA,'blob:test-fixture-1');
+ d.el('media-video').onended();
+ assert.equal(d.el('media-photo').src,'blob:test-fixture-2');
+ d.el('media-photo').onload();d.tick(2500);
+ assert.equal(d.el('media-video').src,'blob:test-fixture-3');
+ assert.notEqual(d.el('media-video').src,srcA);
+ d.el('media-video').onended();
+ assert.match(d.el('media-round').textContent,/item 4 de 8/);
+ assert.equal(d.el('media-photo').src,'blob:test-fixture-4');
+ d.el('media-photo').onload();d.tick(2500);
+ assert.match(d.el('media-round').textContent,/item 5 de 8/);
+ assert.equal(d.el('media-video').hidden,true,'missing base slot uses text placeholder');
+ assert.equal([...d.timers.values()][0].delay,2000);
+ d.windowEvents.get('pagehide')();
+ assert.equal(d.urls.size,0,'all four URLs released on pagehide');
+});
+test('base files can be added one by one, six max; duplicates and unsupported media cannot interrupt the session',async()=>{
+ const d=await createDOM();
+ for(let i=0;i<6;i++){
+  d.select('media-base-file',{name:'base-'+i+'.png',size:100+i,type:'image/png'});
+ }
+ assert.match(d.el('media-file-count').textContent,/6 mídias do estabelecimento/);
+ assert.equal(d.urls.size,6);
+ d.click('media-start');
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+ d.select('media-base-file',{name:'extra.png',size:99,type:'image/png'});
+ assert.match(d.el('media-notice').textContent,/Limite de seis/);
+ assert.equal(d.el('media-live').textContent,'EXECUTANDO');
+ d.select('media-base-file',{name:'base-0.png',size:100,type:'image/png'});
+ assert.match(d.el('media-notice').textContent,/Limite de seis/);
+ assert.equal(d.urls.size,6);
+ d.click('media-clear-base');
+ assert.equal(d.urls.size,0);
+ assert.match(d.el('media-base-order').textContent,/quadros fictícios/);
+ assert.match(d.el('media-file-count').textContent,/0 mídias do estabelecimento/);
+ d.select('media-base-file',{name:'valid.mp4',size:200,type:'video/mp4'});
+ d.select('media-base-file',{name:'valid.mp4',size:200,type:'video/mp4'});
+ assert.equal(d.urls.size,1);
+ assert.match(d.el('media-notice').textContent,/Arquivo já escolhido/);
+ d.select('media-base-file',{name:'invalid.svg',size:100,type:'image/svg+xml'});
+ assert.match(d.el('media-notice').textContent,/Arquivo não aceito/);
+ assert.equal(d.urls.size,1);
+ d.click('media-clear-base');
+ assert.equal(d.urls.size,0);
+});
+test('multiple picker rejects more than six files atomically and canceled picker keeps selections',async()=>{
+ const d=await createDOM();
+ d.selectMany('media-base-file',Array.from({length:7},(_,i)=>({name:'file'+i+'.png',size:400+i,type:'image/png'})));
+ assert.equal(d.urls.size,0);
+ assert.match(d.el('media-notice').textContent,/Limite de seis/);
+ d.selectMany('media-base-file',Array.from({length:6},(_,i)=>({name:'file'+i+'.png',size:400+i,type:'image/png'})));
+ assert.equal(d.urls.size,6);
+ d.selectMany('media-base-file',[]);
+ assert.equal(d.urls.size,6);
+ d.windowEvents.get('pagehide')();
+ assert.equal(d.urls.size,0);
 });

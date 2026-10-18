@@ -4,7 +4,7 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
  const $=id=>document.getElementById(id);
  const screen=$('media-screen'),video=$('media-video'),photo=$('media-photo');
  const baseFile=$('media-base-file'),commercialFile=$('media-commercial-file');
- let player=createMediaTestPlayer(),clock=null,objects={base:null,commercial:null};
+ let player=createMediaTestPlayer(),clock=null,objects={base:[],commercial:null};
  let reconnectTimer=null,rebootTimer=null,rebooting=false,resumeAfterRecovery=false;
  const clearReconnect=()=>{if(reconnectTimer!==null){clearTimeout(reconnectTimer);reconnectTimer=null;}};
  const clearReboot=()=>{if(rebootTimer!==null){clearTimeout(rebootTimer);rebootTimer=null;}};
@@ -35,11 +35,23 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
   pic.hidden=true;vid.hidden=true;
  }
  function updatePreview(role){
-  const item=objects[role],name=role==='base'?'base':'commercial';
+  const isBase=role==='base',name=isBase?'base':'commercial';
+  const item=isBase?objects.base[0]:objects.commercial;
   clearPreview(role);
-  $('media-'+name+'-loaded').textContent=item?
-   (item.type==='video'?'VÍDEO carregado ✓ · ':'IMAGEM carregada ✓ · ')+item.name:
-   'Nenhum arquivo carregado; será mostrado um quadro fictício.';
+  if(isBase){
+   const count=objects.base.length;
+   $('media-base-order').textContent=count?
+    objects.base.map((asset,i)=>(i+1)+'. '+asset.name).join('\n'):
+    'Itens não preenchidos mostrarão quadros fictícios do estabelecimento.';
+   $('media-base-loaded').textContent=count>1?
+    count+' mídias carregadas ✓ (de 6)':
+    item?(item.type==='video'?'VÍDEO carregado ✓ · ':'IMAGEM carregada ✓ · ')+item.name:
+    'Nenhum arquivo carregado; serão mostrados quadros fictícios.';
+  }else{
+   $('media-commercial-loaded').textContent=item?
+    (item.type==='video'?'VÍDEO carregado ✓ · ':'IMAGEM carregada ✓ · ')+item.name:
+    'Nenhum arquivo comercial carregado; será mostrado um quadro fictício.';
+  }
   if(!item)return;
   if(item.type==='video'){
    const v=$('media-'+name+'-thumb-video');
@@ -105,7 +117,9 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
  function beginItem(view){
   const key=view.key;
   const role=view.current.commercial?'commercial':'base';
-  const item=objects[role];
+  // Each base-1…base-6 slot has its own local file, never one reused file.
+  const index=role==='base'?Number(view.current.id?.slice(5))-1:-1;
+  const item=role==='base'?objects.base[index]:objects.commercial;
   if(!item){
    $('media-placeholder').hidden=false;
    clock=setTimeout(()=>{clock=null;onFinish(key)},2000);
@@ -164,27 +178,67 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
    'Nenhum anúncio comercial nesta rodada.':('O anúncio comercial aparece no item '+(firstAd+1)+
    ' de '+view.items.length+'. Os arquivos são exibidos por categoria, não na ordem do envio.');
   $('media-file-count').textContent='Arquivos escolhidos: '+
-   Number(Boolean(objects.base))+ ' mídia do estabelecimento · '+
-   Number(Boolean(objects.commercial))+' comercial';
+   objects.base.length+ (objects.base.length===1?' mídia':' mídias')+
+   ' do estabelecimento · '+Number(Boolean(objects.commercial))+' comercial';
   if(view.playing&&item&&!rebooting)beginItem(view);
  }
- function loadLocal(role,file){
+ function loadLocal(role,files){
   if(rebooting)return;
+  const selected=Array.from(files||[]);
+  if(!selected.length)return; // Cancelling the file picker must not discard selections.
+  if(selected.some(file=>!safeFile(file))){
+   output('Arquivo não aceito. Use PNG, JPEG, WEBP, GIF, MP4 ou WEBM com até 100 MB.');
+   return;
+  }
+  if(role==='base'){
+   if(objects.base.length+selected.length>6){
+    output('Limite de seis mídias do estabelecimento. Use Limpar mídias para recomeçar.');
+    return;
+   }
+   const signature=file=>[file.name||'',file.size,file.lastModified||0].join('|');
+   const existing=new Set(objects.base.map(file=>file.signature));
+   for(const file of selected){
+    const id=signature(file);
+    if(existing.has(id)){
+     output('Arquivo já escolhido. Selecione arquivos diferentes para cada posição.');
+     return;
+    }
+    existing.add(id);
+   }
+  }
   clearReconnect();clearReboot();resumeAfterRecovery=false;
-  stopMedia();clearPreview(role);
-  const old=objects[role];if(old)URL.revokeObjectURL(old.url);
-  const valid=safeFile(file);
-  objects[role]=valid?{type:valid.type.startsWith('video/')?'video':'image',
-   url:URL.createObjectURL(valid),name:String(valid.name||'Arquivo local').slice(0,120)}:null;
+  stopMedia();
+  if(role==='base'){
+   const make=file=>({type:file.type.startsWith('video/')?'video':'image',
+    url:URL.createObjectURL(file),name:String(file.name||'Arquivo local').slice(0,120),
+    signature:[file.name||'',file.size,file.lastModified||0].join('|')});
+   objects.base.push(...selected.map(make));
+   baseFile.value=''; // Allows selecting one additional file at a time on Android.
+  }else{
+   if(objects.commercial)URL.revokeObjectURL(objects.commercial.url);
+   const file=selected[0];
+   objects.commercial={type:file.type.startsWith('video/')?'video':'image',
+    url:URL.createObjectURL(file),name:String(file.name||'Arquivo comercial').slice(0,120)};
+  }
   player=mediaTestEvent(player,{type:'configure',options:{...player.state.options,
    programRevision:'local-'+Date.now()}}).player;
   updatePreview(role);render();
-  output(file&&!valid?'Arquivo não aceito. Use PNG, JPEG, WEBP, GIF, MP4 ou WEBM com até 100 MB.':
-   valid?'Arquivo local carregado ✓. Os dois arquivos serão usados nos respectivos itens da sequência.':
-   'Sem arquivo selecionado: exibindo quadros fictícios.');
+  output(role==='base'?
+   objects.base.length+' de 6 mídias carregadas em ordem ✓. Os espaços restantes usam quadros fictícios, sem repetir o vídeo.':
+   'Anúncio local carregado ✓. Será exibido apenas nas posições comerciais.');
  }
- baseFile.addEventListener('change',()=>loadLocal('base',baseFile.files?.[0]));
- commercialFile.addEventListener('change',()=>loadLocal('commercial',commercialFile.files?.[0]));
+ baseFile.addEventListener('change',()=>loadLocal('base',baseFile.files));
+ commercialFile.addEventListener('change',()=>loadLocal('commercial',commercialFile.files?.[0]?[commercialFile.files[0]]:[]));
+ $('media-clear-base').addEventListener('click',()=>{
+  if(rebooting)return;
+  clearReconnect();clearReboot();resumeAfterRecovery=false;stopMedia();
+  for(const asset of objects.base)URL.revokeObjectURL(asset.url);
+  objects.base=[];baseFile.value='';
+  player=mediaTestEvent(player,{type:'configure',options:{...player.state.options,
+   programRevision:'local-'+Date.now()}}).player;
+  updatePreview('base');render();
+  output('Mídias do estabelecimento removidas. A playlist fictícia e os anúncios continuam disponíveis.');
+ });
  $('media-start').addEventListener('click',()=>{if(rebooting)return;clearReconnect();resumeAfterRecovery=false;apply({type:'start'});});
  $('media-pause').addEventListener('click',()=>{if(rebooting)return;clearReconnect();resumeAfterRecovery=false;apply({type:'pause'});});
  $('media-disconnect').addEventListener('click',beginDisconnect);
@@ -209,11 +263,11 @@ if(typeof document!=='undefined'&&document.getElementById('media-lab')){
  });
  window.addEventListener('pagehide',()=>{
   clearReconnect();clearReboot();stopMedia();
-  for(const role of ['base','commercial']){
-   clearPreview(role);
-   if(objects[role])URL.revokeObjectURL(objects[role].url);
-  }
-  objects={base:null,commercial:null};
+  for(const role of ['base','commercial'])clearPreview(role);
+  for(const asset of objects.base)URL.revokeObjectURL(asset.url);
+  if(objects.commercial)URL.revokeObjectURL(objects.commercial.url);
+  objects={base:[],commercial:null};
  });
+ updatePreview('base');
  render();
 }
