@@ -2596,7 +2596,7 @@
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
-          ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button" type="button" data-link-media-advertiser="${media.id}" aria-label="Vincular esta mídia a um anunciante">Anunciante</button>` : ""}
+          ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button" type="button" data-link-media-advertiser="${media.id}" aria-label="Vincular esta mídia a um anunciante">Vincular anunciante</button>` : ""}
         </div>
       </article>`;
     }).join('');
