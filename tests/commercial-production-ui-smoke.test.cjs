@@ -202,3 +202,16 @@ test('advertiser lists active TVs, not historical links with no deliveries',asyn
  assert.match(historical,/Teste casa/);
  assert.match(historical,/vínculo encerrado/);
 });
+
+test('commercial Master offers reversible campaign deletion without deleting files or logs',()=>{
+ const ui=fs.readFileSync('master-advertisers.mjs','utf8');
+ const html=fs.readFileSync('master-advertisers.html','utf8');
+ assert.match(ui,/data-archive-campaign/);
+ assert.match(ui,/data-restore-campaign/);
+ assert.match(ui,/commercial_archive_campaign/);
+ assert.match(ui,/commercial_restore_campaign/);
+ assert.match(ui,/c\.archived_at/);
+ assert.match(ui,/Rascunho/);
+ assert.match(html,/Mostrar anunciantes e campanhas excluídos/);
+ assert.doesNotMatch(ui,/removeItem\(.*campaign|delete.*from\('vision_commercial_campaigns'\)/);
+});
