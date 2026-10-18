@@ -153,7 +153,9 @@ test('Master location form explains private test TV instead of raw server code',
 
 test('SaaS admin sidebar contains both Master links between Planos and Auditoria',()=>{
  const html=fs.readFileSync('index.html','utf8');
- const nav=html.match(/<div id="saas-admin-nav" class="saas-admin-nav hidden"[\\s\\S]*?<\\/div>/)?.[0]||'';
+ const begin=html.indexOf('<div id="saas-admin-nav" class="saas-admin-nav hidden"');
+ const end=html.indexOf('</div>',begin);
+ const nav=begin>=0&&end>begin?html.slice(begin,end+6):'';
  assert.ok(nav,'SaaS Master section must exist');
  const plans=nav.indexOf('data-saas-view="plans"');
  const m=nav.indexOf('href="./master.html"');
