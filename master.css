@@ -730,3 +730,14 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   .mini-row{flex-wrap:wrap;min-width:0}
   .mini-row>div{min-width:0;overflow-wrap:anywhere}
 }
+
+/* Contrast fix: Android/Chrome must render the notification text in white. */
+#mn-message,
+#mn-message:focus{
+ color:#f8fafc !important;
+ -webkit-text-fill-color:#f8fafc !important;
+ caret-color:#f8fafc;
+ background-color:#081222;
+}
+#mn-message::placeholder{color:#a5b5cc !important;opacity:1}
+#mn-message::selection{color:#fff;background:#3157a9}
