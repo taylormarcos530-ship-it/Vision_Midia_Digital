@@ -2456,39 +2456,83 @@
     return video;
   }
 
+  // Visible-only preview loading prevents a long list of video metadata from
+  // serially blocking thumbnails on a mobile connection. Two concurrent previews max.
+  const deferredPreviewJobs = [];
+  const previewJobsByNode = new WeakMap();
+  let previewJobsActive = 0;
+  let deferredPreviewObserver = null;
+  function drainVisiblePreviewJobs() {
+    while (previewJobsActive < 2 && deferredPreviewJobs.length) {
+      const job = deferredPreviewJobs.shift();
+      if (!job.target.isConnected || job.target.dataset.loadingPath !== job.path) continue;
+      previewJobsActive++;
+      Promise.resolve().then(job.run).catch(() => {}).finally(() => {
+        previewJobsActive--;
+        drainVisiblePreviewJobs();
+      });
+    }
+  }
+  function deferVisibleMediaPreview(target, media, replaceAll = true) {
+    if (!media?.storage_path || !target || !target.isConnected) return;
+    const path = media.storage_path;
+    if (target.dataset.loadedPath === path || target.dataset.loadingPath === path) return;
+    target.dataset.loadingPath = path;
+    const run = async () => {
+      try {
+        if (!target.isConnected || target.dataset.loadingPath !== path) return;
+        const url = await signedMediaUrlCached(media);
+        if (!target.isConnected || target.dataset.loadingPath !== path) return;
+        const element = await loadStablePreviewElement(media, url);
+        if (!target.isConnected || target.dataset.loadingPath !== path) return;
+        if (replaceAll) target.replaceChildren(element);
+        else {
+          const previous = Array.from(target.children).find(el => el.matches?.('img, video'));
+          if (previous) previous.replaceWith(element);
+          else target.insertBefore(element, target.firstChild);
+          target.querySelector('.media-preview-placeholder')?.remove();
+        }
+        target.dataset.loadedPath = path;
+        delete target.dataset.previewError;
+        target.removeAttribute('title');
+      } catch (error) {
+        if (target.isConnected) {
+          target.dataset.previewError = '1';
+          target.title = String(error?.message || 'Prévia indisponível');
+        }
+      } finally {
+        if (target.isConnected && target.dataset.loadingPath === path) delete target.dataset.loadingPath;
+      }
+    };
+    const job={target,path,run};
+    if (typeof IntersectionObserver === 'undefined') {
+      deferredPreviewJobs.push(job);
+      drainVisiblePreviewJobs();
+      return;
+    }
+    if (!deferredPreviewObserver) deferredPreviewObserver = new IntersectionObserver(entries => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        deferredPreviewObserver.unobserve(entry.target);
+        const queued = previewJobsByNode.get(entry.target);
+        previewJobsByNode.delete(entry.target);
+        if (queued) deferredPreviewJobs.push(queued);
+      }
+      drainVisiblePreviewJobs();
+    }, {rootMargin:'140px'});
+    previewJobsByNode.set(target,job);
+    deferredPreviewObserver.observe(target);
+  }
+  
   async function hydrateMediaPreviews() {
     hydrateOnlineContentPreviews().catch(() => {});
     for (const media of state.media.filter(item => item.storage_path && ['image','video'].includes(item.media_type))) {
-      const targets = $$(`[data-media-preview="${CSS.escape(media.id)}"]`);
-      if (!targets.length) continue;
-
-      for (const preview of targets) {
-        if (preview.dataset.loadedPath === media.storage_path || preview.dataset.loadingPath === media.storage_path) continue;
-        preview.dataset.loadingPath = media.storage_path;
-        try {
-          const url = await signedMediaUrlCached(media);
-          if (!preview.isConnected || preview.dataset.loadedPath === media.storage_path) continue;
-          const element = await loadStablePreviewElement(media, url);
-          if (!preview.isConnected) continue;
-          const old = Array.from(preview.children).find(node => node.matches?.('img, video'));
-          if (old) old.replaceWith(element);
-          else preview.insertBefore(element, preview.firstChild);
-          preview.querySelector('.media-preview-placeholder')?.remove();
-          preview.dataset.loadedPath = media.storage_path;
-          delete preview.dataset.previewError;
-          preview.removeAttribute('title');
-        } catch (error) {
-          if (preview.isConnected) {
-            preview.dataset.previewError = '1';
-            preview.title = String(error?.message || 'Prévia indisponível');
-          }
-        } finally {
-          if (preview.isConnected && preview.dataset.loadingPath === media.storage_path) delete preview.dataset.loadingPath;
-        }
-      }
+      const targets = $$('[data-media-preview="'+CSS.escape(media.id)+'"]');
+      for (const target of targets) deferVisibleMediaPreview(target, media, false);
     }
   }
 
+  
   function renderMedia() {
     const grid = $('#media-grid');
     const empty = $('#media-empty');
@@ -2588,29 +2632,16 @@
 
   async function hydratePlaylistCardPreviews(mediaIds) {
     hydrateOnlineContentPreviews().catch(() => {});
-    const mediaById = Object.fromEntries(state.media.map(media => [media.id, media]));
-    for (const mediaId of [...new Set(mediaIds.filter(Boolean))]) {
-      const media = mediaById[mediaId];
+    const byId = new Map(state.media.map(media => [media.id,media]));
+    for (const id of new Set(mediaIds.filter(Boolean))) {
+      const media=byId.get(id);
       if (!media?.storage_path || !['image','video'].includes(media.media_type)) continue;
-      const targets = $$(`[data-playlist-card-preview="${CSS.escape(mediaId)}"]`);
-      for (const target of targets) {
-        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
-        target.dataset.loadingPath = media.storage_path;
-        try {
-          const url = await signedMediaUrlCached(media);
-          const element = await loadStablePreviewElement(media, url);
-          if (!target.isConnected) continue;
-          target.replaceChildren(element);
-          target.dataset.loadedPath = media.storage_path;
-        } catch {
-          // Mantém o placeholder atual e permite nova tentativa numa próxima atualização.
-        } finally {
-          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
-        }
-      }
+      for (const target of $$('[data-playlist-card-preview="'+CSS.escape(id)+'"]'))
+        deferVisibleMediaPreview(target,media);
     }
   }
 
+  
   function renderPlaylists() {
     const grid = $('#playlists-grid');
     const empty = $('#playlists-empty');
@@ -2849,26 +2880,13 @@
     hydrateOnlineContentPreviews().catch(() => {});
     const visibleIds = new Set($$('[data-playlist-media-preview]').map(el => el.dataset.playlistMediaPreview).filter(Boolean));
     for (const media of state.media.filter(item => visibleIds.has(item.id))) {
-      const targets = $$(`[data-playlist-media-preview="${CSS.escape(media.id)}"]`);
-      if (!targets.length || !media.storage_path || !['image','video'].includes(media.media_type)) continue;
-      for (const target of targets) {
-        if (target.dataset.loadedPath === media.storage_path || target.dataset.loadingPath === media.storage_path) continue;
-        target.dataset.loadingPath = media.storage_path;
-        try {
-          const url = await signedMediaUrlCached(media);
-          const element = await loadStablePreviewElement(media, url);
-          if (!target.isConnected) continue;
-          target.replaceChildren(element);
-          target.dataset.loadedPath = media.storage_path;
-        } catch {
-          // Mantém o placeholder e tenta novamente quando a tela for atualizada.
-        } finally {
-          if (target.isConnected && target.dataset.loadingPath === media.storage_path) delete target.dataset.loadingPath;
-        }
-      }
+      if (!media.storage_path || !['image','video'].includes(media.media_type)) continue;
+      for (const target of $$('[data-playlist-media-preview="'+CSS.escape(media.id)+'"]'))
+        deferVisibleMediaPreview(target,media);
     }
   }
 
+  
   const WEEKDAY_NAMES = { 0: 'Dom', 1: 'Seg', 2: 'Ter', 3: 'Qua', 4: 'Qui', 5: 'Sex', 6: 'Sáb' };
 
   function formatDateShort(value) {
