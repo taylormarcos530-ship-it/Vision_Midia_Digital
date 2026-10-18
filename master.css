@@ -774,3 +774,6 @@ tbody tr:hover{background:rgba(109,124,255,.035)}
   body:not(.master-embedded) .master-topbar{position:static;top:auto;z-index:auto}
   body:not(.master-embedded) .master-content{padding-top:18px}
 }
+
+/* Logo do Master compartilha somente a marca global, não a foto de cada empresa. */
+.master-sidebar .sidebar-brand>span>img[data-vision-panel-logo]{display:block;width:100%;height:100%;object-fit:contain;padding:4px;border-radius:inherit}
