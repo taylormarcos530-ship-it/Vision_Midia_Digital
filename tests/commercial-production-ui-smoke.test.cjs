@@ -179,3 +179,26 @@ test('Master navigation reuses authenticated session and cannot be used as privi
  assert.match(saas,/group.classList.toggle\('hidden', !allowed\)/);
  assert.match(master,/master-admin/);
 });
+
+test('advertiser lists active TVs, not historical links with no deliveries',async()=>{
+ const {renderCampaigns}=await import('../commercial-ui.mjs');
+ const data={today:'2026-10-18',
+ campaigns:[{id:'c1',name:'Test',status:'draft',start_date:'2026-10-18',end_date:'2026-10-19',current_revision_id:'r1'}],
+ revisions:[{id:'r1',campaign_id:'c1',name:'Vision video',media_type:'video'}],
+ targets:[
+  {campaign_id:'c1',device_id:'tv1',point_name:'Academia Life',device_name:'Teste casa',active:true,online:true},
+  {campaign_id:'c1',device_id:'tv2',point_name:'Casa de carne',device_name:'Casa de carne',active:false,online:false}
+ ],daily:[]};
+ const current=renderCampaigns(data);
+ assert.match(current,/Teste casa/);
+ assert.doesNotMatch(current,/Casa de carne/);
+ data.targets[0].active=false;
+ data.targets[1].active=true;
+ const newLocation=renderCampaigns(data);
+ assert.doesNotMatch(newLocation,/Teste casa/);
+ assert.match(newLocation,/Casa de carne/);
+ data.daily=[{campaign_id:'c1',device_id:'tv1',day:'2026-10-18',completed_count:2}];
+ const historical=renderCampaigns(data);
+ assert.match(historical,/Teste casa/);
+ assert.match(historical,/vínculo encerrado/);
+});
