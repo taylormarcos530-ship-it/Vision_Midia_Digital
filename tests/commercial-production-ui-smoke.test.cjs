@@ -64,7 +64,7 @@ test('advertiser refresh updates metrics without discarding previously loaded pr
  assert.match(ui,/data-campaign-id=/);
  assert.match(ui,/export function updateCommercialCards/);
  assert.match(ui,/sameCommercialRevision/);
- assert.match(ui,/for\(const selector of \['\.campaign-head','\.metrics','\.period','\.points','details'\]\)/);
+ assert.match(ui,/for\(const selector of \['\.campaign-head','\.metrics','\.period','\.points','\.creative-breakdown','details'\]\)/);
  assert.match(ui,/if\(slot\.querySelector\('img,video'\)\)continue/);
  assert.match(page,/updateCommercialCards\(\$\('#campaigns'\),data\)/);
  assert.doesNotMatch(page,/\$\('#campaigns'\)\.innerHTML=renderCampaigns/);
