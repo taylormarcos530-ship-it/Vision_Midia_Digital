@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#171011" />
+  <title>Vision Menu Digital — Laboratório MVP 02</title>
+  <link rel="stylesheet" href="./menu.css" />
+  <script type="module" src="./menu.js"></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="brand"><span class="vision-logo">V</span><div><strong>Vision Menu Digital</strong><small>LABORATÓRIO · MVP 02 · SEM CONEXÃO COM PRODUÇÃO</small></div></div>
+    <span class="status-pill">Protótipo isolado</span>
+  </header>
+  <main class="workspace">
+    <section class="preview-section" aria-label="Prévia da TV">
+      <div class="preview-head"><div><span class="eyebrow">TEMPLATE OFICIAL 01</span><h1>Tabela de preços para açougue</h1></div><span class="format-pill">TV horizontal · 16:9</span></div>
+      <div class="tv-shell">
+        <div class="tv-canvas" id="tv-canvas" aria-label="Prévia do menu na televisão">
+          <div class="grain" aria-hidden="true"></div>
+          <div class="meat meat-top" aria-hidden="true"><span class="meat-marble"></span></div>
+          <div class="meat meat-bottom" aria-hidden="true"><span class="meat-marble"></span></div>
+          <div class="table-sheen" aria-hidden="true"></div>
+          <div class="template-region logo-region" data-region="logo">
+            <div id="logo-default" class="logo-default"><span class="logo-horns" aria-hidden="true">♜</span><small>CASA DE CARNES</small><strong id="logo-store-name">BOM SABOR</strong><span class="logo-rule"></span></div>
+            <img id="logo-image" class="logo-image hidden" alt="Logo do estabelecimento" />
+          </div>
+          <div class="template-region heading-region" data-region="heading"><span>TABELA DE <strong>PREÇOS</strong></span></div>
+          <div class="template-region products-region" data-region="products"><div id="tv-products" class="tv-products" aria-live="off"></div></div>
+          <div class="template-region video-region" data-region="video">
+            <div class="video-mat"><video id="menu-video" playsinline loop muted preload="metadata" aria-label="Vídeo promocional"></video><div id="video-placeholder" class="video-placeholder"><div class="video-placeholder-symbol">▶</div><strong>ESPAÇO PARA SEU VÍDEO</strong><span>Selecione um arquivo no painel ou teste o demonstrador.</span></div></div>
+          </div>
+          <div class="template-region footer-region" data-region="footer"><span class="footer-line"></span><strong>QUALIDADE, SABOR E ECONOMIA</strong><span>PARA SUA FAMÍLIA</span><span class="footer-line"></span></div>
+        </div>
+      </div>
+      <div class="preview-toolbar"><span id="preview-message" role="status">Tabela pronta para pré-visualização.</span><div class="preview-buttons"><button class="ghost-button" id="next-group" type="button">Ver próximo grupo</button><button class="ghost-button" id="fullscreen" type="button">Tela cheia</button></div></div>
+    </section>
+    <aside class="editor" aria-label="Editor do Menu Digital">
+      <div class="editor-heading"><strong>Personalize seu menu</strong><small>Alterações apenas neste navegador. Nenhum dado enviado.</small></div>
+      <section class="editor-card"><h2>Identidade</h2><label for="store-name">Nome do estabelecimento</label><input id="store-name" maxlength="48" value="Casa de Carnes Bom Sabor" autocomplete="off" /><label for="logo-upload">Logo (PNG, JPG ou WebP)</label><input id="logo-upload" type="file" accept="image/png,image/jpeg,image/webp" /><button id="clear-logo" class="text-button" type="button">Usar logo demonstrativa</button></section>
+      <section class="editor-card"><div class="card-head"><h2>Produtos e preços</h2><span id="product-count"></span></div><p class="hint">Até 8 produtos por vez na TV. Grupos adicionais alternam automaticamente.</p><div id="product-edit-list" class="product-edit-list"></div><form id="add-product-form" class="add-product-form"><label class="sr-only" for="new-name">Produto</label><input id="new-name" placeholder="Nome do produto" maxlength="48" required /><label class="sr-only" for="new-price">Preço</label><input id="new-price" placeholder="R$ 0,00" inputmode="decimal" required /><button class="primary-button" type="submit">Adicionar</button></form></section>
+      <section class="editor-card"><h2>Vídeo promocional</h2><p class="hint">O mesmo elemento de vídeo continua ativo enquanto a tabela muda.</p><div class="video-actions"><button id="demo-video" type="button" class="secondary-button">Usar vídeo de teste</button><label class="upload-button" for="video-upload">Escolher vídeo local</label><input id="video-upload" type="file" accept="video/mp4,video/webm,video/ogg" hidden /><button id="remove-video" type="button" class="text-button">Remover vídeo</button></div><label class="mute-control"><input id="audio-enabled" type="checkbox" /> Ativar áudio (quando permitido)</label><small id="video-info">Nenhum vídeo selecionado.</small></section>
+      <section class="editor-card"><h2>Configurações</h2><label for="interval-select">Trocar grupos a cada</label><select id="interval-select"><option value="5">5 segundos</option><option value="10" selected>10 segundos</option><option value="15">15 segundos</option></select><div class="editor-bottom"><button id="save-draft" class="primary-button" type="button">Salvar rascunho local</button><button id="reset-demo" class="text-button" type="button">Restaurar exemplo</button></div><small class="disclaimer">Preços fictícios para teste. O protótipo não publica nas TVs.</small></section>
+    </aside>
+  </main>
+</body>
+</html>
