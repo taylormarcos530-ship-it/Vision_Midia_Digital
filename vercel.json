@@ -1,7 +1,8 @@
 {
   "git": {
     "deploymentEnabled": {
-      "fix/advertiser-portal-safety-20261013": false
+      "fix/advertiser-portal-safety-20261013": false,
+      "fix/advertiser-staging-security-gate-20261018": false
     }
   },
   "cleanUrls": false,
