@@ -19,3 +19,8 @@ test('thumbnail optimization never changes playlist ordering or playback command
  assert.match(s,/async function hydratePlaylistCardPreviews\(/);
  assert.match(s,/async function hydrateMediaPreviews\(/);
 });
+
+test('mobile PWA receives new lazy-preview runtime under cache-busting app.js version',()=>{
+ const index=fs.readFileSync('index.html','utf8');
+ assert.match(index,/src="\.\/app\.js\?v=48"/);
+});
