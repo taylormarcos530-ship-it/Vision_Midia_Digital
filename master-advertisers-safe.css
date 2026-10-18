@@ -20,3 +20,9 @@
 .commercial-media-fallback{margin-top:10px}
 .commercial-media-fallback>summary{color:#cedaeb}
 @media(max-width:620px){.commercial-picker{padding:10px}.commercial-media-grid{grid-template-columns:repeat(2,minmax(0,1fr));max-height:42vh}}
+
+.location-consent{display:flex;gap:8px;align-items:flex-start}
+.location-consent input{width:auto;flex:none;margin:4px 0 0}
+.commercial-live-indicator{font-size:11px!important;color:#aebed2}
+.commercial-live-indicator.active{color:#64deb3}
+.commercial-point-address{font-size:12px!important;line-height:1.5;color:#d8e3f3;overflow-wrap:anywhere}

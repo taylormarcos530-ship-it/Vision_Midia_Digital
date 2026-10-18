@@ -80,3 +80,22 @@ test('advertiser scripts share explicit version to avoid stale service worker mo
  assert.ok(b);
  assert.equal(a[1],b[1]);
 });
+
+test('Master public address form needs explicit point consent, advertiser UI read-only',()=>{
+ const h=fs.readFileSync('master-advertisers.html','utf8');
+ const m=fs.readFileSync('master-advertisers.mjs','utf8');
+ assert.match(h,/id="public-points-dialog"/);
+ assert.match(h,/name="share_location"/);
+ assert.match(h,/name="consent_confirmed"/);
+ assert.match(m,/commercial_point_save/);
+ assert.match(m,/point_profiles/);
+ assert.match(m,/Confirme a autorização do estabelecimento/);
+ assert.doesNotMatch(fs.readFileSync('anunciante.html','utf8'),/public-points-form/);
+});
+test('advertiser shows telemetry and only consent-filtered locations, never raw private address',()=>{
+ const s=fs.readFileSync('commercial-ui.mjs','utf8');
+ assert.match(s,/commercial_on_screen/);
+ assert.match(s,/public_location/);
+ assert.match(s,/Sem confirmação de anúncio em tela/);
+ assert.match(s,/Anúncio sinalizado em reprodução/);
+});

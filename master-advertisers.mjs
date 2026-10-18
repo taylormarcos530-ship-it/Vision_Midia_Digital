@@ -33,7 +33,46 @@ async function load(){if(busy)return;busy=true;const ownGeneration=generation;tr
 function advertiser(id){const a=state.advertisers.find(x=>x.id===id);const f=$('#advertiser-form');f.reset();f.elements.id.value=a?.id||'';f.elements.name.value=a?.name||'';f.elements.email.value=a?.email||'';f.elements.email.disabled=!!a;f.elements.status.value=a?.status||'active';$('#advertiser-state').hidden=!a;$('#advertiser-title').textContent=a?'Editar anunciante':'Novo anunciante';f.querySelector('.form-error').textContent='';$('#advertiser-dialog').showModal();}
 async function campaign(advertiserId,existing){const f=$('#campaign-form');f.reset();f.elements.id.value=existing?.id||'';f.elements.advertiser_id.value=advertiserId;f.elements.name.value=existing?.name||'';f.elements.status.value=existing?.status||'draft';f.elements.start_date.value=existing?.start_date||'';f.elements.end_date.value=existing?.end_date||'';f.querySelector('.form-error').textContent='';const company=new Map(state.companies.map(c=>[c.id,c.name]));f.elements.media_id.innerHTML='<option value="">Selecione a mídia</option>'+(state.sources||[]).map(m=>`<option value="${esc(m.id)}">Vision comercial · ${esc(m.name)}</option>`).join('')+state.media.map(m=>`<option value="${esc(m.id)}">${esc(company.get(m.company_id)||'Vision')} · ${esc(m.name)}</option>`).join('');let targets=[];if(existing){const r=await api.masterCall('commercial_report',{id:advertiserId});const rev=(state.revisions||[]).find(x=>x.id===existing.current_revision_id);f.elements.media_id.value=rev?.source_media_id||'';targets=r.targets.filter(t=>t.campaign_id===existing.id&&t.active).map(t=>t.device_id);}
 $('#device-options').innerHTML=state.devices.map(d=>`<label class="device-choice"><input type="checkbox" name="device_ids" value="${esc(d.id)}" ${targets.includes(d.id)?'checked':''}><span>${esc(company.get(d.company_id)||'Ponto')} · ${esc(d.name)}</span></label>`).join('')||'<p>Nenhuma TV disponível.</p>';$('#campaign-dialog').showModal();mediaPicker.open(state,f.elements.media_id.value);}
-$('#new-advertiser').onclick=()=>{if(!demo)advertiser()};$('#reload').onclick=load;$('#search').oninput=render;$('#show-archived').onchange=render;$('#close-report').onclick=()=>{$('#report').hidden=true;$('#report-campaigns').replaceChildren()};
+$('#new-advertiser').onclick=()=>{if(!demo)advertiser()};
+
+function showPointForm(){
+ const form=$('#public-points-form');
+ const comp=new Map((state?.companies||[]).map(row=>[row.id,row.name]));
+ form.elements.device_id.innerHTML=(state?.devices||[]).map(d=>
+  '<option value="'+esc(d.id)+'">'+esc(comp.get(d.company_id)||'Estabelecimento')+' · '+esc(d.name)+'</option>').join('');
+ if(!form.elements.device_id.options.length){message('Nenhuma TV cadastrada.',true);return;}
+ loadPointForm();$('#public-points-dialog').showModal();
+}
+function loadPointForm(){
+ const f=$('#public-points-form');
+ const row=(state?.point_profiles||[]).find(p=>p.device_id===f.elements.device_id.value);
+ for(const k of ['public_label','public_address','neighborhood','city'])f.elements[k].value=row?.[k]||'';
+ f.elements.share_location.checked=Boolean(row?.share_location&&row?.consent_confirmed_at);
+ f.elements.consent_confirmed.checked=Boolean(row?.share_location&&row?.consent_confirmed_at);
+ f.querySelector('.form-error').textContent='';
+}
+$('#public-points-button').onclick=()=>{if(!demo)showPointForm()};
+$('#public-points-form [name="device_id"]').onchange=loadPointForm;
+$('#public-points-form').onsubmit=async e=>{
+ e.preventDefault();
+ const f=e.currentTarget,b=e.submitter;
+ const values=Object.fromEntries(new FormData(f).entries());
+ values.share_location=f.elements.share_location.checked;
+ values.consent_confirmed=f.elements.consent_confirmed.checked;
+ if(values.share_location&&!values.consent_confirmed){
+  f.querySelector('.form-error').textContent='Confirme a autorização do estabelecimento.';return;
+ }
+ b.disabled=true;
+ try{
+  const res=await api.masterCall('commercial_point_save',values);
+  if(!res.ok)throw new Error('Endereço não confirmado pelo servidor.');
+  $('#public-points-dialog').close();
+  await load();
+  message(res.share_location?'Endereço comercial autorizado e publicado para os anunciantes vinculados.':'Localização mantida privada.');
+ }catch(error){f.querySelector('.form-error').textContent=error.message;}
+ finally{b.disabled=false;}
+};
+$('#reload').onclick=load;$('#search').oninput=render;$('#show-archived').onchange=render;$('#close-report').onclick=()=>{$('#report').hidden=true;$('#report-campaigns').replaceChildren()};
 for(const b of document.querySelectorAll('[data-close]'))b.onclick=()=>document.getElementById(b.dataset.close).close();$('#access-dialog').addEventListener('close',()=>{$('#access-result').textContent=''});
 $('#master-login-form').onsubmit=async e=>{e.preventDefault();e.submitter.disabled=true;try{const f=new FormData(e.target);await api.login(f.get('email'),f.get('password'));e.target.reset();await load()}catch(error){message(error.message,true)}finally{e.submitter.disabled=false}};
 $('#advertiser-form').onsubmit=async e=>{e.preventDefault();const f=e.target,id=f.elements.id.value;const values=Object.fromEntries(new FormData(f));e.submitter.disabled=true;try{const r=await api.masterCall(id?'commercial_update_advertiser':'commercial_create_advertiser',values);$('#advertiser-dialog').close();await load();if(r.temporary_password)access(r,values.email)}catch(error){f.querySelector('.form-error').textContent=error.message}finally{e.submitter.disabled=false}};
