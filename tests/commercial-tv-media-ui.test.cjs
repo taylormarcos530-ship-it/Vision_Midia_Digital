@@ -145,7 +145,8 @@ test('two separate selected files get visible independent previews and commercia
  d.el('media-photo').onload();
  d.tick(2500);
  assert.match(d.el('media-round').textContent,/item 5 de 8/);
- assert.equal(d.el('media-video').hidden,false);
+ assert.equal(d.el('media-video').hidden,true,'the video from item 1 must not repeat at item 5');
+ assert.equal([...d.timers.values()][0].delay,2000,'unfilled slot uses a fictitious frame');
 });
 
 test('automatic reconnection after three seconds resumes the exact media and rejects old callbacks',async()=>{
