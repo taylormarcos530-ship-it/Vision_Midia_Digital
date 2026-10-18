@@ -24,7 +24,8 @@ export async function saveCommercialWithSnapshot(admin,actorId,campaign){
   throw commercialError('invalid_campaign');
  const table=campaign.commercial_source_id?'vision_commercial_sources':'media_assets';
  const sourceId=campaign.commercial_source_id||campaign.media_id;
- const media=unwrap(await admin.from(table).select('id,storage_path,processing_status,media_type,checksum_sha256,updated_at')
+ const columns=campaign.commercial_source_id?'id,storage_path,media_type,checksum_sha256,updated_at':'id,storage_path,processing_status,media_type,checksum_sha256,updated_at';
+ const media=unwrap(await admin.from(table).select(columns)
   .eq('id',sourceId).maybeSingle());
  if(!media||(!campaign.commercial_source_id&&media.processing_status!=='ready')||!['image','video'].includes(media.media_type)||!media.storage_path)
   throw commercialError('ready_image_or_video_required');
