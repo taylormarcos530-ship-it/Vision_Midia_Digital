@@ -131,5 +131,5 @@ test('owned creative preview never claims to broadcast a real TV or fake the cou
  assert.match(markup,/id="commercial-revision-dialog"/);
  assert.match(markup,/commercial-r3-20261018/);
  assert.match(script,/commercial-r3-20261018/);
- assert.doesNotMatch(script,/createSignedUrl\\(.*service_role/);
+ assert.doesNotMatch(script,/sb_secret_/);
 });
