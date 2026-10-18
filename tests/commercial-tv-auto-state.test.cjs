@@ -136,7 +136,7 @@ test('protected playlist modes never gain commercial items while advancing',asyn
   }
  }
 });
-test('automatic bench is entirely offline, no persistence or operational gateway modification',()=>{
+test('automatic bench stays offline and independent from the opt-in live rotation gateway',()=>{
  const src=fs.readFileSync('commercial-tv-auto-state.mjs','utf8');
  assert.match(src,/simulateBench/);
  assert.match(src,/event\.type==='complete'/);
@@ -144,5 +144,7 @@ test('automatic bench is entirely offline, no persistence or operational gateway
  assert.match(src,/restoreAutoBench/);
  assert.doesNotMatch(src,/fetch\(|createClient\(|supabase\.co|\.rpc\(|localStorage|sessionStorage|service_role/);
  const gateway=fs.readFileSync('supabase/functions/_shared/commercial.mjs','utf8');
- assert.match(gateway,/return interleave\(primary,ads\)/,'existing gateway invocation is unchanged');
+ assert.doesNotMatch(gateway,/commercial-tv-auto-state/,'local simulation cannot be imported by operational gateway');
+ assert.match(gateway,/export async function augmentCommercial\(admin,device,primary,supportsSchedules,enabled,timeZone='America\/Sao_Paulo',commercialCycle=0\)/);
+ assert.match(gateway,/return interleave\(primary,ads,3,commercialCycle\)/,'isolated Player now selects the next complete cycle');
 });

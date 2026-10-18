@@ -9,7 +9,7 @@ export function commercialEligibility(primary) {
 // Cycle-based rotation is pure and opt-in. No device state, DB writes or timers.
 // Each completed manifest cycle advances by its number of commercial slots,
 // giving every eligible creative equal opportunity over repeated simulated cycles.
-// NOTE: actual players do not yet pass cycle indexes to the gateway.
+// Candidate Player sends completed-cycle indexes; real devices remain disabled until an authorized pilot.
 export function cycleCommercialSelection(ads,slots,cycle=0) {
  if(!Array.isArray(ads)||!ads.length||!Number.isSafeInteger(slots)||slots<=0)return [];
  const size=Math.min(slots,ads.length);
