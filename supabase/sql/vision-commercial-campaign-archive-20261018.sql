@@ -110,3 +110,13 @@ RETURNS jsonb LANGUAGE sql STABLE SECURITY DEFINER SET search_path='' AS $$
  );
 $$;
 revoke all on function private.vision_portal_data(uuid) from public,anon,authenticated;
+
+-- Direct authenticated PostgREST access must also hide archived commercial data.
+alter policy commercial_self on public.vision_commercial_campaigns
+ using(advertiser_id=(select private.vision_advertiser_id()) and archived_at is null);
+alter policy commercial_revision_self on public.vision_commercial_revisions
+ using(exists(select 1 from public.vision_commercial_campaigns c where c.id=vision_commercial_revisions.campaign_id and c.advertiser_id=(select private.vision_advertiser_id()) and c.archived_at is null));
+alter policy commercial_target_self on public.vision_commercial_targets
+ using(exists(select 1 from public.vision_commercial_campaigns c where c.id=vision_commercial_targets.campaign_id and c.advertiser_id=(select private.vision_advertiser_id()) and c.archived_at is null));
+alter policy commercial_daily_self on public.vision_commercial_daily
+ using(exists(select 1 from public.vision_commercial_campaigns c where c.id=vision_commercial_daily.campaign_id and c.advertiser_id=(select private.vision_advertiser_id()) and c.archived_at is null));
