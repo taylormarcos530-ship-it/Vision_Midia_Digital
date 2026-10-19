@@ -2462,3 +2462,6 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 
 /* Logo global Vision: mantém o V como fallback sem configuração. */
 .brand-mark>img[data-vision-panel-logo]{display:block;width:100%;height:100%;object-fit:contain;padding:4px;border-radius:inherit}
+
+/* Device last-contact timestamp: compact and readable on mobile. */
+.device-last-connection{margin:8px 0 12px;padding:9px 12px;border:1px solid rgba(148,163,184,.2);border-radius:10px;color:#cbd5e1;font-size:12px;line-height:1.4;background:rgba(15,23,42,.45)}
