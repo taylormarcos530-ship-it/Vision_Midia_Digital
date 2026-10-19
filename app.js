@@ -2367,8 +2367,8 @@
       const mediaId=button.dataset.linkMediaAdvertiser||button.dataset.unlinkMediaAdvertiser;
       const linked=advertiserMediaLinks?.get(mediaId);
       const loaded=advertiserMediaLinks!==null;
-      button.disabled=!loaded;
-      button.textContent=!loaded?'Consultando…':linked?.length?'Desvincular anunciante':'Vincular anunciante';
+      button.disabled=false;
+      button.textContent=!loaded?'Verificar vínculo do anunciante':linked?.length?'Desvincular anunciante':'Vincular anunciante';
       button.title=linked?.length
        ?'Vinculado a '+linked.map(x=>x.advertiserName+' · '+x.name).join(', ')+'. Selecione a campanha antes de desvincular.'
        :'Vincular anunciante sem editar a playlist';
@@ -4545,7 +4545,7 @@
     const playlistId = row?.querySelector('[data-media-playlist-select]')?.value;
     const rowItem = state.playlistItems.find(i => i.id === row?.dataset.playlistDragItem && i.playlist_id === playlistId);
     const item = rowItem || state.playlistItems.find(i => i.media_id === mediaId && i.playlist_id === playlistId);
-    if (!item) return toast('Vincule primeiro', 'Escolha uma playlist e vincule a mídia para ajustar o tempo.', 'info');
+    if (!item) { const linked = state.playlistItems.filter(i => i.media_id === mediaId); if(linked.length) return toast('Selecione a playlist vinculada', 'Esta mídia já está em outra playlist. Escolha a playlist marcada como já vinculada para editar seu tempo.', 'info'); return toast('Vincule primeiro', 'Clique em + Vincular para adicionar esta mídia à playlist selecionada; depois ajuste o Tempo.', 'info'); }
     const media = state.media.find(m => m.id === mediaId);
     const dialog = $('#media-duration-dialog');
     dialog.dataset.itemId = item.id;
@@ -5141,7 +5141,7 @@
       if (mediaAdvertiserButton) {
         if (!state.isPlatformAdmin) return toast('Acesso restrito', 'Somente o Master Vision pode vincular anúncios comerciais.', 'error');
         const mediaId=mediaAdvertiserButton.dataset.linkMediaAdvertiser||mediaAdvertiserButton.dataset.unlinkMediaAdvertiser;
-        if(!advertiserMediaLinks)return toast('Verificação indisponível','Atualize a página para confirmar os vínculos comerciais.','error');
+        if(!advertiserMediaLinks){await refreshAdvertiserMediaLinks(true);if(!advertiserMediaLinks)return toast('Vínculos indisponíveis','Não foi possível consultar os vínculos comerciais. Confira sua sessão Master e tente novamente.','error');}
         const media = state.media.find(m => m.id === mediaId);
         if (!media || !['image','video'].includes(media.media_type)) return;
         const linked=advertiserMediaLinks.get(media.id)?.length>0;
