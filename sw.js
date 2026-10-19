@@ -1,4 +1,4 @@
-const CACHE = 'vision-midia-shell-v42';
+const CACHE = 'vision-midia-shell-v43';
 // preview-refresh-v39-timed-access
 // preview-refresh-v35-playlists
 const SHELL = [
