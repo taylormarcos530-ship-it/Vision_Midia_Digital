@@ -2613,18 +2613,18 @@
       return;
     }
 
-    if (!state.playlists.some(p => p.id === state.mediaOrderPlaylistId)) state.mediaOrderPlaylistId = state.playlists[0]?.id || '';
+    if (state.mediaOrderPlaylistId !== 'all' && !state.playlists.some(p => p.id === state.mediaOrderPlaylistId)) state.mediaOrderPlaylistId = 'all';
     const orderPlaylist = state.mediaOrderPlaylistId;
     let toolbar = $('#media-order-toolbar');
     if (!toolbar) {
       toolbar = document.createElement('div'); toolbar.id = 'media-order-toolbar';
       grid.before(toolbar);
     }
-    toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist">${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Segure ⋮⋮ e arraste, ou use ↑ ↓. A ordem é salva na playlist escolhida.</small>`;
+    toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist"><option value="all" ${orderPlaylist === 'all' ? 'selected' : ''}>Todas as mídias</option>${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Segure ⋮⋮ e arraste, ou use ↑ ↓. A ordem é salva na playlist escolhida.</small>`;
     const orderedItems = state.playlistItems.filter(i => i.playlist_id === orderPlaylist).sort((a,b) => a.position-b.position);
     const linkedIds = new Set(orderedItems.map(i => i.media_id));
     const entries = orderedItems.map(item => ({media:state.media.find(m => m.id === item.media_id),item})).filter(e => e.media);
-    entries.push(...state.media.filter(m => !linkedIds.has(m.id)).map(media => ({media,item:null})));
+    if (orderPlaylist === 'all') entries.push(...state.media.filter(m => !linkedIds.has(m.id)).map(media => ({media,item:null})));
     const signature = currentMediaRenderSignature() + ':' + orderPlaylist + ':' + orderedItems.map(i => i.id + ':' + i.position + ':' + i.duration_override_seconds).join('|');
     if (signature === state.mediaRenderSignature && grid.children.length === entries.length) {
       hydrateMediaPreviews();
