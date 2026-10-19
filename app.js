@@ -1571,6 +1571,8 @@
           <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
 
+        <div class="device-last-connection" aria-label="Último contato da TV com o servidor">🕒 ${device.last_seen_at ? `Última conexão: ${escapeHtml(formatLastSeen(device.last_seen_at))}` : "Aguardando primeira conexão"}</div>
+
         <div class="device-screen ${captureUi.className} ${device.orientation === 'portrait' ? 'configured-portrait' : device.orientation === 'landscape' ? 'configured-landscape' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}" data-screenshot-valid="${captureUi.useScreenshot === false ? '0' : '1'}">
           ${captureUi.body}
         </div>
