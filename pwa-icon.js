@@ -38,7 +38,7 @@
  document.body.append(dialog);let draft=null;
  const input=dialog.querySelector('input'),preview=dialog.querySelector('img'),status=dialog.querySelector('[role=status]'),save=dialog.querySelector('[data-save]');
  dialog.querySelector('[data-close]').onclick=()=>dialog.close();
- button.onclick=async()=>{editingPanelLogo=false;await update();status.textContent='';dialog.querySelector('h2').textContent='Ícone do aplicativo';dialog.querySelector('p').textContent='A imagem será usada no favicon, na logo interna da Vision e nas novas instalações do aplicativo.';save.textContent='Salvar ícone';dialog.showModal();};
+ button.onclick=async()=>{await update();status.textContent='';dialog.querySelector('h2').textContent='Ícone do aplicativo';dialog.querySelector('p').textContent='A imagem será usada no favicon, na logo interna da Vision e nas novas instalações do aplicativo.';save.textContent='Salvar ícone';dialog.showModal();};
  input.onchange=async()=>{
   draft=null;save.disabled=true;const file=input.files[0];if(!file)return;
   try{
