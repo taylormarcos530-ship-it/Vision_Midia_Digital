@@ -5116,7 +5116,7 @@
         );
       }
     });
-    document.addEventListener('click', event => {
+    document.addEventListener('click', async event => {
       const authorizeDevice = event.target.closest('[data-authorize-device]');
       if (authorizeDevice) return authorizeDevicePermanently(authorizeDevice.dataset.authorizeDevice);
       const viewDevice = event.target.closest('[data-view-device]');
