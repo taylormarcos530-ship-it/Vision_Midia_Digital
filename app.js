@@ -5286,6 +5286,7 @@
 
   bootstrap().catch(error => {
     console.error(error);
-    toast('Erro ao iniciar o painel', error.message, 'error', 8000);
+    showScreen('auth');
+    toast('Erro ao iniciar o painel', error?.message || 'Tente novamente.', 'error', 8000);
   });
 })();
