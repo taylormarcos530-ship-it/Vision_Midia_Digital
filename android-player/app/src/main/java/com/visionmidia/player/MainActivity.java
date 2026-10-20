@@ -463,6 +463,22 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public boolean setDisplayRotation(int degrees) {
+            // The WebView is the entire TV display surface. Rotate it natively
+            // instead of applying competing CSS transforms to video layers.
+            // 90/270 require viewport dimension changes and remain CSS-managed.
+            if (degrees != 0 && degrees != 180) return false;
+            runOnUiThread(() -> {
+                if (webView != null) {
+                    webView.setPivotX(webView.getWidth() / 2f);
+                    webView.setPivotY(webView.getHeight() / 2f);
+                    webView.setRotation(degrees);
+                }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
         public boolean setOrientation(String mode) {
             final String requested = mode == null ? "auto" : mode.toLowerCase(Locale.ROOT);
 
