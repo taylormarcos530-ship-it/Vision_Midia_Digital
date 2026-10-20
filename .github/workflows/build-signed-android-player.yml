@@ -2,6 +2,12 @@ name: Build Signed Vision Player APK
 
 on:
   workflow_dispatch:
+  push:
+    branches: [fix/android-tv-native-rotation-20261020]
+    paths:
+      - 'android-player/**'
+      - 'player.js'
+      - '.github/workflows/build-signed-android-player.yml'
 
 permissions:
   contents: write
