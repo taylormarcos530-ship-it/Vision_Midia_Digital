@@ -565,7 +565,7 @@ Deno.serve(async (req) => {
         .maybeSingle()
       if (commandError) throw commandError
       if (!command) return json({ error:'command_not_found' }, 404)
-      if (!['restart_player','sync_now','clear_cache','reload_programming'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
+      if (!['restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
       const update = status === 'completed'
         ? { status:'completed', completed_at:new Date().toISOString(), error_message:null, result:{ acknowledged:true } }
         : { status:'failed', completed_at:new Date().toISOString(), error_message:String(body?.error_message || 'command_failed').slice(0,500) }
