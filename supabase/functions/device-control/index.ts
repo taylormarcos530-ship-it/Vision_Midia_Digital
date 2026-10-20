@@ -61,7 +61,7 @@ Deno.serve(async req => {
 
     const { data: device, error: deviceError } = await admin
       .from('devices')
-      .select('id,company_id,name,retired_at,status')
+      .select('id,company_id,name,retired_at,status,apk_version')
       .eq('id', deviceId)
       .eq('company_id', companyId)
       .maybeSingle()
@@ -70,6 +70,13 @@ Deno.serve(async req => {
 
     const allowedCommands = ['restart_player','sync_now','clear_cache','reload_programming','update_apk']
     if (!allowedCommands.includes(action)) return J({ error: 'unknown_action' }, 400)
+
+    if (action === 'update_apk') {
+      const match = String(device.apk_version || '').match(/^(\d+)\.(\d+)\.(\d+)/)
+      if (!match || Number(match[1]) < 1 || (Number(match[1]) === 1 && Number(match[2]) < 5) || (Number(match[1]) === 1 && Number(match[2]) === 5 && Number(match[3]) < 12)) {
+        return J({ error: 'apk_updater_requires_initial_install_1_5_12' }, 409)
+      }
+    }
 
     const { data: pending, error: pendingError } = await admin
       .from('device_commands')
