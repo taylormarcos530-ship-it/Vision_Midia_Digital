@@ -708,7 +708,15 @@
     try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
     await applyPlayerOrientation(orientation);
     const angle=[0,90,180,270].includes(Number(settings.screen_rotation_degrees))?Number(settings.screen_rotation_degrees):0;
-    document.body.dataset.screenRotationDegrees=String(angle);
+    let nativeRotationApplied = false;
+    try {
+      if (window.VisionAndroid?.setDisplayRotation) {
+        nativeRotationApplied = window.VisionAndroid.setDisplayRotation(angle) === true;
+      }
+    } catch {}
+    // Native WebView rotation is authoritative. CSS is used only by browsers
+    // and older APKs that do not implement the bridge.
+    document.body.dataset.screenRotationDegrees=String(nativeRotationApplied ? 0 : angle);
     const currentVideo = $('#media-stage video');
     if (currentVideo) currentVideo.muted = !state.audioEnabled;
     const revision = Number(settings.cache_revision || 0);
