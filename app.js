@@ -2429,7 +2429,9 @@
     const linked = new Set(state.playlistItems.filter(item => item.media_id === mediaId).map(item => item.playlist_id));
     return '<option value="">Escolha a playlist…</option>' + state.playlists.map(playlist => {
       const already = linked.has(playlist.id);
-      return `<option value="${playlist.id}" ${playlist.id === [...linked][0] ? 'selected' : ''}>${escapeHtml(playlist.name)}${already ? ' • já vinculada' : ''}</option>`;
+      const assigned = state.deviceAssignments.filter(a => a.playlist_id === playlist.id);
+      const destination = assigned.length ? ' • ' + assigned.length + (assigned.length === 1 ? ' TV vinculada' : ' TVs vinculadas') : ' • nenhuma TV vinculada';
+      return `<option value="${playlist.id}" ${playlist.id === [...linked][0] ? 'selected' : ''}>${escapeHtml(playlist.name + destination)}${already ? ' • mídia já vinculada' : ''}</option>`;
     }).join('');
   }
 
