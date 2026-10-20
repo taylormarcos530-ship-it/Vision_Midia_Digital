@@ -1211,7 +1211,7 @@
     const result=await gateway({action:'commands'});
     for(const command of result?.commands||[]){
       if(state.processingCommands.has(command.id))continue;
-      if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming'].includes(command.command_type))continue;
+      if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type))continue;
       state.processingCommands.add(command.id);
       try{
         if(command.command_type==='screenshot'){
@@ -1227,6 +1227,13 @@
           continue;
         }
 
+        if(command.command_type==='update_apk'){
+          if(typeof window.VisionAndroid?.requestApkUpdate!=='function')throw new Error('Atualizador indisponível neste APK');
+          const accepted=window.VisionAndroid.requestApkUpdate('https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk');
+          if(accepted!==true)throw new Error('Download não iniciado');
+          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          continue;
+        }
         if(command.command_type==='sync_now'){
           await syncManifest();
           await gateway({action:'command_result',command_id:command.id,status:'completed'});
