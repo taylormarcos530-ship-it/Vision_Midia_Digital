@@ -2239,6 +2239,16 @@
     $('#monitor-issues').textContent = issues;
     $('#monitor-stale-sync').textContent = staleSync;
 
+    // Online indicates communication with the player, not electrical power
+    // or picture output from the connected television.
+    const monitoringHeading = $('#monitor-online')?.parentElement;
+    if (monitoringHeading && !monitoringHeading.querySelector('[data-player-online-note]')) {
+      const note = document.createElement('small');
+      note.dataset.playerOnlineNote = 'true';
+      note.textContent = 'Player conectado; TV ligada não confirmada';
+      monitoringHeading.appendChild(note);
+    }
+
     const grid = $('#monitor-devices-grid');
     const empty = $('#monitor-devices-empty');
     const search = String($('#monitor-device-search')?.value || '').trim().toLowerCase();
@@ -2291,6 +2301,7 @@
               ${diagnostics.map(alert => `<span class="health-chip ${alert.level}">${escapeHtml(alert.label)}</span>`).join('')}
             </div>
             <div class="monitor-data-grid monitor-device-details">
+              <div><span>Estado da televisão</span><strong>Não verificado • status online refere-se ao Player</strong></div>
               <div><span>Última conexão</span><strong>${escapeHtml(formatLastSeen(device.last_seen_at))}</strong></div>
               <div><span>Última sincronização</span><strong>${escapeHtml(device.last_sync_at ? formatMonitorDateTime(device.last_sync_at) : 'Ainda não sincronizou')}</strong></div>
               <div><span>Player</span><strong>${escapeHtml(device.player_version || device.app_version || '—')}</strong></div>
