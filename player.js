@@ -707,6 +707,8 @@
     state.audioEnabled = settings.audio_enabled !== false;
     try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
     await applyPlayerOrientation(orientation);
+    const angle=[0,90,180,270].includes(Number(settings.screen_rotation_degrees))?Number(settings.screen_rotation_degrees):0;
+    document.body.dataset.screenRotationDegrees=String(angle);
     const currentVideo = $('#media-stage video');
     if (currentVideo) currentVideo.muted = !state.audioEnabled;
     const revision = Number(settings.cache_revision || 0);
