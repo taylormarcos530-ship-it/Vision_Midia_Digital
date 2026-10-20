@@ -2,7 +2,7 @@ name: Build Vision Player APK
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/android-tv-native-rotation-20261020]
     paths:
       - 'android-player/**'
       - 'player.html'
