@@ -74,13 +74,11 @@ body.force-player-landscape .media-stage iframe{
 
 /* Per-device correction after automatic portrait/landscape handling.
    180° preserves the stage aspect ratio; 90°/270° swap its viewport dimensions. */
-body[data-screen-rotation-degrees="180"] .playback-screen {
-  transform:translate(-50%,-50%) rotate(180deg);
-  position:fixed;left:50%;top:50%;
-}
-body.force-player-portrait[data-screen-rotation-degrees="180"] .playback-screen,
-body.force-player-landscape[data-screen-rotation-degrees="180"] .playback-screen {
-  transform:translate(-50%,-50%) rotate(270deg);
+/* Flip the content inside the already-oriented screen, not the screen frame.
+   This works whether portrait orientation was handled natively or via CSS. */
+body[data-screen-rotation-degrees="180"] .media-stage {
+  transform:rotate(180deg) !important;
+  transform-origin:center center;
 }
 body[data-screen-rotation-degrees="90"] .playback-screen,
 body[data-screen-rotation-degrees="270"] .playback-screen {
