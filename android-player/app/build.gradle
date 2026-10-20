@@ -10,8 +10,8 @@ android {
         applicationId 'com.visionmidia.player'
         minSdk 24
         targetSdk 35
-        versionCode 25
-        versionName '1.5.13'
+        versionCode 26
+        versionName '1.5.14'
         manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia']
     }
 
