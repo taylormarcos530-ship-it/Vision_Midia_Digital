@@ -1631,6 +1631,7 @@
           <small>Gira o Vision Player inteiro, não apenas uma imagem.</small>
         </label>
 
+        <label class="device-orientation-quick"><span>Ajuste fino da rotação</span><select data-device-rotation-degrees="${device.id}" ${['owner','admin','operator'].includes(state.companyRole)?'':'disabled'}>${[0,90,180,270].map(deg=>`<option value="${deg}" ${Number(device.settings?.screen_rotation_degrees||0)===deg?'selected':''}>${deg}°${deg===0?' (padrão)':''}</option>`).join('')}</select><small>Se a imagem estiver de cabeça para baixo, experimente 180°. Ajuste apenas esta TV.</small></label>
         <details class="device-maintenance-panel">
           <summary>Manutenção e diagnóstico</summary>
           <div class="device-maintenance-grid">
@@ -3854,6 +3855,21 @@
     }
   }
 
+  async function updateDeviceRotationDegrees(deviceId,value,control){
+    const device=state.devices.find(d=>d.id===deviceId);
+    const degrees=Number(value);
+    if(!device||![0,90,180,270].includes(degrees)||!['owner','admin','operator'].includes(state.companyRole))return false;
+    const old=Number(device.settings?.screen_rotation_degrees||0);
+    control.disabled=true;
+    try{
+      const settings={...(device.settings||{}),screen_rotation_degrees:degrees};
+      await restRequest('devices',{method:'PATCH',query:`id=eq.${encodeURIComponent(deviceId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{settings},prefer:'return=minimal'});
+      device.settings=settings;
+      toast('Rotação salva',`${degrees}°. A TV aplicará o ajuste na próxima sincronização.`);
+      await loadAllData();return true;
+    }catch(error){control.value=String(old);toast('Erro ao ajustar rotação',error.message,'error');return false}
+    finally{if(control.isConnected)control.disabled=false}
+  }
   async function updateDeviceOrientationQuick(deviceId, orientation, control = null) {
     const device = state.devices.find(item => item.id === deviceId);
     const allowed = ['auto','landscape','portrait'];
@@ -5109,6 +5125,8 @@
     });
 
     document.addEventListener('change', event => {
+      const degreesControl = event.target.closest?.('[data-device-rotation-degrees]');
+      if (degreesControl) return updateDeviceRotationDegrees(degreesControl.dataset.deviceRotationDegrees, degreesControl.value, degreesControl);
       const orientationControl = event.target.closest?.('[data-device-orientation-quick]');
       if (orientationControl) {
         return updateDeviceOrientationQuick(
