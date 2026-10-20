@@ -159,17 +159,5 @@ jobs:
             downloads/Vision-Player.source.json
           retention-days: 90
 
-      - name: Commit signed APK to selected branch
-        if: github.ref_type == 'branch'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add downloads/Vision-Player.apk downloads/Vision-Player.sha256 downloads/Vision-Player.source.json
-          if git diff --cached --quiet; then
-            echo 'Signed APK already up to date.'
-            exit 0
-          fi
-          git commit -m 'build: publish signed Vision Player APK'
-          git push origin "HEAD:$GITHUB_REF_NAME"
+      # Signed APK remains available as a verified workflow artifact.
+      # Publishing to the distribution site requires a separate reviewed release.
