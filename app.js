@@ -1209,7 +1209,7 @@
   }
 
   function remoteCommandLabel(type) {
-    return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação' })[type] || type || 'Comando';
+    return ({ screenshot:'Captura de tela', restart_player:'Reiniciar Player', sync_now:'Sincronizar agora', clear_cache:'Limpar cache', reload_programming:'Recarregar programação', update_apk:'Atualizar APK' })[type] || type || 'Comando';
   }
 
   function remoteCommandStatusLabel(status) {
@@ -1377,7 +1377,8 @@
 
   async function requestDeviceMaintenanceCommand(deviceId, commandType, button = null) {
     const device = state.devices.find(item => item.id === deviceId);
-    if (!device || !['sync_now','clear_cache','reload_programming'].includes(commandType) || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (!device || !['sync_now','clear_cache','reload_programming','update_apk'].includes(commandType) || !['owner','admin','operator'].includes(state.companyRole)) return false;
+    if (commandType === 'update_apk' && !confirm(`Solicitar atualização do APK na TV “${device.name}”? A instalação pode exigir confirmação no aparelho.`)) return false;
     if (commandType === 'clear_cache' && !confirm(`Limpar o cache local da TV “${device.name}” e sincronizar novamente?`)) return false;
     setBusy(button, true, 'Enviando...');
     try {
@@ -1591,6 +1592,7 @@
               ${['owner','admin','operator'].includes(state.companyRole) ? `<button class="device-menu-action" type="button" data-restart-device="${device.id}">↻ Reiniciar Player</button>
               <button class="device-menu-action" type="button" data-maintenance-command="sync_now" data-maintenance-device="${device.id}">⟳ Sincronizar agora</button>
               <button class="device-menu-action" type="button" data-maintenance-command="reload_programming" data-maintenance-device="${device.id}">▶ Recarregar programação</button>
+              <button class="device-menu-action" type="button" data-maintenance-command="update_apk" data-maintenance-device="${device.id}">⬇ Atualizar APK</button>
               <button class="device-menu-action" type="button" data-maintenance-command="clear_cache" data-maintenance-device="${device.id}">⌫ Limpar cache</button>` : ''}
               <button class="device-menu-action" type="button" data-edit-device="${device.id}">✎ Editar TV</button>
               <button class="device-menu-action danger-inline" type="button" data-delete-device="${device.id}">× Excluir TV</button>
