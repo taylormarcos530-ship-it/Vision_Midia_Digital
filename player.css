@@ -95,5 +95,5 @@ body.force-player-landscape[data-screen-rotation-degrees="90"] .playback-screen 
 }
 body.force-player-portrait[data-screen-rotation-degrees="270"] .playback-screen,
 body.force-player-landscape[data-screen-rotation-degrees="270"] .playback-screen {
-  width:100vw;height:100vh;transform:translate(-50%,-50%) rotate(0deg);
+  width:100vh;height:100vw;transform:translate(-50%,-50%) rotate(270deg);
 }
