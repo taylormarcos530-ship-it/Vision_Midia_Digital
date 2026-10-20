@@ -68,7 +68,7 @@ Deno.serve(async req => {
     if (deviceError) throw deviceError
     if (!device || device.retired_at) return J({ error: 'device_not_found' }, 404)
 
-    const allowedCommands = ['restart_player','sync_now','clear_cache','reload_programming']
+    const allowedCommands = ['restart_player','sync_now','clear_cache','reload_programming','update_apk']
     if (!allowedCommands.includes(action)) return J({ error: 'unknown_action' }, 400)
 
     const { data: pending, error: pendingError } = await admin
