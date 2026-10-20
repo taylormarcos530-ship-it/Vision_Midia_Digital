@@ -392,6 +392,23 @@ public class MainActivity extends Activity {
 
     private class PlayerBridge {
         @JavascriptInterface
+        public boolean requestApkUpdate(String downloadUrl) {
+            // Only the official HTTPS distribution endpoint is permitted.
+            if (!"https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk".equals(downloadUrl)) return false;
+            runOnUiThread(() -> {
+                try {
+                    Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(downloadUrl));
+                    intent.addCategory(Intent.CATEGORY_BROWSABLE);
+                    intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                    startActivity(intent);
+                } catch (Exception error) {
+                    Toast.makeText(MainActivity.this, "Não foi possível abrir o download da atualização.", Toast.LENGTH_LONG).show();
+                }
+            });
+            return true;
+        }
+
+        @JavascriptInterface
         public String getDeviceToken() {
             return prefs == null ? "" : prefs.getString(KEY_DEVICE_TOKEN, "");
         }
