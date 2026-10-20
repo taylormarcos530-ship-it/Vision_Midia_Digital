@@ -766,7 +766,7 @@
     try{
       await master({action:'delete_company',company_id:id,confirmation_name:typed});
       closeDialog('master-company-dialog');
-      await loadDashboard();
+      await load();
     }catch(error){
       formStatus('#me-status',error.message==='company_has_linked_resources'?'Este cliente possui TVs, mídias, campanhas ou playlists. Remova os vínculos antes de excluir.':('❌ '+error.message),'error');
     }finally{button.disabled=state.role!=='super_admin'}
