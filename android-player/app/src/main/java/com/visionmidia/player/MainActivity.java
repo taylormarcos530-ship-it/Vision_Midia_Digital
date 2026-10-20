@@ -362,12 +362,17 @@ public class MainActivity extends Activity {
                 return;
             }
             launchPlayerToFront();
-            kioskHandler.postDelayed(() -> {
-                if (!playerVisible && isKioskReturnEnabled() && !isKioskMaintenanceActive() && !isFinishing()) {
-                    launchPlayerToFront();
-                }
-                kioskReturnInProgress = false;
-            }, KIOSK_RETURN_GUARD_MS);
+            // Some TV launchers briefly take focus again after HOME. Retry for
+            // a bounded window rather than stopping after a single guard retry.
+            for (int attempt = 1; attempt <= 5; attempt++) {
+                final boolean lastAttempt = attempt == 5;
+                kioskHandler.postDelayed(() -> {
+                    if (!playerVisible && isKioskReturnEnabled() && !isKioskMaintenanceActive() && !isFinishing()) {
+                        launchPlayerToFront();
+                    }
+                    if (lastAttempt) kioskReturnInProgress = false;
+                }, KIOSK_RETURN_GUARD_MS * attempt);
+            }
         }, KIOSK_RETURN_RETRY_MS);
     }
 
@@ -708,6 +713,14 @@ public class MainActivity extends Activity {
         if (webView != null) webView.onPause();
         restorePlayerMusicMute();
         super.onPause();
+        tryReturnToPlayer();
+    }
+
+    @Override
+    protected void onStop() {
+        super.onStop();
+        // HOME transitions can finish after onPause; schedule recovery once
+        // the Activity is actually backgrounded.
         tryReturnToPlayer();
     }
 
