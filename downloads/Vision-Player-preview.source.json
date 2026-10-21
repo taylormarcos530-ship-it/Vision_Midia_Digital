@@ -1,6 +1,6 @@
 {
-  "source_sha256": "4735e2834c1d96de7fb8f85209ea1165c5b3c1817de166d798f1780d130ba033",
-  "git_sha": "9651918a2131cf9fc08771c60314f84cf7c05ad2",
+  "source_sha256": "0b8f7fa0c7aa6b890da6744d759217817684208b91a9a57cb1fd689360bdb8c1",
+  "git_sha": "8a272c41b335a9a4f327c540871d6a9e9642de6a",
   "files": [
     "player.html",
     "player.css",
@@ -14,7 +14,7 @@
     "news-feed.css",
     "news-feed.js"
   ],
-  "apk_version": "1.5.3-preview",
-  "version_code": 15,
-  "apk_sha256": "1f7f4bf72853b1c3b865e3e05563a1fa238f350e69fa3fdf2e78f256edd873b8"
+  "apk_version": "1.5.20",
+  "version_code": 32,
+  "apk_sha256": "23a0b099917291969015b3e9493a3baf1a3eb846f8be7925448ad8aa354d8640"
 }
