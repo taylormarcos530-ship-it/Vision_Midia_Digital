@@ -1382,10 +1382,14 @@
       queueDeviceEvent('watchdog_restart','warning','Watchdog reiniciou o Vision Player após perda de resposta.',{recovered_at:watchdogRecovery,apk_version:nativeAppVersion()},15000);
     }
     queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
-    try { await heartbeat(); await flushPlaybackQueue(); await flushDeviceEventQueue(); }
-    catch { /* sync below handles visual state */ }
+    // Authorization/playlist retrieval is the critical startup path.
+    // Never wait for telemetry uploads while a TV Box is reporting limited internet.
     try { await syncManifest(); }
     catch { /* offline fallback or access screen is handled */ }
+    void heartbeat().then(async () => {
+      await flushPlaybackQueue();
+      await flushDeviceEventQueue();
+    }).catch(() => { /* telemetry retries on its normal timer */ });
 
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
