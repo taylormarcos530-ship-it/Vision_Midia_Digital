@@ -101,6 +101,50 @@ self.addEventListener('fetch', event => {
   );
 });
 
+// Resolve the same dynamically configured favicon used by the Vision PWA.
+// Never force the legacy V icon.svg in notifications, even if an Edge Function
+// supplies it in an older payload. Cache only the last valid custom logo URL.
+const PUSH_BRAND_CACHE = 'vision-midia-push-brand-v1';
+const PUSH_BRAND_KEY = '/__vision-push-brand';
+
+function trustedPushBrandIcon(src) {
+  return /^\/app-icons\/[0-9a-f-]{36}\/(?:192|512)\.png$/i.test(String(src || ''))
+    ? new URL(src, self.location.origin).href
+    : null;
+}
+
+async function currentPushBrandIcon() {
+  try {
+    const response = await fetch(new URL('/app-icon-config', self.location.origin), {
+      cache: 'no-store',
+      signal: AbortSignal.timeout(4000),
+    });
+    if (response.ok) {
+      const config = await response.json();
+      const icon = config?.icons?.find(entry => entry?.sizes === '192x192' && entry?.purpose === 'any') ||
+        config?.icons?.find(entry => entry?.sizes === '512x512' && entry?.purpose === 'any');
+      const fresh = trustedPushBrandIcon(icon?.src);
+      if (fresh) {
+        try {
+          const cache = await caches.open(PUSH_BRAND_CACHE);
+          await cache.put(PUSH_BRAND_KEY, new Response(fresh, {
+            headers: { 'Content-Type': 'text/plain' },
+          }));
+        } catch {}
+        return fresh;
+      }
+    }
+  } catch {}
+  // A temporary outage should not revert an already configured logo to V.
+  try {
+    const cache = await caches.open(PUSH_BRAND_CACHE);
+    const response = await cache.match(PUSH_BRAND_KEY);
+    return trustedPushBrandIcon(response && await response.text());
+  } catch {
+    return null;
+  }
+}
+
 self.addEventListener('push', event => {
   let payload = {};
   try {
@@ -109,19 +153,22 @@ self.addEventListener('push', event => {
     payload = { body: event.data ? event.data.text() : '' };
   }
 
-  const title = String(payload.title || 'Vision Mídia Digital');
-  const targetUrl = payload.url || './';
-  const options = {
-    body: String(payload.body || ''),
-    icon: payload.icon || './icon.svg',
-    badge: payload.badge || './icon.svg',
-    image: payload.image || undefined,
-    tag: payload.tag || 'vision-midia',
-    renotify: Boolean(payload.renotify),
-    data: { url: targetUrl },
-  };
-
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    const brandIcon = await currentPushBrandIcon();
+    return self.registration.showNotification(
+      String(payload.title || 'Vision Mídia Digital'),
+      {
+        body: String(payload.body || ''),
+        icon: brandIcon || undefined,
+        // A full-color app logo is not a suitable monochrome Android badge.
+        // Let Android choose its small application icon instead of the old SVG.
+        image: payload.image || undefined,
+        tag: payload.tag || 'vision-midia',
+        renotify: Boolean(payload.renotify),
+        data: { url: payload.url || './' },
+      },
+    );
+  })());
 });
 
 self.addEventListener('notificationclick', event => {
