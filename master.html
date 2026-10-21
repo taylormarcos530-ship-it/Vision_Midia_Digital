@@ -80,6 +80,15 @@
             <article class="panel"><div class="panel-head"><div><small>AUDITORIA</small><h3>Últimas ações</h3></div><button class="text-button" data-go-master="audit">Ver histórico</button></div><div id="master-dashboard-audit" class="mini-list"></div></article>
           </div>
 
+          <article class="panel master-push-panel" aria-label="Alertas push das TVs">
+            <div class="panel-head">
+              <div><small>MONITORAMENTO DE TVs</small><h3>Push nativo no celular</h3></div>
+              <button id="master-push-test" class="button primary" type="button">🔔 Ativar push e enviar teste</button>
+            </div>
+            <p class="helper">Receba avisos de TVs sem comunicação, reconexão, falhas e atualização, mesmo com este PWA fechado. Ative neste aparelho e confira o teste nas notificações do Android.</p>
+            <div id="master-push-status" class="form-status hidden" role="status" aria-live="polite"></div>
+          </article>
+
           <div class="dashboard-grid master-alert-grid">
             <article class="panel master-expiry-panel">
               <div class="panel-head">
@@ -414,7 +423,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./master.js?v=45" defer></script>
+  <script src="./master.js?v=46" defer></script>
   <script src="./master-payment.js" defer></script>
   <script src="./master-embed.js" defer></script>
 </body>
