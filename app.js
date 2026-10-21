@@ -1573,7 +1573,7 @@
         </div>
 
         ${device.apk_version ? (versionIsOlder(device.apk_version, EXPECTED_APK_VERSION)
-          ? `<div class="device-last-connection">⬆ Atualização disponível: APK ${escapeHtml(EXPECTED_APK_VERSION)} (instalada: ${escapeHtml(device.apk_version)}) • <a href="./downloads.html">Baixar atualização</a></div>`
+          ? `<div role="status" style="margin:12px 0;padding:14px;border:2px solid #e6a23c;border-radius:12px;background:rgba(230,162,60,.12);font-weight:700">⬆ Atualização disponível — APK ${escapeHtml(EXPECTED_APK_VERSION)}<div style="font-size:.85em;font-weight:400;margin-top:4px">Instalada: ${escapeHtml(device.apk_version)}</div><a href="./downloads.html" style="display:inline-block;margin-top:8px;text-decoration:underline">Baixar atualização</a></div>`
           : `<div class="device-last-connection">✓ APK atualizado: ${escapeHtml(device.apk_version)}</div>`)
           : `<div class="device-last-connection">Versão do APK não informada pela TV</div>`}
         <div class="device-last-connection" aria-label="Último contato da TV com o servidor">🕒 ${device.last_seen_at ? `Última conexão: ${escapeHtml(formatMonitorDateTime(device.last_seen_at))}` : "Aguardando primeira conexão"}</div>
