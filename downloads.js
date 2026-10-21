@@ -112,71 +112,19 @@
     const button = $('#android-apk-download');
     const note = $('#android-apk-note');
     const url = String(CONFIG.androidPlayerApkUrl || '').trim();
-    const manifestUrl = String(CONFIG.androidPlayerApkManifestUrl || '').trim();
     if (!button) return;
-
-    if (!url || !manifestUrl) {
-      disableApkButton(button, note, 'APK ainda não publicado', 'A build do Vision Player ainda não foi publicada para esta versão.');
+    if (!url) {
+      disableApkButton(button, note, 'APK indisponível', 'Endereço do APK não configurado.');
       return;
     }
-
+    // O download é um link direto. Não bloquear o usuário por metadados
+    // antigos: a validação da assinatura ocorre na instalação pelo Android.
     button.href = url;
     button.classList.remove('disabled');
     button.removeAttribute('aria-disabled');
-    button.textContent = 'Baixar APK para TV Box';
-    button.setAttribute('download', 'Vision-Player-Estavel.apk');
-    if (note) note.textContent = 'APK compilado disponível. Confirmando os metadados da build…';
-
-    try {
-      const cacheBust = Date.now().toString(36);
-      const manifestRequest = `${manifestUrl}${manifestUrl.includes('?') ? '&' : '?'}v=${cacheBust}`;
-      const checksumRequest = `${url.replace(/\.apk$/, ".sha256")}?v=${cacheBust}`;
-      const apkRequest = `${url}${url.includes('?') ? '&' : '?'}v=${cacheBust}`;
-
-      const [manifestResponse, checksumResponse, apkResponse] = await Promise.all([
-        fetch(manifestRequest, { cache: 'no-store' }),
-        fetch(checksumRequest, { cache: 'no-store' }),
-        fetch(apkRequest, { method: 'HEAD', cache: 'no-store' }),
-      ]);
-
-      if (!manifestResponse.ok) throw new Error('Manifesto da build não encontrado.');
-      if (!checksumResponse.ok) throw new Error('Checksum do APK não encontrado.');
-      if (!apkResponse.ok) throw new Error('Arquivo APK não encontrado.');
-
-      const manifest = await manifestResponse.json();
-      const checksumText = (await checksumResponse.text()).trim();
-      const sourceHash = String(manifest?.source_sha256 || '').trim().toLowerCase();
-      const buildSha = String(manifest?.git_sha || '').trim().toLowerCase();
-      const checksumMatch = checksumText.match(/^([a-f0-9]{64})\s+/i);
-
-      if (!/^[a-f0-9]{64}$/.test(sourceHash) || !/^[a-f0-9]{40}$/.test(buildSha) || !checksumMatch) {
-        throw new Error('Metadados da build incompletos.');
-      }
-
-      if (manifest.apk_sha256 && String(manifest.apk_sha256).toLowerCase() !== checksumMatch[1].toLowerCase()) {
-        throw new Error('Checksum diferente dos metadados da build.');
-      }
-
-      if (manifest.application_id !== 'com.visionmidia.player.stable' || manifest.version_code < 16 || manifest.signer_sha256 !== '21642106e5a7add7537db0b87b4a6e4ff4609862beff3087aa8a76144febf8cb') {
-        throw new Error('Identidade da versão estável não confirmada.');
-      }
-
-      const contentLength = Number(apkResponse.headers.get('content-length') || 0);
-      if (contentLength > 0 && contentLength < 100000) {
-        throw new Error('Arquivo APK inválido ou incompleto.');
-      }
-
-      button.href = `${url}${url.includes('?') ? '&' : '?'}v=${checksumMatch[1]}`;
-      button.classList.remove('disabled');
-      button.removeAttribute('aria-disabled');
-      button.textContent = `Baixar APK ${manifest.apk_version || 'preview'}`;
-      button.setAttribute('download', 'Vision-Player-Estavel.apk');
-      if (note) {
-        note.textContent = `APK ${manifest.apk_version || 'preview'} • build ${buildSha.slice(0, 10)} • SHA-256 ${checksumMatch[1].slice(0, 12)}… Assinatura permanente. Primeira migração: instale ao lado do Player antigo e use Substituir TV. Depois, atualize sobre o Player Estável instalado.`;
-      }
-    } catch (error) {
-      disableApkButton(button, note, 'Tentar novamente após atualizar', `Não foi possível conferir o APK: ${error?.message || 'erro desconhecido'}. Atualize a página para tentar novamente.`);
-    }
+    button.textContent = 'Baixar Vision Player 1.5.19';
+    button.setAttribute('download', 'Vision-Player.apk');
+    if (note) note.textContent = 'Versão 1.5.19 de teste. Baixe diretamente no TV Box. A instalação pode exigir remover a versão anterior se as assinaturas forem diferentes.';
   }
 
   function setupPanelInstall() {
