@@ -1,11 +1,11 @@
 {
-  "source_sha256": "2fae3d75b1d2bd42acac76adc81786ea3c2914b2ae8372f9ce383b4dd4cceabf",
-  "git_sha": "b4cbf6616410154f2333a0542452f933c174adb1",
+  "source_sha256": "2e5bb3977f0017cd9022080ef62ff33a5fcf664e11255d7c97f6c16dff43591c",
+  "git_sha": "ad0f5cf967b8465d5a5921a1926b6167f6d2c7fe",
   "apk_version": "1.5.17-stable",
   "version_code": 29,
   "application_id": "com.visionmidia.player.stable",
   "signer_sha256": "21642106e5a7add7537db0b87b4a6e4ff4609862beff3087aa8a76144febf8cb",
-  "apk_sha256": "46eac3500019a1e991f525fa1f7d358561cc412c87e18b6482c35d969bf52d5f",
+  "apk_sha256": "bbbab794f1bef755acafcb87af3c19526d2d2eaa12c8a5f07b85b5f2c7253e96",
   "files": [
     "player.html",
     "player.css",
