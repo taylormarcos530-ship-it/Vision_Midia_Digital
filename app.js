@@ -1567,7 +1567,7 @@
         <div class="device-card-head">
           <div class="device-card-title">
             <strong>${escapeHtml(device.name)}</strong>
-            <span>${escapeHtml(platformLabel(device.platform))}${device.app_version ? ` • ${escapeHtml(device.app_version)}` : ''}</span>
+            <span>${escapeHtml(platformLabel(device.platform))} • APK: ${escapeHtml(device.apk_version || 'não informado')} • Player: ${escapeHtml(device.player_version || device.app_version || 'não informado')}</span>
           </div>
           <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
