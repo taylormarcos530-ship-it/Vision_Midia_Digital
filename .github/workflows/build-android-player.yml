@@ -17,6 +17,8 @@ on:
       - 'player.webmanifest'
       - 'sw.js'
       - '.github/workflows/build-android-player.yml'
+  pull_request:
+    branches: [fix/android-tv-native-rotation-20261020]
   workflow_dispatch:
 
 permissions:
