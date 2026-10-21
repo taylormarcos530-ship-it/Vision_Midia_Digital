@@ -1,0 +1,25 @@
+name: Replace official Vision Player download with 1.5.19
+on:
+  push:
+    branches: [release/vision-player-1-5-14-apk-only]
+    paths: ['.github/workflows/replace-official-vision-player-1519.yml']
+permissions:
+  contents: write
+jobs:
+  replace-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/vision-player-1-5-14-apk-only
+      - name: Replace download and preserve old version
+        run: |
+          set -euo pipefail
+          test -s downloads/Vision-Player-1.5.19-preview.apk
+          test -s downloads/Vision-Player.apk
+          cp downloads/Vision-Player.apk downloads/Vision-Player-1.5.18-backup.apk
+          cp downloads/Vision-Player-1.5.19-preview.apk downloads/Vision-Player.apk
+          sha256sum downloads/Vision-Player.apk > downloads/Vision-Player.sha256
+          git add downloads/Vision-Player.apk downloads/Vision-Player.sha256 downloads/Vision-Player-1.5.18-backup.apk
+          git -c user.name="Vision CI" -c user.email="vision-ci@users.noreply.github.com" commit -m "release: replace official APK download with 1.5.19 preview and backup 1.5.18"
+          git push origin HEAD:release/vision-player-1-5-14-apk-only
