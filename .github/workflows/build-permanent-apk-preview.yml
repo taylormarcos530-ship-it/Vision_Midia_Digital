@@ -166,6 +166,7 @@ jobs:
           # Synchronize first, while the generated binary is still outside the worktree.
           # This avoids binary conflicts when an older cancelled run managed to push
           # its preview files after this run had already started.
+          git reset --hard HEAD
           git pull --rebase origin "$GITHUB_REF_NAME"
 
           mkdir -p downloads
