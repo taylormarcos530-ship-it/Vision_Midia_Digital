@@ -557,10 +557,17 @@
     const permission = await Notification.requestPermission();
     if (permission !== 'granted') return toast('Notificações não ativadas', 'Permita notificações nas configurações do site.', 'error');
     try {
-      await ensurePersistentPushSubscription();
-      toast('Notificações ativadas', 'O Web Push ficou registrado neste aparelho e pode avisar mesmo com o app totalmente fechado.');
+      const subscription = await ensurePersistentPushSubscription();
+      const result = await functionRequest('push-device-setup', {
+        authenticated: true,
+        body: { action: 'test_self', endpoint: subscription.endpoint },
+      });
+      if (!result?.accepted_by_push_service) throw new Error('O servidor não confirmou o teste.');
+      toast('Push de teste enviado', 'Este aparelho está inscrito. Confira a notificação no Android, inclusive com o PWA fechado.', 'success', 8000);
     } catch (error) {
-      toast('Notificação local ativada', error.message || 'Não foi possível registrar o Web Push persistente.', 'error', 6500);
+      const message = String(error?.message || 'Não foi possível registrar ou testar o Web Push persistente.');
+      const limited = message.includes('test_rate_limited');
+      toast(limited ? 'Aguarde um minuto' : 'Verifique o Web Push', limited ? 'Um teste já foi enviado recentemente para este aparelho.' : message, 'error', 8000);
     }
     const reason = accessReason(); if (reason) notifyAccessState(reason);
   }
