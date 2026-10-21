@@ -871,8 +871,10 @@
     })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
 
+  let manifestSyncInFlight = false;
   async function syncManifest() {
-    if (!state.deviceToken) return;
+    if (!state.deviceToken || manifestSyncInFlight) return;
+    manifestSyncInFlight = true;
     try {
       const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
       const changed = !state.manifest || state.manifest.version !== manifest.version;
@@ -915,6 +917,8 @@
         showIdle('Sem conteúdo disponível', 'Conecte a internet para receber a primeira playlist.');
       }
       throw error;
+    } finally {
+      manifestSyncInFlight = false;
     }
   }
 
