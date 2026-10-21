@@ -4,7 +4,7 @@
  // Apply only platform branding, preserving each company's separate avatar.
  function applyPanelLogo(src){
   const safe=/^\/app-icons\/[0-9a-f-]{36}\/512\.png$/i.test(src||'')?src:null;
-  const all=document.querySelectorAll?.('.brand-mark, .master-sidebar .sidebar-brand > span')||[];
+  const all=document.querySelectorAll?.('.brand-mark, .master-sidebar .sidebar-brand > span, .brand > span')||[];
   for(const element of all){
    if(!element.dataset.visionLogoFallback)element.dataset.visionLogoFallback=element.textContent?.trim()||'V';
    const old=element.querySelector?.('img[data-vision-panel-logo]');
@@ -18,6 +18,8 @@
    image.alt='Logo Vision Mídia Digital';
    image.decoding='async';
    image.src=safe;
+   image.style.cssText='display:block;width:100%;height:100%;object-fit:contain;padding:4px;border-radius:inherit';
+   image.onerror=()=>{if(element.contains(image))element.replaceChildren(element.dataset.visionLogoFallback||'V');};
    element.replaceChildren(image);
   }
  }
@@ -29,7 +31,7 @@
    let apple=document.querySelector('link[rel="apple-touch-icon"]');if(!apple){apple=document.createElement('link');apple.rel='apple-touch-icon';document.head.append(apple);}apple.href=icon.src;
   }catch{}
  }
- update();window.addEventListener('focus',update);document.addEventListener('visibilitychange',()=>{if(!document.hidden)update();});
+ update();document.addEventListener('DOMContentLoaded',()=>{if(current)applyPanelLogo(current.icons?.find(i=>i.sizes==='512x512'&&i.purpose==='any')?.src);});window.addEventListener('focus',update);document.addEventListener('visibilitychange',()=>{if(!document.hidden)update();});
  const masterNav=document.querySelector('.master-sidebar nav');
  const nav=masterNav||document.querySelector('#saas-admin-nav');if(!nav)return;
  const button=document.createElement('button');button.type='button';button.className=masterNav?'nav-button':'nav-item';button.textContent='▧ Trocar ícone / favicon';nav.append(button);
