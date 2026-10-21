@@ -357,12 +357,30 @@
       ? trustedServerClock.issuedAt + elapsed : null;
   }
 
+  // Cold-boot grace is deliberately bounded. The box clock is not trusted until
+  // a gateway response; this permits cached playback for at most 180 seconds.
+  // A remote revocation cannot be learned during that offline window.
+  const OFFLINE_BOOT_GRACE_MS = 180_000;
+  const offlineBootStartedAt = performance.now();
+  let offlineBootGraceDisabled = false;
+  function offlineBootGraceActive() {
+    if (offlineBootGraceDisabled || trustedNow() !== null || !state.deviceToken) return false;
+    const manifest = state.manifest;
+    const issuedAt = Date.parse(manifest?.generated_at || '');
+    const expiresAt = Date.parse(manifest?.device?.access_expires_at || '');
+    const elapsed = performance.now() - offlineBootStartedAt;
+    return !!manifest?.playlist && Array.isArray(manifest?.items) && manifest.items.length > 0
+      && Number.isFinite(issuedAt) && Number.isFinite(expiresAt)
+      && expiresAt > issuedAt + OFFLINE_BOOT_GRACE_MS
+      && elapsed >= 0 && elapsed < OFFLINE_BOOT_GRACE_MS;
+  }
+
   function localAccessExpired() {
     const deadline = Date.parse(state.manifest?.device?.access_expires_at || '');
     const now = trustedNow();
     // A cached manifest is not proof of current authorization after a cold boot.
     // Without a trusted clock, fail closed and retry the gateway instead of falsely saying expired.
-    return !Number.isFinite(deadline) || now === null || now >= deadline;
+    return !Number.isFinite(deadline) || (now === null ? !offlineBootGraceActive() : now >= deadline);
   }
 
   function enforceLocalAccess() {
@@ -902,7 +920,7 @@
       if (changed) { state.runtimeFallbackVersion = null; state.playlistNonce++; }
       ensurePlaybackLoop();
     } catch (error) {
-      if (isAccessError(error)) throw error;
+      if (isAccessError(error)) { offlineBootGraceDisabled = true; throw error; }
       if (navigator.onLine) {
         state.syncHadError = true;
         queueDeviceEvent('sync_error', 'warning', 'Falha ao sincronizar a programação com o servidor.', {
@@ -1194,6 +1212,8 @@
   function itemScheduleActive(item, timeZone) {
     const schedule=item?.schedule;
     if(!schedule?.enabled)return true;
+    // Scheduled items must not use the incorrect RTC during cold boot.
+    if (trustedNow() === null) return false;
     const clock=localClock(timeZone),start=timeSeconds(schedule.start_time),end=timeSeconds(schedule.end_time);
     let dateKey=clock.dateKey,weekday=clock.weekday;
     if(start!=null&&end!=null){if(start<end){if(clock.seconds<start||clock.seconds>=end)return false}else{if(clock.seconds>=start){}else if(clock.seconds<end){dateKey=clock.previousDateKey;weekday=clock.previousWeekday}else return false}}
@@ -1378,7 +1398,7 @@
   async function startPlayer() {
     if (!state.deviceToken) return startPairing();
     if (!enforceLocalAccess()) showPlayback();
-    setStatus('Conectando…');
+    setStatus(offlineBootGraceActive() ? 'Offline • iniciando programação salva' : 'Conectando…');
     if (state.manifest && !localAccessExpired()) ensurePlaybackLoop();
 
     const watchdogRecovery = consumeNativeWatchdogRecovery();
