@@ -208,7 +208,7 @@
     },
   };
 
-  function requestNativeAsync(url, payload, token) {
+  function requestNativeAsync(url, payload, token, timeoutMs = 40000) {
     return new Promise((resolve, reject) => {
       const id = `${Date.now()}-${++nativeRequestSequence}`;
       const timer = setTimeout(() => {
@@ -216,14 +216,14 @@
         const error = new Error('A conexão demorou demais. A reprodução local continua.');
         error.status = 0;
         reject(error);
-      }, 40000);
+      }, timeoutMs);
       nativeRequests.set(id, { resolve, timer });
       try { window.VisionAndroid.postJsonAsync(id, url, payload, CONFIG.supabasePublishableKey, token || ''); }
       catch (error) { clearTimeout(timer); nativeRequests.delete(id); reject(error); }
     });
   }
 
-  async function functionRequest(name, body, deviceToken = null) {
+  async function functionRequest(name, body, deviceToken = null, timeoutMs = 40000) {
     const url = `${CONFIG.supabaseUrl}/functions/v1/${name}`;
     const payload = JSON.stringify(body || {});
 
@@ -231,7 +231,7 @@
       let envelope = '';
       try {
         envelope = window.VisionAndroid.postJsonAsync
-          ? await requestNativeAsync(url, payload, deviceToken)
+          ? await requestNativeAsync(url, payload, deviceToken, timeoutMs)
           : String(window.VisionAndroid.postJson(
           url,
           payload,
@@ -557,7 +557,7 @@
 
   async function gateway(body) {
     try {
-      return await functionRequest('device-gateway', body, state.deviceToken);
+      return await functionRequest('device-gateway', body, state.deviceToken, body?.action === 'manifest' ? 8000 : 40000);
     } catch (error) {
       if (error.status === 403 && isAccessError(error)) {
         showAccessBlocked(error);
@@ -1396,7 +1396,7 @@
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
-    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
+    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 5_000);
     state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
     pollDeviceCommands().catch(() => {});
