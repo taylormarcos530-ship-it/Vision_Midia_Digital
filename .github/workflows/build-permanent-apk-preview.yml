@@ -96,7 +96,7 @@ jobs:
               config=json.load(r)
           icons=config.get('icons') or []
           icon=next((i for i in icons if i.get('sizes')=='512x512' and i.get('purpose')=='any'),None)
-          if not icon or not re.fullmatch(r'/app-icons/[0-9a-f-]{36}/512\\.png',icon.get('src',''),re.I):
+          if not icon or not re.fullmatch(r'/app-icons/[0-9a-f-]{36}/512\.png',icon.get('src',''),re.I):
               raise RuntimeError('Master favicon not configured; refusing to build placeholder V')
           with urllib.request.urlopen(base+icon['src'],timeout=30) as r:
               raw=r.read(5_000_001)
