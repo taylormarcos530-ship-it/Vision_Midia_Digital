@@ -1,0 +1,31 @@
+name: Publish Vision Player 1.5.19 test download
+on:
+  push:
+    branches: [release/vision-player-1-5-14-apk-only]
+    paths: ['.github/workflows/publish-vision-1519-test.yml']
+permissions:
+  actions: read
+  contents: write
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: release/vision-player-1-5-14-apk-only
+      - name: Download validated preview from Actions run
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/vision-apk downloads
+          gh run download 39534265762 --repo "${{ github.repository }}" --name Vision-Player-APK --dir /tmp/vision-apk
+          test -s /tmp/vision-apk/Vision-Player-preview.apk
+          cp /tmp/vision-apk/Vision-Player-preview.apk downloads/Vision-Player-1.5.19-preview.apk
+          (cd downloads && sha256sum Vision-Player-1.5.19-preview.apk > Vision-Player-1.5.19-preview.sha256)
+      - name: Publish without replacing stable APK
+        run: |
+          set -euo pipefail
+          git add downloads/Vision-Player-1.5.19-preview.apk downloads/Vision-Player-1.5.19-preview.sha256
+          git -c user.name="Vision CI" -c user.email="vision-ci@users.noreply.github.com" commit -m "release: publish 1.5.19 preview for direct TV Box download"
+          git push origin HEAD:release/vision-player-1-5-14-apk-only
