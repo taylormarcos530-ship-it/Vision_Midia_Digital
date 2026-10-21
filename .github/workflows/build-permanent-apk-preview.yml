@@ -5,6 +5,7 @@ on:
     branches:
       - main
       - fix/saas-media-playlist-device-controls
+      - fix/android-tv-icon-1520-preview-20261021
     paths:
       - 'android-player/**'
       - 'player.html'
@@ -80,6 +81,36 @@ jobs:
 
       - name: Validate player JavaScript
         run: node --check player.js
+
+      - name: Embed current Master favicon in Android launcher icon
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet Pillow
+          python3 - <<'PY'
+          import io, json, re, urllib.request
+          from pathlib import Path
+          from PIL import Image
+          base='https://vision-midia-digital.vercel.app'
+          with urllib.request.urlopen(base+'/app-icon-config',timeout=20) as r:
+              config=json.load(r)
+          icons=config.get('icons') or []
+          icon=next((i for i in icons if i.get('sizes')=='512x512' and i.get('purpose')=='any'),None)
+          if not icon or not re.fullmatch(r'/app-icons/[0-9a-f-]{36}/512\\.png',icon.get('src',''),re.I):
+              raise RuntimeError('Master favicon not configured; refusing to build placeholder V')
+          with urllib.request.urlopen(base+icon['src'],timeout=30) as r:
+              raw=r.read(5_000_001)
+          if len(raw)>5_000_000: raise RuntimeError('Icon too large')
+          image=Image.open(io.BytesIO(raw)).convert('RGBA')
+          image.thumbnail((512,512))
+          canvas=Image.new('RGBA',(512,512),(11,18,32,255))
+          canvas.alpha_composite(image,((512-image.width)//2,(512-image.height)//2))
+          path=Path('android-player/app/src/main/res/drawable-nodpi/ic_vision_player.png')
+          path.parent.mkdir(parents=True,exist_ok=True)
+          canvas.save(path)
+          Path('android-player/app/src/main/res/drawable/ic_vision_player.xml').unlink()
+          print('Embedded configured Master favicon into Android launcher icon')
+          PY
 
       - name: Build installable preview APK
         run: gradle -p android-player --no-daemon assembleDebug
