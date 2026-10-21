@@ -22,7 +22,7 @@
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
   const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.6';
-  const EXPECTED_APK_VERSION = '1.5.6-stable';
+  const EXPECTED_APK_VERSION = '1.5.19';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -1572,6 +1572,10 @@
           <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
 
+        ${device.apk_version ? (versionIsOlder(device.apk_version, EXPECTED_APK_VERSION)
+          ? `<div class="device-last-connection">⬆ Atualização disponível: APK ${escapeHtml(EXPECTED_APK_VERSION)} (instalada: ${escapeHtml(device.apk_version)}) • <a href="./downloads.html">Baixar atualização</a></div>`
+          : `<div class="device-last-connection">✓ APK atualizado: ${escapeHtml(device.apk_version)}</div>`)
+          : `<div class="device-last-connection">Versão do APK não informada pela TV</div>`}
         <div class="device-last-connection" aria-label="Último contato da TV com o servidor">🕒 ${device.last_seen_at ? `Última conexão: ${escapeHtml(formatMonitorDateTime(device.last_seen_at))}` : "Aguardando primeira conexão"}</div>
 
         <div class="device-screen ${captureUi.className} ${device.orientation === 'portrait' ? 'configured-portrait' : device.orientation === 'landscape' ? 'configured-landscape' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}" data-screenshot-valid="${captureUi.useScreenshot === false ? '0' : '1'}">
