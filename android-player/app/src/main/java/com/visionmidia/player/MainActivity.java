@@ -691,6 +691,7 @@ public class MainActivity extends Activity {
     protected void onResume() {
         super.onResume();
         playerVisible = true;
+        if (prefs != null) prefs.edit().putBoolean(BootReceiver.KEY_BOOT_OPENED, true).apply();
         enterImmersiveMode();
         kioskReturnInProgress = false;
         kioskHandler.removeCallbacksAndMessages(null);
