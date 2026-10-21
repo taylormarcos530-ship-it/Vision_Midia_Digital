@@ -1386,24 +1386,31 @@
       queueDeviceEvent('watchdog_restart','warning','Watchdog reiniciou o Vision Player após perda de resposta.',{recovered_at:watchdogRecovery,apk_version:nativeAppVersion()},15000);
     }
     queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
-    // Authorization/playlist retrieval is the critical startup path.
-    // Never wait for telemetry uploads while a TV Box is reporting limited internet.
-    try { await syncManifest(); }
-    catch { /* offline fallback or access screen is handled */ }
-    void heartbeat().then(async () => {
-      await flushPlaybackQueue();
-      await flushDeviceEventQueue();
-    }).catch(() => { /* telemetry retries on its normal timer */ });
-
+    // Start retry timers before the first network request. Limited internet must
+    // never hold the UI bootstrap or delay scheduling the next recovery attempt.
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
     state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 5_000);
-    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
-    pollDeviceCommands().catch(() => {});
+    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => {
+      await flushPlaybackQueue();
+      await flushDeviceEventQueue();
+    }).catch(() => {}), 30_000);
+    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+
+    void syncManifest().catch(() => { /* cached-content or authorization screen remains visible */ });
+    // Telemetry and remote commands are secondary; schedule after the first
+    // manifest attempt instead of competing for native network resources at boot.
+    setTimeout(() => {
+      if (!state.deviceToken) return;
+      void heartbeat().then(async () => {
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      }).catch(() => {});
+      void pollDeviceCommands().catch(() => {});
+    }, 12_000);
   }
 
   async function requestFullscreenAndWakeLock() {
