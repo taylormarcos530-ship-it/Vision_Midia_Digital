@@ -22,7 +22,7 @@
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
   const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.6';
-  const EXPECTED_APK_VERSION = '1.5.6-stable';
+  const EXPECTED_APK_VERSION = '1.5.20';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
@@ -1572,6 +1572,11 @@
           <span class="status-dot device-card-status ${escapeHtml(status)}">${escapeHtml(statusLabel(status))}</span>
         </div>
 
+        <div role="status" style="margin:12px 0;padding:14px;border:2px solid #567cf5;border-radius:12px;background:rgba(70,110,255,.10)">
+        <strong>${device.apk_version ? (versionIsOlder(device.apk_version, EXPECTED_APK_VERSION) ? "⬆ Atualização disponível" : "✓ APK atualizado") : "📱 Versão disponível"} — APK ${escapeHtml(EXPECTED_APK_VERSION)}</strong>
+        <div style="margin-top:5px;font-size:.9em">Instalada: ${escapeHtml(device.apk_version || "não informada pela TV")} • Player Web: ${escapeHtml(device.player_version || device.app_version || "não informado")}</div>
+        ${device.apk_version && !versionIsOlder(device.apk_version, EXPECTED_APK_VERSION) ? "" : '<a href="./downloads.html" style="display:inline-block;margin-top:8px;text-decoration:underline">Ver atualização / Download</a>'}
+        </div>
         <div class="device-last-connection" aria-label="Último contato da TV com o servidor">🕒 ${device.last_seen_at ? `Última conexão: ${escapeHtml(formatMonitorDateTime(device.last_seen_at))}` : "Aguardando primeira conexão"}</div>
 
         <div class="device-screen ${captureUi.className} ${device.orientation === 'portrait' ? 'configured-portrait' : device.orientation === 'landscape' ? 'configured-landscape' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}" data-screenshot-valid="${captureUi.useScreenshot === false ? '0' : '1'}">
