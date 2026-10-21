@@ -163,10 +163,19 @@ async function scanDevices(admin: any) {
 }
 
 async function subscriptionsForAlert(admin: any, companyId: string): Promise<PushSub[]> {
+  const { data: company, error: ownershipError } = await admin.from('companies')
+    .select('owner_user_id').eq('id', companyId).maybeSingle()
+  if (ownershipError) throw ownershipError
+  if (!company) return []
+  const { data: members, error: membershipError } = await admin.from('company_members')
+    .select('user_id').eq('company_id', companyId).eq('status', 'active')
+  if (membershipError) throw membershipError
+  const allowed = new Set([company.owner_user_id, ...(members || []).map((m: any) => m.user_id)])
   const { data: companySubs, error: companyError } = await admin.from('web_push_subscriptions')
-    .select('id,endpoint,p256dh,auth_key')
+    .select('id,user_id,endpoint,p256dh,auth_key')
     .eq('company_id', companyId).is('disabled_at', null)
   if (companyError) throw companyError
+  const authorizedSubs = (companySubs || []).filter((s: any) => allowed.has(s.user_id))
 
   // Active Masters receive events for *all* their companies, even if the PWA
   // was installed while viewing just one company. Other users stay company-scoped.
@@ -183,7 +192,7 @@ async function subscriptionsForAlert(admin: any, companyId: string): Promise<Pus
     masterSubs = data || []
   }
   const unique = new Map<string, PushSub>()
-  for (const sub of [...(companySubs || []), ...masterSubs]) {
+  for (const sub of [...authorizedSubs, ...masterSubs]) {
     if (sub.endpoint && sub.p256dh && sub.auth_key) unique.set(sub.endpoint, sub)
   }
   return [...unique.values()]
