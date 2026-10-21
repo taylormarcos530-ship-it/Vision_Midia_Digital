@@ -1,0 +1,43 @@
+name: Publish Vision Player 1.5.19 Preview to Site
+on:
+  push:
+    branches: [fix/android-tv-boot-autostart-1519-20261020]
+    paths:
+      - '.github/workflows/publish-android-1519-preview.yml'
+permissions:
+  contents: write
+jobs:
+  publish-preview:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Build isolated preview
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+          node --check player.js
+          gradle -p android-player --no-daemon assembleDebug
+      - name: Publish only preview APK on release branch
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "$(git branch --show-current)" = "fix/android-tv-boot-autostart-1519-20261020"
+          test -s android-player/app/build/outputs/apk/debug/app-debug.apk
+          cp android-player/app/build/outputs/apk/debug/app-debug.apk /tmp/Vision-Player-1.5.19-preview.apk
+          git fetch origin release/vision-player-1-5-14-apk-only
+          git checkout -B release/vision-player-1-5-14-apk-only origin/release/vision-player-1-5-14-apk-only
+          mkdir -p downloads
+          cp /tmp/Vision-Player-1.5.19-preview.apk downloads/Vision-Player-1.5.19-preview.apk
+          sha256sum downloads/Vision-Player-1.5.19-preview.apk > downloads/Vision-Player-1.5.19-preview.sha256
+          git add downloads/Vision-Player-1.5.19-preview.apk downloads/Vision-Player-1.5.19-preview.sha256
+          git -c user.name="Vision CI" -c user.email="vision-ci@users.noreply.github.com" commit -m "release: add isolated Vision Player 1.5.19 preview APK"
+          git push origin HEAD:release/vision-player-1-5-14-apk-only
