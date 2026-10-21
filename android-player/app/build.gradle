@@ -11,7 +11,7 @@ android {
         minSdk 24
         targetSdk 35
         versionCode 32
-        versionName '1.5.20'
+        versionName '1.5.20' // launcher branding preview; playback logic unchanged
         manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia']
     }
 
