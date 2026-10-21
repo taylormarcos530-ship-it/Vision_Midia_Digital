@@ -337,16 +337,46 @@
     $('#access-status').textContent = 'A TV verificará a autorização automaticamente.';
   }
 
+  // Use the timestamp issued by the authenticated device gateway, never the TV Box wall clock.
+  // performance.now() advances monotonically during this Player session even when Android fixes its time.
+  let trustedServerClock = null;
+
+  function setTrustedServerClock(manifest) {
+    const issuedAt = Date.parse(manifest?.generated_at || '');
+    if (!Number.isFinite(issuedAt)) {
+      trustedServerClock = null;
+      return;
+    }
+    trustedServerClock = { issuedAt, monotonicAt: performance.now() };
+  }
+
+  function trustedNow() {
+    if (!trustedServerClock) return null;
+    const elapsed = performance.now() - trustedServerClock.monotonicAt;
+    return Number.isFinite(elapsed) && elapsed >= 0
+      ? trustedServerClock.issuedAt + elapsed : null;
+  }
+
   function localAccessExpired() {
-    const expiresAt = state.manifest?.device?.access_expires_at;
-    const deadline = new Date(expiresAt || '').getTime();
-    const issuedAt = new Date(state.manifest?.generated_at || '').getTime();
-    return !Number.isFinite(deadline) || deadline <= Date.now()
-      || (Number.isFinite(issuedAt) && Date.now() < issuedAt - 60_000);
+    const deadline = Date.parse(state.manifest?.device?.access_expires_at || '');
+    const now = trustedNow();
+    // A cached manifest is not proof of current authorization after a cold boot.
+    // Without a trusted clock, fail closed and retry the gateway instead of falsely saying expired.
+    return !Number.isFinite(deadline) || now === null || now >= deadline;
   }
 
   function enforceLocalAccess() {
     if (!localAccessExpired()) return false;
+    if (trustedNow() === null) {
+      $('#pairing-screen').classList.add('hidden');
+      $('#playback-screen').classList.add('hidden');
+      $('#access-screen').classList.remove('hidden');
+      $('#access-heading').textContent = 'Verificando autorização';
+      $('#access-message').textContent = 'Aguardando confirmação do servidor. Não é necessário ajustar o relógio do TV Box.';
+      $('#access-expiry').textContent = 'Pareamento preservado.';
+      $('#access-status').textContent = 'A verificação será repetida automaticamente.';
+      return true;
+    }
     showAccessBlocked({
       error: 'device_access_expired',
       access_expires_at: state.manifest?.device?.access_expires_at || null,
@@ -853,6 +883,7 @@
         state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
       }
       state.manifest = manifest;
+      setTrustedServerClock(manifest);
       void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
