@@ -127,7 +127,7 @@ async function currentPushBrandIcon() {
       if (fresh) {
         try {
           const cache = await caches.open(PUSH_BRAND_CACHE);
-          await cache.put(PUSH_BRAND_KEY, new Response(fresh, {
+          await cache.put(PUSH_BRAND_KEY, new Response(icon.src, {
             headers: { 'Content-Type': 'text/plain' },
           }));
         } catch {}
