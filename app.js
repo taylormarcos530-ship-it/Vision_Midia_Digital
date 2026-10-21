@@ -1575,7 +1575,7 @@
         ${device.apk_version ? (versionIsOlder(device.apk_version, EXPECTED_APK_VERSION)
           ? `<div role="status" style="margin:12px 0;padding:14px;border:2px solid #e6a23c;border-radius:12px;background:rgba(230,162,60,.12);font-weight:700">⬆ Atualização disponível — APK ${escapeHtml(EXPECTED_APK_VERSION)}<div style="font-size:.85em;font-weight:400;margin-top:4px">Instalada: ${escapeHtml(device.apk_version)}</div><a href="./downloads.html" style="display:inline-block;margin-top:8px;text-decoration:underline">Baixar atualização</a></div>`
           : `<div class="device-last-connection">✓ APK atualizado: ${escapeHtml(device.apk_version)}</div>`)
-          : `<div class="device-last-connection">Versão do APK não informada pela TV</div>`}
+          : `<div role="status" style="margin:12px 0;padding:14px;border:2px solid #6b8cf7;border-radius:12px;background:rgba(70,110,255,.12)"><strong>📱 Versão disponível: APK ${escapeHtml(EXPECTED_APK_VERSION)}</strong><div style="margin-top:5px">Versão instalada: não informada pela TV</div><a href="./downloads.html" style="display:inline-block;margin-top:8px;text-decoration:underline">Consultar download</a></div>`}
         <div class="device-last-connection" aria-label="Último contato da TV com o servidor">🕒 ${device.last_seen_at ? `Última conexão: ${escapeHtml(formatMonitorDateTime(device.last_seen_at))}` : "Aguardando primeira conexão"}</div>
 
         <div class="device-screen ${captureUi.className} ${device.orientation === 'portrait' ? 'configured-portrait' : device.orientation === 'landscape' ? 'configured-landscape' : ''}" data-device-screenshot="${device.id}" data-screenshot-path="${escapeHtml(shot?.storage_path || '')}" data-screenshot-valid="${captureUi.useScreenshot === false ? '0' : '1'}">
