@@ -38,6 +38,20 @@
             </intent-filter>
         </activity>
 
+        <!-- Optional HOME role; Android requires the user to choose a default launcher. -->
+        <activity-alias
+            android:name=".VisionHomeActivity"
+            android:targetActivity=".MainActivity"
+            android:enabled="true"
+            android:exported="true"
+            android:label="${playerLabel}">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity-alias>
+
         <receiver
             android:name=".BootReceiver"
             android:enabled="true"
