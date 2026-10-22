@@ -69,17 +69,18 @@ async function makePublic(admin:any){
   return out;
 }
 async function makeMaster(admin:any){
-  const [ps,co,ds,links]=await Promise.all([
+  const [ps,co,ds,links,planRows]=await Promise.all([
     admin.from('vision_network_points').select('*').order('created_at',{ascending:false}).limit(200),
     admin.from('companies').select('id,name').order('name'),
     admin.from('devices').select('id,name,company_id,orientation,paired_at,retired_at').is('retired_at',null).order('name'),
     admin.from('vision_network_point_tvs').select('*'),
+    admin.from('vision_network_plans').select('slot,title,description,price_cents,active,updated_at').order('slot'),
   ]);
   const points=unwrap(ps)||[],companies=unwrap(co)||[],devices=unwrap(ds)||[],tvs=unwrap(links)||[];
   const enriched=await Promise.all(points.map(async(p:any)=>({...p,
     tvs:tvs.filter((t:any)=>t.point_id===p.id),
     photos:await signPhotos(admin,p.photo_paths)})));
-  return{points:enriched,companies,devices:devices.map((d:any)=>({
+  return{points:enriched,companies,plans:unwrap(planRows)||[],devices:devices.map((d:any)=>({
     id:d.id,name:d.name,company_id:d.company_id,orientation:d.orientation,
     allowed:!!d.paired_at&&!privateTv(d.name)
   }))};
@@ -151,6 +152,18 @@ async function savePoint(admin:any,user:any,raw:any){
   }
   return{id};
 }
+async function savePlan(admin:any,raw:any){
+  const slot=Number(raw.slot),title=short(raw.title,70),description=short(raw.description,400);
+  const active=raw.active===true;
+  const cents=raw.price_cents==null||raw.price_cents===''?null:Number(raw.price_cents);
+  if(!Number.isInteger(slot)||slot<1||slot>3)throw fail('invalid_plan_slot');
+  if(title.length<2||title.length>70||String(raw.description||'').length>400)throw fail('invalid_plan_description');
+  if(cents!==null&&(!Number.isInteger(cents)||cents<1||cents>100000000))throw fail('invalid_plan_price');
+  if(active&&cents===null)throw fail('plan_price_required');
+  const plan={slot,title,description,price_cents:cents,active,updated_at:new Date().toISOString()};
+  const updated=unwrap(await admin.from('vision_network_plans').upsert(plan,{onConflict:'slot'}).select('*').single());
+  return{ok:true,plan:updated};
+}
 async function uploadStart(admin:any,body:any){
   const id=short(body.id,80),mime=short(body.mime,80),size=Number(body.size_bytes);
   if(!uuid.test(id)||!['image/png','image/jpeg','image/webp'].includes(mime)||!Number.isInteger(size)||size<1||size>4000000)throw fail('invalid_photo');
@@ -193,13 +206,17 @@ Deno.serve(async req=>{
     const body=await req.json().catch(()=>({})),action=short(body.action,40);
     const {admin,url,publishable}=client();
     if(action==='public_list'){
-      const {data}=await admin.from('platform_public_config').select('support_whatsapp').eq('id',1).maybeSingle();
-      const digits=String(data?.support_whatsapp||'').replace(/\D/g,'').slice(0,15);
-      return J({ok:true,points:await makePublic(admin),whatsapp:digits});
+      const [config,plans]=await Promise.all([
+        admin.from('platform_public_config').select('support_whatsapp').eq('id',1).maybeSingle(),
+        admin.from('vision_network_plans').select('slot,title,description,price_cents').eq('active',true).order('slot'),
+      ]);
+      const digits=String(config.data?.support_whatsapp||'').replace(/\D/g,'').slice(0,15);
+      return J({ok:true,points:await makePublic(admin),whatsapp:digits,plans:unwrap(plans)||[]});
     }
     const user=await requireMaster(req,admin,url,publishable);
     if(action==='master_list')return J({ok:true,...await makeMaster(admin)});
     if(action==='save')return J({ok:true,...await savePoint(admin,user,body.point||{})});
+    if(action==='save_plan')return J(await savePlan(admin,body.plan||{}));
     if(action==='photo_start')return J({ok:true,...await uploadStart(admin,body)});
     if(action==='photo_attach')return J(await photoAttach(admin,body));
     if(action==='photo_remove')return J(await removePhoto(admin,body));
