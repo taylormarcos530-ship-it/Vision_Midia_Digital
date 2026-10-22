@@ -52,7 +52,7 @@ function openPoint(slug){
  $('#detail-content').innerHTML='<span class="chip">'+esc(p.category)+'</span>'+gallery+
   '<table class="details-table"><tbody>'+
   '<tr><td>Localização</td><td>'+esc([p.neighborhood,p.city].filter(Boolean).join(' · '))+(p.address?'<div>'+esc(p.address)+'</div>':'')+'</td></tr>'+
-  '<tr><td>Funcionamento</td><td>'+esc(p.hours||'Consulte a Vision')+'</td></tr>'+
+  '<tr><td>Funcionamento</td><td><div class="hours-public">'+esc(p.hours||'Consulte a Vision')+'</div></td></tr>'+
   '<tr><td>Quantidade de TVs</td><td>'+esc(p.tv_count)+'</td></tr>'+
   '<tr><td>Telas</td><td><ul>'+tvs+'</ul></td></tr>'+
   '<tr><td>Fluxo diário estimado</td><td>'+(p.estimated_daily_visitors!=null?'Aproximadamente '+Number(p.estimated_daily_visitors).toLocaleString('pt-BR')+' pessoas':'Não informado')+'</td></tr>'+
