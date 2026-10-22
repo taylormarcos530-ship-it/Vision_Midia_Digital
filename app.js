@@ -2577,6 +2577,31 @@
     if(choose)choose.disabled=!select?.value;
     const summary=document.querySelector('[data-media-tv-summary="'+CSS.escape(mediaId)+'"]');
     if(summary)summary.textContent=mediaTargetSummary(mediaId,select?.value);
+    const playlistId=select?.value||'';
+    const linkedItems=state.playlistItems.filter(item=>item.playlist_id===playlistId).sort((a,b)=>a.position-b.position);
+    const index=linkedItems.findIndex(item=>item.media_id===mediaId);
+    const up=document.querySelector('[data-media-move="'+CSS.escape(mediaId)+'"][data-direction="up"]');
+    const down=document.querySelector('[data-media-move="'+CSS.escape(mediaId)+'"][data-direction="down"]');
+    if(up){up.disabled=index<=0;up.title=index<0?'Vincule a mídia a esta playlist para ordenar':'Subir na playlist selecionada';}
+    if(down){down.disabled=index<0||index===linkedItems.length-1;down.title=index<0?'Vincule a mídia a esta playlist para ordenar':'Descer na playlist selecionada';}
+  }
+
+  async function moveMediaCardInPlaylist(mediaId,direction,button) {
+    if(state.playlistOrderSaving)return;
+    const playlistId=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]')?.value||'';
+    if(!playlistId||!state.playlists.some(p=>p.id===playlistId)){
+      toast('Escolha a playlist','Selecione uma playlist no cartão da mídia para ordenar.','error');return;
+    }
+    const items=state.playlistItems.filter(item=>item.playlist_id===playlistId).sort((a,b)=>a.position-b.position);
+    const index=items.findIndex(item=>item.media_id===mediaId);
+    const targetIndex=index+(direction==='up'?-1:1);
+    if(index<0){toast('Mídia fora da playlist','Vincule esta mídia à playlist escolhida antes de reordenar.','error');return;}
+    if(targetIndex<0||targetIndex>=items.length)return;
+    // Exibir imediatamente a sequência da playlist em vez da ordem da
+    // biblioteca, para que a movimentação fique visível também em "Todas".
+    state.mediaOrderPlaylistId=playlistId;
+    button.disabled=true;
+    await movePlaylistItem(items[index].id,direction,playlistId);
   }
 
   async function unlinkMediaFromPlaylist(mediaId, playlistId) {
@@ -2757,7 +2782,7 @@
       toolbar = document.createElement('div'); toolbar.id = 'media-order-toolbar';
       grid.before(toolbar);
     }
-    toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist"><option value="all" ${orderPlaylist === 'all' ? 'selected' : ''}>Todas as mídias</option>${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Segure ⋮⋮ e arraste, ou use ↑ ↓. A ordem é salva na playlist escolhida.</small>`;
+    toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist"><option value="all" ${orderPlaylist === 'all' ? 'selected' : ''}>Todas as mídias</option>${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Use ↑ ↓ no canto de cada mídia ou segure ⋮⋮. A ordem é salva na playlist selecionada.</small>`;
     const orderedItems = state.playlistItems.filter(i => i.playlist_id === orderPlaylist).sort((a,b) => a.position-b.position);
     const linkedIds = new Set(orderedItems.map(i => i.media_id));
     const entries = orderedItems.map(item => ({media:state.media.find(m => m.id === item.media_id),item})).filter(e => e.media);
@@ -2777,7 +2802,13 @@
       const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : (media.media_type === 'url' ? 'Online' : 'Vídeo');
       return `
       <article class="media-row-compact media-row-pro" data-media-card="${media.id}" ${item ? `data-playlist-drag-item="${item.id}" data-order-playlist="${orderPlaylist}"` : ''}>
-        ${item ? `<div class="media-order-controls"><button class="drag-handle" type="button" aria-label="Segure e arraste para ordenar">⋮⋮</button><strong>${orderedItems.indexOf(item)+1}º na TV</strong><button class="small-icon-button" type="button" data-move-item="${item.id}" data-order-playlist="${orderPlaylist}" data-direction="up" aria-label="Mover para cima" ${orderedItems.indexOf(item)===0?'disabled':''}>↑</button><button class="small-icon-button" type="button" data-move-item="${item.id}" data-order-playlist="${orderPlaylist}" data-direction="down" aria-label="Mover para baixo" ${orderedItems.indexOf(item)===orderedItems.length-1?'disabled':''}>↓</button></div>` : '<div class="media-order-unlinked">Fora desta playlist</div>'}
+        <div class="media-row-topline">
+          ${item ? `<div class="media-order-controls"><button class="drag-handle" type="button" aria-label="Segure e arraste para ordenar">⋮⋮</button><strong>${orderedItems.indexOf(item)+1}º na TV</strong></div>` : `<div class="media-order-unlinked">${orderPlaylist==='all'?'Biblioteca · escolha a playlist abaixo':'Fora desta playlist'}</div>`}
+          <div class="media-card-order" aria-label="Alterar ordem desta mídia na playlist">
+            <button class="media-arrow-button" type="button" data-media-move="${media.id}" data-direction="up" aria-label="Subir esta mídia na playlist" title="Subir na playlist">↑</button>
+            <button class="media-arrow-button" type="button" data-media-move="${media.id}" data-direction="down" aria-label="Descer esta mídia na playlist" title="Descer na playlist">↓</button>
+          </div>
+        </div>
         <div class="media-preview media-preview-clean" data-media-preview="${media.id}">
           <span class="media-preview-placeholder">${media.media_type === 'video' ? '▶' : (media.media_type === 'url' ? '↗' : '▧')}</span>
           ${media.media_type === 'image' ? `<div class="media-preview-tools" aria-label="Ajustes da imagem">
@@ -5325,6 +5356,8 @@
         const playlistId=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]')?.value||'';
         return openMediaTvTargets(mediaId,playlistId);
       }
+      const mediaMoveButton=event.target.closest('[data-media-move]');
+      if(mediaMoveButton) return moveMediaCardInPlaylist(mediaMoveButton.dataset.mediaMove,mediaMoveButton.dataset.direction,mediaMoveButton);
       const linkMediaButton = event.target.closest('[data-link-media-playlist]');
       if (linkMediaButton) {
         const mediaId = linkMediaButton.dataset.linkMediaPlaylist;
