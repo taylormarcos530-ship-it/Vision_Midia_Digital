@@ -161,6 +161,9 @@
     const group = $('#saas-admin-nav');
     if (!group || !CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) return;
     bindSaasNav();
+    $('#vision-saas-return')?.addEventListener('click', () => {
+      $('[data-view="dashboard"]')?.click();
+    });
     refreshSaasAccess({ restore: true });
     window.addEventListener('vision-session-changed', () => refreshSaasAccess({ restore: true }));
   }
