@@ -20,11 +20,11 @@ function formatWhatsApp(number,point,plan=null){
  if(digits.length===11||digits.length===10)digits='55'+digits;
  if(!/^55\d{10,11}$/.test(digits))return '';
  const text=plan
-   ? 'Olá! Quero anunciar minha empresa pela Vision Mídia Digital.\n'+
-     'Ponto escolhido: '+point.name+' ('+[point.neighborhood,point.city].filter(Boolean).join(' / ')+').\n'+
-     'Plano escolhido: '+plan.name+'.\n'+
-     'Descrição: '+plan.description+'.\n'+
-     'Valor informado: '+formatBRL(plan.price_cents)+'.\n'+
+   ? 'Olá! Quero anunciar minha empresa pela Vision Mídia Digital.\n\n'+
+     'Ponto escolhido: '+point.name+' ('+[point.neighborhood,point.city].filter(Boolean).join(' / ')+').\n\n'+
+     'Plano escolhido: '+plan.name+'.\n\n'+
+     'Descrição: '+plan.description+'.\n\n'+
+     'Valor informado: '+formatBRL(plan.price_cents)+'.\n\n'+
      'Gostaria de confirmar a disponibilidade e receber as instruções de pagamento.'
    : 'Olá! Gostaria de saber como anunciar minha empresa no ponto '+point.name+' da Rede Vision.';
  return 'https://wa.me/'+digits+'?text='+encodeURIComponent(text);
