@@ -25,6 +25,14 @@
     {
       "source": "/master",
       "destination": "/master.html"
+    },
+    {
+      "source": "/pontos",
+      "destination": "/pontos.html"
+    },
+    {
+      "source": "/master-pontos",
+      "destination": "/master-pontos.html"
     }
   ],
   "headers": [
