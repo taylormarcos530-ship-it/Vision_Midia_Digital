@@ -2465,3 +2465,20 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
 
 /* Device last-contact timestamp: compact and readable on mobile. */
 .device-last-connection{margin:8px 0 12px;padding:9px 12px;border:1px solid rgba(148,163,184,.2);border-radius:10px;color:#cbd5e1;font-size:12px;line-height:1.4;background:rgba(15,23,42,.45)}
+
+/* Individual-TV targeting for each media item: isolated from Player UI. */
+.media-tv-summary{display:block;margin-top:6px;color:#a7c6e9;font-size:12px;line-height:1.4;overflow-wrap:anywhere}
+#media-tv-target-dialog{width:min(540px,calc(100vw - 22px));max-height:min(85dvh,740px)}
+#media-tv-target-dialog .dialog-body{display:flex;flex-direction:column;gap:14px;padding:20px}
+.media-tv-select-all,.media-tv-choice{display:flex;align-items:center;gap:12px;width:100%;min-height:54px;padding:12px;border:1px solid #415c81;border-radius:12px;background:rgba(18,36,58,.85);color:#eff6ff;cursor:pointer}
+.media-tv-select-all{border-color:#4d8dff;background:rgba(31,78,134,.23)}
+.media-tv-select-all input,.media-tv-choice input{width:21px;height:21px;min-width:21px;flex:0 0 21px;accent-color:#438cff;cursor:pointer}
+.media-tv-choices{display:flex;flex-direction:column;gap:9px;max-height:38dvh;overflow-y:auto;overscroll-behavior:contain}
+.media-tv-choice>span{min-width:0;overflow-wrap:anywhere}
+#media-tv-target-save:disabled{opacity:.55}
+@media(max-width:760px){
+  #media-tv-target-dialog .dialog-body{padding:16px}
+  #media-tv-target-dialog .dialog-actions{display:flex;flex-wrap:wrap;gap:10px}
+  #media-tv-target-dialog .dialog-actions .button{flex:1 1 155px}
+  .media-tv-select-all,.media-tv-choice{min-height:58px}
+}
