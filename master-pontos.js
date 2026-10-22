@@ -291,9 +291,8 @@ async function save(event){
 }
 async function preparePhoto(file){
  if(!file||!file.size)throw Error('Selecione uma foto válida.');
- const formats=new Set(['image/jpeg','image/png','image/webp']);
- const max=4000000;
- if(file.size<=max&&formats.has(file.type))return file;
+ const accepted=new Set(['image/jpeg','image/png','image/webp']);
+ const maxBytes=4000000,targetBytes=1200000;
  if(file.size>40000000)throw Error('Esta foto é muito grande. Escolha uma imagem de até 40 MB.');
  let img=null,objectUrl=null;
  try{
@@ -309,22 +308,48 @@ async function preparePhoto(file){
   }
   const width=img.width||img.naturalWidth,height=img.height||img.naturalHeight;
   if(!width||!height)throw Error('Não foi possível ler as dimensões da foto.');
-  const scale=Math.min(1,1920/Math.max(width,height));
-  const canvas=document.createElement('canvas');
-  canvas.width=Math.max(1,Math.round(width*scale));
-  canvas.height=Math.max(1,Math.round(height*scale));
-  const ctx=canvas.getContext('2d');
-  if(!ctx)throw Error('O navegador não consegue otimizar esta foto.');
-  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  for(const quality of [0.86,0.74,0.6,0.47]){
-   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
-   if(blob&&blob.size>0&&blob.size<=max)return new File([blob],'foto-ponto-vision.jpg',{type:'image/jpeg'});
+  const maxSide=1600,baseScale=Math.min(1,maxSide/Math.max(width,height));
+  let candidate=null,canWebp=true;
+  const encode=(canvas,mime,quality)=>new Promise(resolve=>{
+   canvas.toBlob(blob=>resolve(blob?.type===mime&&blob.size>0?blob:null),mime,quality);
+  });
+  for(const shrink of [1,0.82,0.67,0.55]){
+   const canvas=document.createElement('canvas');
+   canvas.width=Math.max(1,Math.round(width*baseScale*shrink));
+   canvas.height=Math.max(1,Math.round(height*baseScale*shrink));
+   const ctx=canvas.getContext('2d');
+   if(!ctx)throw Error('O navegador não consegue otimizar esta foto.');
+   // Preserve transparent pixels in WebP; JPEG fallback uses a white background.
+   if(!canWebp){ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);}
+   ctx.drawImage(img,0,0,canvas.width,canvas.height);
+   for(const quality of [0.84,0.72,0.60,0.48]){
+    let mime=canWebp?'image/webp':'image/jpeg';
+    let blob=await encode(canvas,mime,quality);
+    if(!blob&&canWebp){
+     canWebp=false;
+     ctx.fillStyle='#ffffff';ctx.globalCompositeOperation='destination-over';
+     ctx.fillRect(0,0,canvas.width,canvas.height);
+     ctx.globalCompositeOperation='source-over';
+     mime='image/jpeg';blob=await encode(canvas,mime,quality);
+    }
+    if(!blob)continue;
+    if(blob.size<=maxBytes&&(!candidate||blob.size<candidate.blob.size))
+     candidate={blob,mime};
+    // Finish as soon as the compressed version is light and actually saves space.
+    if(blob.size<=targetBytes&&(!accepted.has(file.type)||file.size>maxBytes||blob.size<file.size*0.9)){
+     return new File([blob],mime==='image/webp'?'foto-ponto-vision.webp':'foto-ponto-vision.jpg',{type:mime});
+    }
+   }
   }
-  throw Error('Não foi possível reduzir esta foto. Escolha outra imagem.');
- }catch(e){
-  if(e?.message)throw e;
-  throw Error('O formato desta foto não é compatível. Experimente uma imagem JPG ou PNG.');
+  if(candidate&&(!accepted.has(file.type)||file.size>maxBytes||candidate.blob.size<file.size)){
+   return new File([candidate.blob],candidate.mime==='image/webp'?'foto-ponto-vision.webp':'foto-ponto-vision.jpg',{type:candidate.mime});
+  }
+  if(file.size<=maxBytes&&accepted.has(file.type))return file;
+  throw Error('Não foi possível reduzir esta foto para o limite de 4 MB. Escolha outra imagem.');
+ }catch(error){
+  // Never reject a safe original photo solely because the device lacks canvas/WebP.
+  if(file.size<=maxBytes&&accepted.has(file.type))return file;
+  throw error?.message?error:Error('Formato de imagem não compatível. Envie JPG, PNG ou WebP.');
  }finally{try{img?.close?.()}catch{}if(objectUrl)URL.revokeObjectURL(objectUrl)}
 }
 async function photoUpload(){
