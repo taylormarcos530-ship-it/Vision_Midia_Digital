@@ -4,7 +4,7 @@ const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const sessionKey='vision_midia_session_v1';
 const cfg=window.VISION_CONFIG||{};
-const state={list:null,pointId:null,busy:false};
+const state={list:null,pointId:null,busy:false,hoursOriginal:'',hoursTouched:false,hoursLegacy:false};
 const getSession=()=>{try{return JSON.parse(localStorage.getItem(sessionKey)||'null')}catch{return null}};
 const setStatus=(text,error=false)=>{const el=$('#status');el.textContent=text;el.className='notice'+(error?' error':'')};
 async function refresh(){
@@ -70,8 +70,12 @@ function renderScreens(selectedTvs=[]){
 }
 function renderPhotos(){
  const p=selected();
- $('#photo-section').hidden=!p;
- if(!p)return;
+ $('#photo-section').hidden=false;
+ if(!p){
+  $('#photo-list').innerHTML='<span class="muted">Você pode enviar a primeira foto agora. O ponto será salvo como rascunho privado.</span>';
+  $('#photo-input').disabled=false;$('#upload-photo').disabled=false;
+  return;
+ }
  $('#photo-list').innerHTML=(p.photo_paths||[]).map((path,i)=>
   '<figure>'+(p.photos?.[i]?'<img src="'+esc(p.photos[i])+'" loading="lazy" alt="Foto cadastrada do ponto">':'<span class="muted">Foto salva</span>')+
   '<button type="button" class="button secondary" data-photo-remove="'+esc(path)+'">Remover</button></figure>'
@@ -79,6 +83,60 @@ function renderPhotos(){
  $('#photo-input').disabled=p.photo_paths.length>=3;
  $('#upload-photo').disabled=p.photo_paths.length>=3;
 }
+
+const DAYS=[
+ {id:'weekdays',title:'Segunda a sexta',aliases:['segunda a sexta','seg a sexta','seg a sex']},
+ {id:'saturday',title:'Sábado',aliases:['sábado','sabado','sáb']},
+ {id:'sunday',title:'Domingo',aliases:['domingo','dom']},
+];
+function hoursParts(id){
+ return {
+  enabled:$('#point-form [data-hours-day="'+id+'"]'),
+  open:$('#point-form [data-hours-open="'+id+'"]'),
+  close:$('#point-form [data-hours-close="'+id+'"]')
+ };
+}
+function resetHours(original=''){
+ state.hoursOriginal=String(original||'');state.hoursTouched=false;state.hoursLegacy=false;
+ for(const d of DAYS){const h=hoursParts(d.id);h.enabled.checked=false;h.open.value='';h.close.value='';h.open.disabled=true;h.close.disabled=true;}
+ const lines=state.hoursOriginal.split(/\n|;/).map(line=>line.trim()).filter(Boolean);
+ let parsed=0;
+ for(const line of lines){
+  const label=line.split(': ')[0].toLocaleLowerCase('pt-BR').replace(/\s+/g,' ').trim();
+  const day=DAYS.find(d=>d.aliases.some(a=>a===label));
+  const range=line.match(/(\d{2}:\d{2})\s*(?:às|as|a|-|–)\s*(\d{2}:\d{2})/i);
+  if(!day||!range)continue;
+  const h=hoursParts(day.id);h.enabled.checked=true;h.open.value=range[1];h.close.value=range[2];
+  h.open.disabled=false;h.close.disabled=false;parsed++;
+ }
+ state.hoursLegacy=!!state.hoursOriginal && parsed!==lines.length;
+ const legacy=$('#hours-legacy');
+ legacy.hidden=!state.hoursLegacy;
+ legacy.textContent=state.hoursLegacy?'Horário anterior preservado até você editar: '+state.hoursOriginal:'';
+}
+function serializeHours(){
+ if(!state.hoursTouched&&state.hoursLegacy)return state.hoursOriginal;
+ const lines=[];
+ for(const d of DAYS){
+  const h=hoursParts(d.id);
+  if(!h.enabled.checked)continue;
+  if(!h.open.value||!h.close.value)throw Error('Informe abertura e fechamento para '+d.title+'.');
+  if(h.open.value===h.close.value)throw Error('Abertura e fechamento devem ser diferentes em '+d.title+'.');
+  lines.push(d.title+': '+h.open.value+' às '+h.close.value);
+ }
+ return lines.join('\n');
+}
+for(const d of DAYS){
+ const h=hoursParts(d.id);
+ h.enabled.addEventListener('change',()=>{
+  state.hoursTouched=true;
+  h.open.disabled=!h.enabled.checked;h.close.disabled=!h.enabled.checked;
+  $('#hours-legacy').hidden=true;
+ });
+ h.open.addEventListener('change',()=>{state.hoursTouched=true;$('#hours-legacy').hidden=true});
+ h.close.addEventListener('change',()=>{state.hoursTouched=true;$('#hours-legacy').hidden=true});
+}
+
 function editPoint(p=null){
  state.pointId=p?.id||null;
  const form=$('#point-form');
@@ -90,7 +148,7 @@ function editPoint(p=null){
  form.elements.city.value=p?.city||'';
  form.elements.neighborhood.value=p?.neighborhood||'';
  form.elements.public_address.value=p?.public_address||'';
- form.elements.opening_hours.value=p?.opening_hours||'';
+ resetHours(p?.opening_hours||'');
  form.elements.estimated_daily_visitors.value=p?.estimated_daily_visitors??'';
  form.elements.consent.checked=!!p?.consent_confirmed_at;
  form.elements.share_address.checked=!!p?.share_address;
@@ -123,7 +181,7 @@ async function save(event){
   company_id:f.elements.company_id.value,
   name:f.elements.name.value,category:f.elements.category.value,
   city:f.elements.city.value,neighborhood:f.elements.neighborhood.value,
-  public_address:f.elements.public_address.value,opening_hours:f.elements.opening_hours.value,
+  public_address:f.elements.public_address.value,opening_hours:serializeHours(),
   estimated_daily_visitors:f.elements.estimated_daily_visitors.value,
   consent:f.elements.consent.checked,share_address:f.elements.share_address.checked,
   published:f.elements.published.checked,tvs,
