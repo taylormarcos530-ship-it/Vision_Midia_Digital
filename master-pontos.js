@@ -171,7 +171,23 @@ $('#reset-point').addEventListener('click',()=>editPoint());
 $('#upload-photo').addEventListener('click',photoUpload);
 $('#photo-list').addEventListener('click',event=>{const b=event.target.closest('[data-photo-remove]');if(b)removePhoto(b.dataset.photoRemove)});
 $('#entries').addEventListener('click',event=>{const button=event.target.closest('[data-edit]');if(button){const p=state.list?.points.find(p=>p.id===button.dataset.edit);if(p)editPoint(p)}});
-if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)setStatus('Configuração do servidor indisponível.',true);
+const demoMode=new URLSearchParams(location.search).get('demo')==='1';
+if(demoMode){
+ const id='00000000-0000-4000-8000-000000000001',companyId='00000000-0000-4000-8000-000000000002';
+ const tvId='00000000-0000-4000-8000-000000000003';
+ state.list={
+  companies:[{id:companyId,name:'Academia — Exemplo de Cadastro'}],
+  devices:[{id:tvId,company_id:companyId,name:'TV de demonstração',orientation:'portrait',allowed:true}],
+  points:[{id,company_id:companyId,slug:'academia-exemplo',name:'Academia — Exemplo',category:'Academia',
+   city:'Anápolis',neighborhood:'A cadastrar',public_address:'',opening_hours:'',
+   estimated_daily_visitors:null,share_address:false,consent_confirmed_at:null,published:false,
+   photo_paths:[],photos:[],tvs:[{point_id:id,device_id:tvId,screen_inches:null,placement:''}]}],
+ };
+ $('#workspace').hidden=false;renderCompanies();renderEntries();editPoint(state.list.points[0]);
+ $('#save-point').disabled=true;$('#upload-photo').disabled=true;$('#photo-input').disabled=true;
+ $('#point-form').addEventListener('submit',event=>{event.preventDefault();setStatus('Demonstração visual: nenhum dado será salvo na Vision.');},true);
+ setStatus('DEMONSTRAÇÃO VISUAL — Dados fictícios. Nenhuma alteração é gravada.');
+}else if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)setStatus('Configuração do servidor indisponível.',true);
 else if(!getSession()?.access_token)setStatus('Entre primeiro no <a href="./master.html">Master</a>.',true);
 else load().catch(error=>setStatus(error.message+' Abra o Master para entrar novamente.',true));
 })();
