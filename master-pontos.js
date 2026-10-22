@@ -38,6 +38,39 @@ async function api(action,body={},retry=true){
  return data;
 }
 function selected(){return state.list?.points?.find(p=>p.id===state.pointId)||null}
+
+function pointSaveMarker(message=''){
+ const marker=$('#point-save-confirmation');
+ marker.textContent=message;
+ marker.hidden=!message;
+ marker.classList.toggle('dirty',message==='Alterações não salvas');
+}
+function priceForInput(cents){return cents==null?'':(Number(cents)/100).toFixed(2)}
+function toCents(value){
+ const cleaned=String(value||'').trim().replace(',','.');
+ const money=Number(cleaned);
+ if(!/^\d+(?:\.\d{1,2})?$/.test(cleaned)||!Number.isFinite(money)||money<=0||money>1000000)
+   throw Error('Informe um valor válido em reais, com no máximo duas casas decimais.');
+ return Math.round(money*100);
+}
+function renderPlans(){
+ const el=$('#plans-list');
+ if(!el||!state.list)return;
+ const known=new Map((state.list.plans||[]).map(row=>[Number(row.slot),row]));
+ el.innerHTML=[1,2,3].map(slot=>{
+  const p=known.get(slot)||{slot,title:['7 dias','15 dias','30 dias'][slot-1],description:'',price_cents:null,active:false};
+  return '<form class="plan-editor-card" data-plan-slot="'+slot+'">'+
+   '<span class="chip">Plano '+slot+'</span>'+
+   '<label>Nome do plano<input name="title" maxlength="70" minlength="2" required value="'+esc(p.title)+'" placeholder="Ex.: 7 dias"></label>'+
+   '<label>Descrição<textarea name="description" maxlength="400" rows="3" placeholder="O que está incluso neste plano">'+esc(p.description||'')+'</textarea></label>'+
+   '<label>Valor em reais (R$)<input name="price" inputmode="decimal" type="number" min="0.01" max="1000000" step="0.01" placeholder="Ex.: 35,00" value="'+esc(priceForInput(p.price_cents))+'"></label>'+
+   '<label class="check"><input type="checkbox" name="active" '+(p.active?'checked':'')+'><span>Disponível no catálogo público</span></label>'+
+   '<button type="submit" class="button">Salvar plano '+slot+'</button>'+
+   '<div class="save-confirmation" data-plan-confirmation role="status" aria-live="polite" hidden></div>'+
+   '</form>';
+ }).join('');
+}
+
 function renderEntries(){
  const points=state.list.points;
  $('#entries').innerHTML=points.length?points.map(p=>
@@ -139,6 +172,7 @@ for(const d of DAYS){
 
 function editPoint(p=null){
  state.pointId=p?.id||null;
+ pointSaveMarker();
  const form=$('#point-form');
  form.reset();form.elements.id.value=p?.id||'';
  form.elements.company_id.value=p?.company_id||'';
@@ -162,7 +196,7 @@ async function load(idToOpen=null){
  const data=await api('master_list');
  state.list=data;
  $('#workspace').hidden=false;
- renderCompanies();renderEntries();
+ renderCompanies();renderEntries();renderPlans();
  if(idToOpen!==null)state.pointId=idToOpen;
  editPoint(selected());
  setStatus('Painel conectado. Pontos publicados aparecem no catálogo; rascunhos permanecem privados.');
@@ -203,9 +237,11 @@ async function save(event){
   setStatus('Dados gravados com sucesso. Atualizando informações…');
   try{
    await load(result.id);
+   pointSaveMarker('✓ Salvo com sucesso!');
    setStatus('Informações salvas. '+(point.published?'Ponto publicado no catálogo.':'Rascunho privado salvo.'));
   }catch(error){
    state.pointId=result.id;
+   pointSaveMarker('✓ Salvo com sucesso!');
    setStatus('O ponto foi salvo no servidor, mas a lista não atualizou: '+error.message,true);
   }
  }catch(error){setStatus('Não foi possível salvar: '+error.message,true)}
@@ -295,6 +331,45 @@ async function removePhoto(path){
  catch(error){setStatus(error.message,true)}
 }
 $('#point-form').addEventListener('submit',save);
+
+$('#point-form').addEventListener('input',()=>{if(!$('#point-save-confirmation').hidden)pointSaveMarker('Alterações não salvas')});
+$('#point-form').addEventListener('change',()=>{if(!$('#point-save-confirmation').hidden)pointSaveMarker('Alterações não salvas')});
+$('#plans-list').addEventListener('input',event=>{
+ const form=event.target.closest('form[data-plan-slot]');if(!form)return;
+ const marker=form.querySelector('[data-plan-confirmation]');marker.hidden=false;
+ marker.textContent='Alterações não salvas';marker.classList.add('dirty');
+});
+$('#plans-list').addEventListener('change',event=>{
+ const form=event.target.closest('form[data-plan-slot]');if(!form)return;
+ const marker=form.querySelector('[data-plan-confirmation]');marker.hidden=false;
+ marker.textContent='Alterações não salvas';marker.classList.add('dirty');
+});
+$('#plans-list').addEventListener('submit',async event=>{
+ const form=event.target.closest('form[data-plan-slot]');if(!form)return;
+ event.preventDefault();
+ const badge=form.querySelector('[data-plan-confirmation]');
+ const button=form.querySelector('button[type=submit]');
+ if(button.disabled)return;
+ if(!form.reportValidity())return;
+ button.disabled=true;badge.hidden=false;badge.classList.remove('dirty');
+ badge.textContent='Salvando o plano…';
+ try{
+  const slot=Number(form.dataset.planSlot),active=form.elements.active.checked;
+  const raw=form.elements.price.value.trim();
+  const price_cents=raw?toCents(raw):null;
+  if(active&&price_cents==null)throw Error('Preencha o valor antes de publicar este plano.');
+  const plan={slot,title:form.elements.title.value.trim(),description:form.elements.description.value.trim(),price_cents,active};
+  const response=await api('save_plan',{plan});
+  state.list.plans=state.list.plans||[];
+  state.list.plans=state.list.plans.filter(p=>Number(p.slot)!==slot).concat(response.plan);
+  badge.textContent='✓ Salvo com sucesso!'+(active?' Disponível para os anunciantes.':' Plano oculto do catálogo.');
+  setStatus('Plano '+slot+' salvo com sucesso.');
+ }catch(error){
+  badge.classList.add('dirty');badge.textContent='Não foi possível salvar: '+error.message;
+  setStatus('Falha ao salvar o plano '+form.dataset.planSlot+': '+error.message,true);
+ }finally{button.disabled=false}
+});
+
 $('#point-form [name="company_id"]').addEventListener('change',()=>renderScreens());
 $('#new-point').addEventListener('click',()=>editPoint());
 $('#reset-point').addEventListener('click',()=>editPoint());
@@ -313,7 +388,8 @@ if(demoMode){
    estimated_daily_visitors:null,share_address:false,consent_confirmed_at:null,published:false,
    photo_paths:[],photos:[],tvs:[{point_id:id,device_id:tvId,screen_inches:null,placement:''}]}],
  };
- $('#workspace').hidden=false;renderCompanies();renderEntries();editPoint(state.list.points[0]);
+ $('#workspace').hidden=false;renderCompanies();renderEntries();renderPlans();editPoint(state.list.points[0]);
+ $('#plans-list').querySelectorAll('input,textarea,button').forEach(el=>el.disabled=true);
  $('#save-point').disabled=true;$('#upload-photo').disabled=true;$('#photo-input').disabled=true;
  $('#point-form').addEventListener('submit',event=>{event.preventDefault();setStatus('Demonstração visual: nenhum dado será salvo na Vision.');},true);
  setStatus('DEMONSTRAÇÃO VISUAL — Dados fictícios. Nenhuma alteração é gravada.');
