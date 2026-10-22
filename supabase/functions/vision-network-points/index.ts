@@ -69,18 +69,19 @@ async function makePublic(admin:any){
   return out;
 }
 async function makeMaster(admin:any){
-  const [ps,co,ds,links,plans]=await Promise.all([
+  const [ps,co,ds,links,plans,addons]=await Promise.all([
     admin.from('vision_network_points').select('*').order('created_at',{ascending:false}).limit(200),
     admin.from('companies').select('id,name').order('name'),
     admin.from('devices').select('id,name,company_id,orientation,paired_at,retired_at').is('retired_at',null).order('name'),
     admin.from('vision_network_point_tvs').select('*'),
     admin.from('vision_network_ad_plans').select('slot,name,description,price_cents,active,updated_at').order('slot'),
+    admin.from('vision_network_addons').select('id,name,description,price_cents,active,eligible_plan_slots,sort_order,updated_at').order('sort_order').order('created_at'),
   ]);
   const points=unwrap(ps)||[],companies=unwrap(co)||[],devices=unwrap(ds)||[],tvs=unwrap(links)||[];
   const enriched=await Promise.all(points.map(async(p:any)=>({...p,
     tvs:tvs.filter((t:any)=>t.point_id===p.id),
     photos:await signPhotos(admin,p.photo_paths)})));
-  return{points:enriched,companies,plans:unwrap(plans)||[],devices:devices.map((d:any)=>({
+  return{points:enriched,companies,plans:unwrap(plans)||[],addons:unwrap(addons)||[],devices:devices.map((d:any)=>({
     id:d.id,name:d.name,company_id:d.company_id,orientation:d.orientation,
     allowed:!!d.paired_at&&!privateTv(d.name)
   }))};
@@ -202,6 +203,40 @@ async function saveNetworkPlan(admin:any,user:any,raw:any){
   const stored=unwrap(await admin.from('vision_network_ad_plans').upsert(row,{onConflict:'slot'}).select('slot,name,description,price_cents,active,updated_at').single());
   return{ok:true,plan:stored};
 }
+// Add-ons are global to this Master-controlled catalog. They are never billed
+// automatically: the public site only returns eligible choices for opt-in.
+async function saveAddon(admin:any,user:any,raw:any){
+ const id=short(raw?.id,60);
+ if(id&&!uuid.test(id))throw fail('invalid_addon_id');
+ if(id&&!unwrap(await admin.from('vision_network_addons').select('id').eq('id',id).maybeSingle()))throw fail('addon_not_found',404);
+ const name=short(raw?.name,100),description=short(raw?.description,500);
+ const price=Number(raw?.price_cents),order=Number(raw?.sort_order);
+ const slots=raw?.eligible_plan_slots;
+ if(name.length<2||String(raw?.name||'').trim().length>100)throw fail('invalid_addon_name');
+ if(String(raw?.description||'').length>500)throw fail('invalid_addon_description');
+ if(!Number.isInteger(price)||price<0||price>100000000)throw fail('invalid_addon_price');
+ if(!Number.isInteger(order)||order<0||order>100000)throw fail('invalid_addon_order');
+ if(!Array.isArray(slots)||slots.length>3||
+   slots.some((s:any)=>!Number.isInteger(s)||s<1||s>3)||
+   new Set(slots).size!==slots.length)throw fail('invalid_addon_plans');
+ if(raw?.active===true&&!slots.length)throw fail('active_addon_requires_plan');
+ const payload={
+  name,description,price_cents:price,sort_order:order,
+  eligible_plan_slots:[...slots].sort((a:number,b:number)=>a-b),
+  active:raw?.active===true,updated_by:user.id,updated_at:new Date().toISOString()
+ };
+ const query=id?admin.from('vision_network_addons').update(payload).eq('id',id):
+   admin.from('vision_network_addons').insert(payload);
+ const saved=unwrap(await query.select('id,name,description,price_cents,active,eligible_plan_slots,sort_order,updated_at').single());
+ return {ok:true,addon:saved};
+}
+async function deleteAddon(admin:any,raw:any){
+ const id=short(raw?.id,60);
+ if(!uuid.test(id))throw fail('invalid_addon_id');
+ const removed=unwrap(await admin.from('vision_network_addons').delete().eq('id',id).select('id').maybeSingle());
+ if(!removed)throw fail('addon_not_found',404);
+ return {ok:true,id};
+}
 Deno.serve(async req=>{
   if(req.method==='OPTIONS')return new Response('ok',{headers:C});
   if(req.method!=='POST')return J({error:'method_not_allowed'},405);
@@ -214,11 +249,22 @@ Deno.serve(async req=>{
       const activePlans=unwrap(await admin.from('vision_network_ad_plans')
         .select('slot,name,description,price_cents').eq('active',true)
         .not('price_cents','is',null).order('slot'))||[];
-      return J({ok:true,points:await makePublic(admin),whatsapp:digits,plans:activePlans});
+      // Public sees only active services eligible for at least one active plan.
+      const validSlots=new Set(activePlans.map((p:any)=>Number(p.slot)));
+      const addons=unwrap(await admin.from('vision_network_addons')
+        .select('id,name,description,price_cents,eligible_plan_slots,sort_order')
+        .eq('active',true).order('sort_order').order('created_at').limit(100))||[];
+      const eligibleAddons=addons.filter((addon:any)=>
+       Array.isArray(addon.eligible_plan_slots)&&
+       addon.eligible_plan_slots.some((slot:number)=>validSlots.has(slot))
+      );
+      return J({ok:true,points:await makePublic(admin),whatsapp:digits,plans:activePlans,addons:eligibleAddons});
     }
     const user=await requireMaster(req,admin,url,publishable);
     if(action==='master_list')return J({ok:true,...await makeMaster(admin)});
     if(action==='save_plan')return J(await saveNetworkPlan(admin,user,body.plan||{}));
+    if(action==='save_addon')return J(await saveAddon(admin,user,body.addon||{}));
+    if(action==='delete_addon')return J(await deleteAddon(admin,body||{}));
     if(action==='save')return J({ok:true,...await savePoint(admin,user,body.point||{})});
     if(action==='photo_start')return J({ok:true,...await uploadStart(admin,body)});
     if(action==='photo_attach')return J(await photoAttach(admin,body));
