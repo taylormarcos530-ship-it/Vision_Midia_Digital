@@ -2482,3 +2482,24 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
   #media-tv-target-dialog .dialog-actions .button{flex:1 1 155px}
   .media-tv-select-all,.media-tv-choice{min-height:58px}
 }
+
+/* Direct ↑ ↓ order controls on every library media card. */
+.media-row-compact.media-row-pro>.media-row-topline{
+ grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:12px;
+ min-height:47px;padding:0 2px;min-width:0
+}
+.media-row-topline .media-order-controls{min-width:0;display:flex;align-items:center;gap:10px}
+.media-row-topline .media-order-unlinked{min-width:0;flex:1;font-size:12px;color:var(--muted);overflow-wrap:anywhere}
+.media-card-order{display:flex;align-items:center;gap:8px;flex:0 0 auto;margin-left:auto}
+.media-card-order .media-arrow-button{
+ display:inline-flex;align-items:center;justify-content:center;
+ width:43px;height:43px;min-width:43px;border:1px solid #4d6b9e;border-radius:11px;
+ background:#294c85;color:#f5f9ff;font-weight:800;font-size:24px;line-height:1;cursor:pointer
+}
+.media-card-order .media-arrow-button:hover:not(:disabled){background:#3664a7;border-color:#78a6f6}
+.media-card-order .media-arrow-button:disabled{opacity:.35;cursor:not-allowed}
+.media-card-order .media-arrow-button:focus-visible{outline:3px solid #9dc0ff;outline-offset:2px}
+@media(max-width:760px){
+ .media-row-compact.media-row-pro>.media-row-topline{gap:9px}
+ .media-card-order .media-arrow-button{width:46px;height:46px;min-width:46px;font-size:25px}
+}
