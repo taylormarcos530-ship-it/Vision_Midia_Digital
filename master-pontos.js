@@ -105,6 +105,76 @@ $('#plan-editor').addEventListener('submit',async event=>{
  }finally{button.disabled=false}
 });
 
+// Manage Master-global opt-in services without changing the three ad plans.
+let creatingAddon=false;
+function renderAddons(){
+ const root=$('#addons-editor');if(!root)return;
+ const plans=(state.list?.plans||[]).map(p=>({slot:Number(p.slot),name:p.name||'Plano '+p.slot}));
+ const addons=[...(state.list?.addons||[])].sort((a,b)=>Number(a.sort_order)-Number(b.sort_order));
+ if(creatingAddon)addons.push({id:'',name:'',description:'',price_cents:null,active:false,eligible_plan_slots:[1,2,3],sort_order:(addons.at(-1)?.sort_order||0)+10});
+ root.innerHTML=addons.map(a=>{
+  const newOne=!a.id,allowed=new Set(a.eligible_plan_slots||[]);
+  return '<form class="network-plan-item addon-edit-form" data-addon-id="'+esc(a.id||'')+'">'+
+   '<strong>'+(newOne?'Novo serviço adicional':esc(a.name))+'</strong>'+
+   '<label>Nome<input name="name" maxlength="100" minlength="2" required value="'+esc(a.name)+'" placeholder="Nome do serviço"></label>'+
+   '<label>Descrição e benefícios<textarea name="description" rows="4" maxlength="500" placeholder="Benefícios, duração e condições">'+esc(a.description||'')+'</textarea></label>'+
+   '<div class="form-grid"><label>Valor (R$)<input name="price" inputmode="decimal" required value="'+esc(a.price_cents==null?'':moneyFromCents(a.price_cents))+'" placeholder="25,00"></label>'+
+   '<label>Ordem<input name="sort_order" type="number" min="0" max="100000" step="1" required value="'+esc(a.sort_order??0)+'"></label></div>'+
+   '<fieldset class="addon-plan-fieldset"><legend>Disponível nos planos</legend><div class="addon-plan-choices">'+
+   plans.map(p=>'<label class="check"><input type="checkbox" name="addon_slot" value="'+p.slot+'" '+(allowed.has(p.slot)?'checked':'')+'><span>'+esc(p.name)+'</span></label>').join('')+
+   '</div></fieldset>'+
+   '<label class="check"><input name="active" type="checkbox" '+(a.active?'checked':'')+'><span>Ativo para contratação</span></label>'+
+   '<div class="network-plan-actions"><button class="button secondary" type="submit">Salvar adicional</button>'+
+   (!newOne?'<button class="button secondary" type="button" data-addon-delete="'+esc(a.id)+'">Excluir</button>':'<button class="button secondary" type="button" data-addon-cancel>Cancelar</button>')+
+   '<span class="save-confirmation" data-addon-status role="status" aria-live="polite">Sem alterações</span></div>'+
+   '</form>';
+ }).join('')||'<p class="small-note">Nenhum serviço adicional cadastrado.</p>';
+ $('#addons-workspace').hidden=false;
+}
+$('#addon-new').addEventListener('click',()=>{creatingAddon=true;renderAddons();$('#addons-editor form:last-child input[name="name"]')?.focus()});
+for(const type of ['input','change'])$('#addons-editor').addEventListener(type,event=>{
+ const el=event.target.closest('form[data-addon-id] [data-addon-status]')||event.target.closest('form[data-addon-id]')?.querySelector('[data-addon-status]');
+ if(el){el.textContent='Alterações não salvas';el.dataset.state='pending'}
+});
+$('#addons-editor').addEventListener('click',async event=>{
+ if(event.target.closest('[data-addon-cancel]')){creatingAddon=false;renderAddons();return;}
+ const button=event.target.closest('[data-addon-delete]');if(!button)return;
+ const id=button.dataset.addonDelete,addon=state.list?.addons?.find(a=>a.id===id);
+ if(!addon||!confirm('Excluir o serviço "'+addon.name+'"? Esta ação o remove do catálogo.'))return;
+ button.disabled=true;
+ try{
+  await api('delete_addon',{id});
+  state.list.addons=state.list.addons.filter(a=>a.id!==id);
+  renderAddons();
+  $('#addons-status').textContent='Serviço excluído do cadastro.';
+ }catch(error){$('#addons-status').textContent='Não foi possível excluir: '+error.message;button.disabled=false}
+});
+$('#addons-editor').addEventListener('submit',async event=>{
+ const form=event.target.closest('form[data-addon-id]');if(!form)return;
+ event.preventDefault();
+ const status=form.querySelector('[data-addon-status]'),button=form.querySelector('button[type="submit"]');
+ if(!form.reportValidity()||button.disabled)return;
+ try{
+  const selectedSlots=[...form.querySelectorAll('input[name="addon_slot"]:checked')].map(x=>Number(x.value));
+  const price_cents=centsFromInput(form.elements.price.value);
+  if(form.elements.active.checked&&!selectedSlots.length)throw Error('Marque pelo menos um plano para ativar este serviço.');
+  const addon={
+   id:form.dataset.addonId||undefined,name:form.elements.name.value.trim(),
+   description:form.elements.description.value.trim(),price_cents,sort_order:Number(form.elements.sort_order.value),
+   eligible_plan_slots:selectedSlots,active:form.elements.active.checked
+  };
+  button.disabled=true;status.textContent='Salvando serviço…';status.dataset.state='pending';
+  const result=await api('save_addon',{addon});
+  const old=(state.list.addons||[]).findIndex(a=>a.id===result.addon.id);
+  if(old<0){state.list.addons=state.list.addons||[];state.list.addons.push(result.addon)}
+  else state.list.addons[old]=result.addon;
+  creatingAddon=false;
+  renderAddons();
+  const saved=[...$('#addons-editor').querySelectorAll('form[data-addon-id]')].find(f=>f.dataset.addonId===result.addon.id);
+  if(saved){const el=saved.querySelector('[data-addon-status]');el.textContent='✓ Salvo às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});el.dataset.state='saved'}
+  $('#addons-status').textContent='Serviço salvo no Master.';
+ }catch(error){status.textContent='✕ Não salvo: '+error.message;status.dataset.state='error';button.disabled=false}
+});
 function renderEntries(){
  const points=state.list.points;
  $('#entries').innerHTML=points.length?points.map(p=>
@@ -238,7 +308,7 @@ async function load(idToOpen=null){
  const data=await api('master_list');
  state.list=data;
  $('#workspace').hidden=false;
- renderCompanies();renderEntries();renderPlans();
+ renderCompanies();renderEntries();renderPlans();renderAddons();
  if(idToOpen!==null)state.pointId=idToOpen;
  editPoint(selected());
  setStatus('Painel conectado. Pontos publicados aparecem no catálogo; rascunhos permanecem privados.');
