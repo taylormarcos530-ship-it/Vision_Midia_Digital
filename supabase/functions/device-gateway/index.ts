@@ -253,7 +253,7 @@ async function resolveProgram(admin, device) {
   }
 }
 
-async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSchedules, timeZone) {
+async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSchedules, timeZone, deviceId) {
   if (!playlistId) return null
   const { data: playlist, error: playlistError } = await admin
     .from('playlists')
@@ -266,17 +266,23 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
 
   const { data: playlistItems, error: itemsError } = await admin
     .from('playlist_items')
-    .select('id,media_id,position,duration_override_seconds,enabled,is_essential,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
+    .select('id,media_id,position,duration_override_seconds,enabled,is_essential,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at,target_device_ids')
     .eq('playlist_id', playlist.id)
     .eq('company_id', companyId)
     .eq('enabled', true)
     .order('position', { ascending: true })
   if (itemsError) throw itemsError
 
+  // A NULL target is the legacy "all TVs" behavior. Restricted items never
+  // reach an unselected device, including via the emergency fallback playlist.
+  const perDeviceItems = (playlistItems || []).filter(item =>
+    item.target_device_ids == null ||
+    (Array.isArray(item.target_device_ids) && item.target_device_ids.includes(deviceId))
+  )
   const itemClock = localDateParts(new Date(), timeZone || 'America/Sao_Paulo')
   const effectivePlaylistItems = supportsItemSchedules
-    ? (playlistItems || [])
-    : (playlistItems || []).filter(item => itemScheduleIsActive(item, itemClock))
+    ? perDeviceItems
+    : perDeviceItems.filter(item => itemScheduleIsActive(item, itemClock))
   const mediaIds = [...new Set(effectivePlaylistItems.map(item => item.media_id))]
   let media = []
   if (mediaIds.length) {
@@ -637,9 +643,10 @@ Deno.serve(async (req) => {
         resolved.playlistId,
         supportsItemSchedules,
         resolved.program?.timezone,
+        device.id,
       )
       const fallback = resolved.fallbackPlaylistId
-        ? await loadPlaylistPayload(admin, device.company_id, resolved.fallbackPlaylistId, supportsItemSchedules, resolved.program?.timezone)
+        ? await loadPlaylistPayload(admin, device.company_id, resolved.fallbackPlaylistId, supportsItemSchedules, resolved.program?.timezone, device.id)
         : null
 
       if (resolved.playlistId && !primary && !fallback) {
