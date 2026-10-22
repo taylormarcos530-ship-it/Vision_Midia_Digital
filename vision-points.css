@@ -34,3 +34,29 @@
 .offer-choice>b{white-space:nowrap;color:#f5da90;font-size:16px}
 .button.is-disabled{pointer-events:none;opacity:.48;cursor:not-allowed}
 @media(max-width:380px){.offer-choice{flex-wrap:wrap}.offer-choice>b{margin-left:31px}}
+
+/* Rede Vision opt-in services: shared only by catalog and points Master. */
+.upsell-master-panel{margin-bottom:24px}
+.addon-plan-fieldset{min-width:0;border:1px solid #375270;border-radius:11px;padding:10px}
+.addon-plan-fieldset legend{padding:0 7px;color:#d9e8fc;font-weight:700}
+.addon-plan-choices{display:flex;flex-direction:column;gap:3px}
+.addon-edit-form .network-plan-actions{margin-top:auto}
+.upsell-public{border:1px solid #456889;border-radius:15px;padding:16px;margin:18px 0;background:#132b43}
+.upsell-public h3{font-size:19px;margin:0 0 8px;color:#f4d999}
+.addon-choices{display:grid;gap:9px;margin-top:14px}
+.addon-choice{display:flex;align-items:flex-start;gap:12px;min-width:0;padding:12px;border:1px solid #446486;border-radius:11px;background:#0c2035;cursor:pointer}
+.addon-choice:has(input:checked){border-color:#6bd9be;background:#143e49}
+.addon-choice input{width:21px;min-height:21px;flex:0 0 21px;accent-color:#58cfa7;margin:1px 0}
+.addon-choice span{flex:1;min-width:0;overflow-wrap:anywhere}
+.addon-choice strong,.addon-choice small{display:block}
+.addon-choice small{white-space:normal;line-height:1.55;color:#b6cbe3;font-size:12px;margin-top:5px;font-weight:400}
+.addon-choice>b{white-space:nowrap;color:#fae3a4;font-size:15px}
+.order-summary-section{padding:6px 0 13px}
+.order-summary-section h3{margin:12px 0;font-size:18px}
+.order-summary{border:1px solid #385573;border-radius:13px;background:#0b1e32;padding:12px;display:grid;gap:10px}
+.order-summary>div{display:flex;align-items:start;justify-content:space-between;gap:15px;font-size:14px}
+.order-summary>div>span{color:#bed1e9;max-width:65%}
+.order-summary>div>strong{text-align:right;overflow-wrap:anywhere}
+.order-summary .order-total{border-top:1px solid #466583;padding-top:13px;color:#9ff0cb;font-size:18px}
+#request-plan{display:flex;width:100%;min-height:50px;white-space:normal;text-align:center}
+@media(max-width:420px){.addon-choice{flex-wrap:wrap}.addon-choice>b{margin-left:33px}}
