@@ -13,6 +13,13 @@
   <script src="./pwa-icon.js?v=panel-logo-20261018" defer></script>
   <link rel="stylesheet" href="./pwa-install.css" />
   <script src="./pwa-install.js" defer></script>
+<style>
+/* Retornar stays visible inside SaaS even on mobile with its outer topbar hidden. */
+#vision-saas-return{display:none;align-items:center;justify-content:center;min-height:42px;padding:9px 14px;border:1px solid #405a82;border-radius:11px;background:#172a49;color:#f0f6ff;font-size:14px;font-weight:700;cursor:pointer}
+#view-saas-admin:not(.hidden) #vision-saas-return{display:inline-flex}
+.vision-saas-return-row{display:flex;justify-content:flex-end;padding:8px 0 12px}
+#vision-saas-return:focus-visible{outline:2px solid #80aaff;outline-offset:2px}
+</style>
 </head>
 <body>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
@@ -649,6 +656,7 @@
         </section>
 
         <section id="view-saas-admin" class="view-section saas-admin-view hidden">
+          <div class="vision-saas-return-row"><button id="vision-saas-return" type="button" aria-label="Retornar ao painel operacional">← Retornar</button></div>
           <div id="saas-master-loading" class="saas-master-loading">Carregando administração SaaS…</div>
           <iframe id="saas-master-frame" class="saas-master-frame" title="Administração SaaS da Vision Mídia Digital"></iframe>
         </section>
