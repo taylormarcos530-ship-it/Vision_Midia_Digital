@@ -167,54 +167,126 @@ async function load(idToOpen=null){
  editPoint(selected());
  setStatus('Painel conectado. Pontos publicados aparecem no catálogo; rascunhos permanecem privados.');
 }
-async function save(event){
- event.preventDefault();
- if(state.busy)return;
- const f=event.currentTarget,fields=Object.fromEntries(new FormData(f));
+
+function pointFromForm({asDraft=false}={}){
+ const f=$('#point-form');
  const tvs=[...f.querySelectorAll('[name="device_ids"]:checked')].map(input=>({
   device_id:input.value,
   screen_inches:f.elements['inches_'+input.value]?.value||null,
   placement:f.elements['place_'+input.value]?.value||'',
  }));
  const point={
-  id:fields.id||null,
+  id:f.elements.id.value||null,
   company_id:f.elements.company_id.value,
-  name:f.elements.name.value,category:f.elements.category.value,
-  city:f.elements.city.value,neighborhood:f.elements.neighborhood.value,
-  public_address:f.elements.public_address.value,opening_hours:serializeHours(),
+  name:f.elements.name.value.trim(),category:f.elements.category.value,
+  city:f.elements.city.value.trim(),neighborhood:f.elements.neighborhood.value.trim(),
+  public_address:f.elements.public_address.value.trim(),
+  opening_hours:serializeHours(),
   estimated_daily_visitors:f.elements.estimated_daily_visitors.value,
   consent:f.elements.consent.checked,share_address:f.elements.share_address.checked,
-  published:f.elements.published.checked,tvs,
+  published:asDraft?false:f.elements.published.checked,tvs,
  };
- if(point.published&&!point.consent){setStatus('É necessário confirmar a autorização antes de publicar.',true);return}
- if(point.published&&!tvs.length){setStatus('Para publicar, selecione pelo menos uma TV válida.',true);return}
+ if(point.published&&!point.consent)throw Error('Confirme a autorização do estabelecimento para publicar.');
+ if(point.published&&!tvs.length)throw Error('Para publicar, selecione pelo menos uma TV real do estabelecimento.');
+ if(point.share_address&&!point.consent)throw Error('Para divulgar o endereço, confirme a autorização do estabelecimento.');
+ return point;
+}
+async function save(event){
+ event.preventDefault();
+ if(state.busy)return;
+ const form=event.currentTarget;
+ if(!form.reportValidity())return;
  state.busy=true;$('#save-point').disabled=true;
  try{
+  const point=pointFromForm();
   const result=await api('save',{point});
-  await load(result.id);
-  setStatus('Ponto salvo. '+(point.published?'Publicado no catálogo compartilhável.':'Mantido como rascunho privado.'));
- }catch(error){setStatus('Erro ao salvar: '+error.message,true)}
+  setStatus('Dados gravados com sucesso. Atualizando informações…');
+  try{
+   await load(result.id);
+   setStatus('Informações salvas. '+(point.published?'Ponto publicado no catálogo.':'Rascunho privado salvo.'));
+  }catch(error){
+   state.pointId=result.id;
+   setStatus('O ponto foi salvo no servidor, mas a lista não atualizou: '+error.message,true);
+  }
+ }catch(error){setStatus('Não foi possível salvar: '+error.message,true)}
  finally{state.busy=false;$('#save-point').disabled=false}
 }
-async function photoUpload(){
- const p=selected(),file=$('#photo-input').files?.[0];
- if(!p||!file){setStatus('Salve o ponto e escolha uma foto antes de enviar.',true);return}
- if(!['image/png','image/jpeg','image/webp'].includes(file.type)||file.size<1||file.size>4000000){
-  setStatus('Use uma foto PNG, JPG ou WebP de até 4 MB.',true);return;
- }
- $('#upload-photo').disabled=true;
+async function preparePhoto(file){
+ if(!file||!file.size)throw Error('Selecione uma foto válida.');
+ const formats=new Set(['image/jpeg','image/png','image/webp']);
+ const max=4000000;
+ if(file.size<=max&&formats.has(file.type))return file;
+ if(file.size>40000000)throw Error('Esta foto é muito grande. Escolha uma imagem de até 40 MB.');
+ let img=null,objectUrl=null;
  try{
+  if(typeof createImageBitmap==='function')img=await createImageBitmap(file);
+  else{
+   objectUrl=URL.createObjectURL(file);
+   img=await new Promise((resolve,reject)=>{
+    const image=new Image();
+    image.onload=()=>resolve(image);
+    image.onerror=()=>reject(Error('Formato de imagem não compatível com o navegador.'));
+    image.src=objectUrl;
+   });
+  }
+  const width=img.width||img.naturalWidth,height=img.height||img.naturalHeight;
+  if(!width||!height)throw Error('Não foi possível ler as dimensões da foto.');
+  const scale=Math.min(1,1920/Math.max(width,height));
+  const canvas=document.createElement('canvas');
+  canvas.width=Math.max(1,Math.round(width*scale));
+  canvas.height=Math.max(1,Math.round(height*scale));
+  const ctx=canvas.getContext('2d');
+  if(!ctx)throw Error('O navegador não consegue otimizar esta foto.');
+  ctx.fillStyle='#ffffff';ctx.fillRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  for(const quality of [0.86,0.74,0.6,0.47]){
+   const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',quality));
+   if(blob&&blob.size>0&&blob.size<=max)return new File([blob],'foto-ponto-vision.jpg',{type:'image/jpeg'});
+  }
+  throw Error('Não foi possível reduzir esta foto. Escolha outra imagem.');
+ }catch(e){
+  if(e?.message)throw e;
+  throw Error('O formato desta foto não é compatível. Experimente uma imagem JPG ou PNG.');
+ }finally{try{img?.close?.()}catch{}if(objectUrl)URL.revokeObjectURL(objectUrl)}
+}
+async function photoUpload(){
+ if(state.busy)return;
+ const picked=$('#photo-input').files?.[0];
+ if(!picked){setStatus('Escolha uma foto para enviar.',true);return}
+ state.busy=true;$('#upload-photo').disabled=true;$('#save-point').disabled=true;
+ let draftCreated=false;
+ try{
+  setStatus('Preparando a foto para envio…');
+  const file=await preparePhoto(picked);
+  let p=selected();
+  if(!p){
+   const form=$('#point-form');
+   if(!form.reportValidity()){setStatus('Complete os campos obrigatórios do ponto antes de enviar a foto.',true);return;}
+   const point=pointFromForm({asDraft:true});
+   const created=await api('save',{point});
+   draftCreated=true;
+   await load(created.id);
+   p=selected();
+   if(!p)throw Error('Rascunho salvo, mas não foi possível recuperá-lo.');
+  }
+  setStatus('Enviando foto '+(file.size/1048576).toFixed(1)+' MB para a Vision…');
   const signed=await api('photo_start',{id:p.id,mime:file.type,size_bytes:file.size});
   const path=signed.path.split('/').map(encodeURIComponent).join('/');
   const destination=cfg.supabaseUrl+'/storage/v1/object/upload/sign/vision-media/'+path+'?token='+encodeURIComponent(signed.token);
   const form=new FormData();form.append('cacheControl','3600');form.append('',file);
   const response=await fetch(destination,{method:'PUT',headers:{apikey:cfg.supabasePublishableKey},body:form});
-  if(!response.ok)throw Error('O armazenamento recusou o arquivo ('+response.status+').');
+  if(!response.ok){
+   const detail=await response.json().catch(()=>({}));
+   throw Error('Armazenamento recusou o envio: '+String(detail.message||detail.error||'HTTP '+response.status).slice(0,180));
+  }
   await api('photo_attach',{id:p.id,path:signed.path});
-  await load(p.id);$('#photo-input').value='';
-  setStatus('Foto salva. Será exibida quando o ponto estiver publicado.');
- }catch(error){setStatus('Falha ao enviar foto: '+error.message,true)}
- finally{$('#upload-photo').disabled=false}
+  $('#photo-input').value='';
+  setStatus('Foto enviada. Atualizando o cadastro…');
+  try{await load(p.id)}catch(error){setStatus('Foto enviada e registrada; atualize a lista para vê-la: '+error.message,true);return;}
+  setStatus('Foto salva com sucesso.'+(draftCreated?' O ponto foi criado como rascunho privado. Para divulgá-lo, marque Publicar e salve.':''));
+ }catch(error){
+  setStatus((draftCreated?'Rascunho do ponto preservado. ':'')+'Falha ao enviar foto: '+error.message,true);
+ }finally{state.busy=false;$('#upload-photo').disabled=!!(selected()?.photo_paths?.length>=3);$('#save-point').disabled=false}
 }
 async function removePhoto(path){
  const p=selected();
