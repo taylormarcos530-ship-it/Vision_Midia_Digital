@@ -9,3 +9,28 @@
 .hours-line input:disabled{opacity:.38}
 .hours-public{white-space:pre-line;line-height:1.7}
 @media(max-width:470px){.hours-line{grid-template-columns:1fr 1fr}.hours-line .check{grid-column:1/-1;min-height:25px}}
+
+/* Isolated Rede Vision ad offer editor + selection, never touches the main Master. */
+.network-plan-panel{margin:0 0 24px}.network-plan-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,265px),1fr));gap:14px}
+.network-plan-item{border:1px solid var(--line);border-radius:14px;background:#0c1b2f;padding:15px;display:flex;flex-direction:column;gap:11px}
+.network-plan-item>strong{color:var(--gold);font-size:17px}
+.network-plan-item>label:not(.check){display:flex;flex-direction:column;gap:5px}
+.network-plan-item .check{margin:3px 0}
+.network-plan-item textarea{min-height:94px}
+.network-plan-actions{display:flex;align-items:center;flex-wrap:wrap;gap:10px}
+.save-confirmation{font-size:13px;color:var(--muted);font-weight:700;max-width:100%;overflow-wrap:anywhere}
+.save-confirmation[data-state="saved"]{color:#89ecc4}
+.save-confirmation[data-state="error"]{color:#ffadb7}
+.save-confirmation[data-state="pending"]{color:#f5d18b}
+.offers-public{margin:22px 0 7px;border-top:1px solid var(--line);padding-top:18px}
+.offers-public h3{margin:0 0 7px;font-size:19px}
+.offer-choices{display:grid;gap:9px;margin:14px 0}
+.offer-choice{border:1px solid #425f82;background:#132941;border-radius:13px;padding:13px;display:flex;align-items:center;gap:11px;cursor:pointer;min-width:0}
+.offer-choice:has(input:checked){background:#173b50;border-color:#6be0c8;box-shadow:inset 0 0 0 1px #6be0c8}
+.offer-choice input{width:19px;min-height:19px;accent-color:#57c8a7;flex:0 0 19px}
+.offer-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.offer-text strong,.offer-text small{display:block}
+.offer-text small{font-weight:400;color:var(--muted);font-size:12px;line-height:1.35}
+.offer-choice>b{white-space:nowrap;color:#f5da90;font-size:16px}
+.button.is-disabled{pointer-events:none;opacity:.48;cursor:not-allowed}
+@media(max-width:380px){.offer-choice{flex-wrap:wrap}.offer-choice>b{margin-left:31px}}
