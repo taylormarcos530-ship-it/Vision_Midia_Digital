@@ -2442,7 +2442,7 @@
   function mediaPlaylistOptions(mediaId) {
     if (!state.playlists.length) return '<option value="">Crie uma playlist primeiro</option>';
     const linked = new Set(state.playlistItems.filter(item => item.media_id === mediaId).map(item => item.playlist_id));
-    return '<option value="">Escolha a playlist…</option>' + state.playlists.map(playlist => {
+    return (state.playlists.length===1 ? '' : '<option value="">Escolha a playlist…</option>') + state.playlists.map(playlist => {
       const already = linked.has(playlist.id);
       const assigned = state.deviceAssignments.filter(a => a.playlist_id === playlist.id);
       const destination = assigned.length ? ' • ' + assigned.length + (assigned.length === 1 ? ' TV vinculada' : ' TVs vinculadas') : ' • nenhuma TV vinculada';
@@ -2450,6 +2450,14 @@
     }).join('');
   }
 
+  function selectedMediaPlaylistId(mediaId) {
+    // A single playlist has a fixed destination: no extra selection needed.
+    if(state.playlists.length===1)return state.playlists[0].id;
+    const select=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]');
+    if(select?.value&&state.playlists.some(p=>p.id===select.value))return select.value;
+    const links=state.playlistItems.filter(i=>i.media_id===mediaId&&state.playlists.some(p=>p.id===i.playlist_id));
+    return links.length===1?links[0].playlist_id:'';
+  }
 
   // Device eligibility is scoped to the current company and the selected
   // playlist, including direct assignments, groups and targeted campaigns.
@@ -2570,14 +2578,15 @@
     const select = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`);
     const button = document.querySelector(`[data-link-media-playlist="${CSS.escape(mediaId)}"]`);
     if (!button) return;
-    const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === select?.value);
+    const playlistId=selectedMediaPlaylistId(mediaId);
+    if(select&&!select.value&&playlistId)select.value=playlistId;
+    const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === playlistId);
     button.textContent = linked ? 'Desvincular' : '+ Vincular';
-    button.disabled = !select?.value;
+    button.disabled = !playlistId;
     const choose=document.querySelector('[data-media-targets="'+CSS.escape(mediaId)+'"]');
-    if(choose)choose.disabled=!select?.value;
+    if(choose)choose.disabled=!playlistId;
     const summary=document.querySelector('[data-media-tv-summary="'+CSS.escape(mediaId)+'"]');
-    if(summary)summary.textContent=mediaTargetSummary(mediaId,select?.value);
-    const playlistId=select?.value||'';
+    if(summary)summary.textContent=mediaTargetSummary(mediaId,playlistId);
     const linkedItems=state.playlistItems.filter(item=>item.playlist_id===playlistId).sort((a,b)=>a.position-b.position);
     const index=linkedItems.findIndex(item=>item.media_id===mediaId);
     const up=document.querySelector('[data-media-move="'+CSS.escape(mediaId)+'"][data-direction="up"]');
@@ -2588,7 +2597,7 @@
 
   async function moveMediaCardInPlaylist(mediaId,direction,button) {
     if(state.playlistOrderSaving)return;
-    const playlistId=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]')?.value||'';
+    const playlistId=selectedMediaPlaylistId(mediaId);
     if(!playlistId||!state.playlists.some(p=>p.id===playlistId)){
       toast('Escolha a playlist','Selecione uma playlist no cartão da mídia para ordenar.','error');return;
     }
@@ -2599,9 +2608,10 @@
     if(targetIndex<0||targetIndex>=items.length)return;
     // Exibir imediatamente a sequência da playlist em vez da ordem da
     // biblioteca, para que a movimentação fique visível também em "Todas".
-    state.mediaOrderPlaylistId=playlistId;
+    if(state.playlists.length!==1)state.mediaOrderPlaylistId=playlistId;
     button.disabled=true;
-    await movePlaylistItem(items[index].id,direction,playlistId);
+    try{await movePlaylistItem(items[index].id,direction,playlistId);}
+    finally{if(button.isConnected)button.disabled=false;}
   }
 
   async function unlinkMediaFromPlaylist(mediaId, playlistId) {
@@ -2783,7 +2793,8 @@
       grid.before(toolbar);
     }
     toolbar.innerHTML = `<label>Ordem de reprodução na TV <select id="media-order-playlist"><option value="all" ${orderPlaylist === 'all' ? 'selected' : ''}>Todas as mídias</option>${state.playlists.map(p => `<option value="${p.id}" ${p.id === orderPlaylist ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}</select></label><small>Use ↑ ↓ no canto de cada mídia ou segure ⋮⋮. A ordem é salva na playlist selecionada.</small>`;
-    const orderedItems = state.playlistItems.filter(i => i.playlist_id === orderPlaylist).sort((a,b) => a.position-b.position);
+    const effectiveOrderPlaylist=orderPlaylist==='all'&&state.playlists.length===1?state.playlists[0].id:orderPlaylist;
+    const orderedItems = state.playlistItems.filter(i => i.playlist_id === effectiveOrderPlaylist).sort((a,b) => a.position-b.position);
     const linkedIds = new Set(orderedItems.map(i => i.media_id));
     const entries = orderedItems.map(item => ({media:state.media.find(m => m.id === item.media_id),item})).filter(e => e.media);
     if (orderPlaylist === 'all') entries.push(...state.media.filter(m => !linkedIds.has(m.id)).map(media => ({media,item:null})));
@@ -2801,9 +2812,9 @@
       const duration = media.duration_seconds ? ` • ${escapeHtml(formatDuration(media.duration_seconds))}` : '';
       const orientation = media.media_type === 'image' ? mediaOrientationLabel(media) : (media.media_type === 'url' ? 'Online' : 'Vídeo');
       return `
-      <article class="media-row-compact media-row-pro" data-media-card="${media.id}" ${item ? `data-playlist-drag-item="${item.id}" data-order-playlist="${orderPlaylist}"` : ''}>
+      <article class="media-row-compact media-row-pro" data-media-card="${media.id}" ${item ? `data-playlist-drag-item="${item.id}" data-order-playlist="${effectiveOrderPlaylist}"` : ''}>
         <div class="media-row-topline">
-          ${item ? `<div class="media-order-controls"><button class="drag-handle" type="button" aria-label="Segure e arraste para ordenar">⋮⋮</button><strong>${orderedItems.indexOf(item)+1}º na TV</strong></div>` : `<div class="media-order-unlinked">${orderPlaylist==='all'?'Biblioteca · escolha a playlist abaixo':'Fora desta playlist'}</div>`}
+          ${item ? `<div class="media-order-controls"><button class="drag-handle" type="button" aria-label="Segure e arraste para ordenar">⋮⋮</button><strong>${orderedItems.indexOf(item)+1}º na TV</strong></div>` : `<div class="media-order-unlinked">${orderPlaylist==='all'&&state.playlists.length>1?'Biblioteca · escolha a playlist abaixo':'Fora desta playlist'}</div>`}
           <div class="media-card-order" aria-label="Alterar ordem desta mídia na playlist">
             <button class="media-arrow-button" type="button" data-media-move="${media.id}" data-direction="up" aria-label="Subir esta mídia na playlist" title="Subir na playlist">↑</button>
             <button class="media-arrow-button" type="button" data-media-move="${media.id}" data-direction="down" aria-label="Descer esta mídia na playlist" title="Descer na playlist">↓</button>
@@ -2822,7 +2833,8 @@
           <span class="media-link-count">${linkedPlaylists.size ? `Em ${linkedPlaylists.size} playlist${linkedPlaylists.size === 1 ? '' : 's'}` : 'Ainda não vinculada a playlist'}</span>
         </div>
         <div class="media-direct-playlist">
-          <select data-media-playlist-select="${media.id}" ${state.playlists.length ? '' : 'disabled'}>
+          ${state.playlists.length===1 ? `<small class="media-single-playlist">Playlist: <strong>${escapeHtml(state.playlists[0].name)}</strong></small>` : ''}
+          <select data-media-playlist-select="${media.id}" ${state.playlists.length===1 ? 'style="display:none" aria-label="Playlist única vinculada"' : ''} ${state.playlists.length ? '' : 'disabled'}>
             ${mediaPlaylistOptions(media.id)}
           </select>
           <small class="media-tv-summary" data-media-tv-summary="${media.id}"></small>
@@ -5353,7 +5365,7 @@
       const chooseMediaTvs=event.target.closest('[data-media-targets]');
       if(chooseMediaTvs) {
         const mediaId=chooseMediaTvs.dataset.mediaTargets;
-        const playlistId=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]')?.value||'';
+        const playlistId=selectedMediaPlaylistId(mediaId);
         return openMediaTvTargets(mediaId,playlistId);
       }
       const mediaMoveButton=event.target.closest('[data-media-move]');
@@ -5361,7 +5373,7 @@
       const linkMediaButton = event.target.closest('[data-link-media-playlist]');
       if (linkMediaButton) {
         const mediaId = linkMediaButton.dataset.linkMediaPlaylist;
-        const playlistId = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`)?.value || '';
+        const playlistId = selectedMediaPlaylistId(mediaId);
         const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === playlistId);
         return linked ? unlinkMediaFromPlaylist(mediaId, playlistId) : openMediaTvTargets(mediaId, playlistId);
       }
