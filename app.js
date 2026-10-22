@@ -2517,7 +2517,7 @@
   }
 
   function syncMediaTvTargetCheck() {
-    const boxes=$('[data-media-tv-choice]','#'+'media-tv-target-list');
+    const boxes=Array.from($('#media-tv-target-list').querySelectorAll('[data-media-tv-choice]'));
     const checked=boxes.filter(box=>box.checked).length;
     const all=$('#media-tv-target-all');
     all.checked=boxes.length>0&&checked===boxes.length;
@@ -2531,7 +2531,7 @@
     const dialog=$('#media-tv-target-dialog'),mediaId=dialog.dataset.mediaId,playlistId=dialog.dataset.playlistId;
     const eligible=mediaPlaylistDevices(playlistId);
     const eligibleIds=new Set(eligible.map(d=>d.id));
-    const chosen=$('[data-media-tv-choice]','#'+'media-tv-target-list').filter(box=>box.checked).map(box=>box.value);
+    const chosen=Array.from($('#media-tv-target-list').querySelectorAll('[data-media-tv-choice]')).filter(box=>box.checked).map(box=>box.value);
     const status=$('#media-tv-target-status'),button=$('#media-tv-target-save');
     if(!eligible.length||!chosen.length||chosen.some(id=>!eligibleIds.has(id))) {
       status.textContent='Selecione pelo menos uma TV válida para esta playlist.';
@@ -5257,7 +5257,7 @@
     $('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
     $('#media-tv-target-form').addEventListener('submit',saveMediaTvTargets);
     $('#media-tv-target-all').addEventListener('change',event=>{
-      $('[data-media-tv-choice]','#'+'media-tv-target-list').forEach(box=>{box.checked=event.target.checked;});
+      Array.from($('#media-tv-target-list').querySelectorAll('[data-media-tv-choice]')).forEach(box=>{box.checked=event.target.checked;});
       syncMediaTvTargetCheck();
     });
     $('#media-tv-target-list').addEventListener('change',syncMediaTvTargetCheck);
