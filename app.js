@@ -5285,7 +5285,7 @@
     });
     $$('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
 
-    $('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
+    $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
     $('#media-tv-target-form').addEventListener('submit',saveMediaTvTargets);
     $('#media-tv-target-all').addEventListener('change',event=>{
       Array.from($('#media-tv-target-list').querySelectorAll('[data-media-tv-choice]')).forEach(box=>{box.checked=event.target.checked;});
