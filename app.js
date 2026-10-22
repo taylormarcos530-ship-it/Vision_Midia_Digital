@@ -2434,7 +2434,7 @@
     const mediaPart = state.media.map(media => [
       media.id, media.storage_path, media.source_url, media.media_type, media.updated_at, media.name, media.width, media.height, media.size_bytes, media.duration_seconds
     ].join(':')).join('|');
-    const itemPart = state.playlistItems.map(item => `${item.id}:${item.playlist_id}:${item.media_id}`).join('|');
+    const itemPart = state.playlistItems.map(item => `${item.id}:${item.playlist_id}:${item.media_id}:${item.updated_at}:${(item.target_device_ids||[]).join(',')}`).join('|');
     const playlistPart = state.playlists.map(playlist => `${playlist.id}:${playlist.name}`).join('|');
     return `${mediaPart}__${itemPart}__${playlistPart}`;
   }
@@ -2450,6 +2450,122 @@
     }).join('');
   }
 
+
+  // Device eligibility is scoped to the current company and the selected
+  // playlist, including direct assignments, groups and targeted campaigns.
+  function mediaPlaylistDevices(playlistId) {
+    const direct=new Map(state.deviceAssignments.map(a=>[a.device_id,a.playlist_id]));
+    const eligible=new Set(state.deviceAssignments.filter(a=>a.playlist_id===playlistId).map(a=>a.device_id));
+    const groups=new Set(state.deviceGroups.filter(g=>g.playlist_id===playlistId).map(g=>g.id));
+    for(const member of state.deviceGroupMembers) {
+      if(groups.has(member.group_id)&&!direct.get(member.device_id)) eligible.add(member.device_id);
+    }
+    for(const campaign of state.campaigns) {
+      if(campaign.playlist_id!==playlistId||campaign.is_active===false) continue;
+      if(campaign.all_devices) state.devices.forEach(d=>eligible.add(d.id));
+      else state.campaignDevices.filter(cd=>cd.campaign_id===campaign.id).forEach(cd=>eligible.add(cd.device_id));
+    }
+    for(const device of state.devices) {
+      if(device.fallback_playlist_id===playlistId) eligible.add(device.id);
+    }
+    if(state.company?.fallback_playlist_id===playlistId) state.devices.forEach(d=>eligible.add(d.id));
+    return state.devices.filter(d=>eligible.has(d.id)&&!d.retired_at&&d.company_id===state.company?.id)
+      .sort((a,b)=>a.name.localeCompare(b.name,'pt-BR'));
+  }
+
+  function mediaTargetSummary(mediaId,playlistId) {
+    const item=state.playlistItems.find(p=>p.media_id===mediaId&&p.playlist_id===playlistId);
+    if(!playlistId||!item)return 'Escolha as TVs ao vincular esta mídia.';
+    const devices=mediaPlaylistDevices(playlistId);
+    const n=devices.length;
+    if(item.target_device_ids==null)return 'Em todas as '+n+' TVs desta playlist';
+    const allowed=new Set(item.target_device_ids);
+    const selected=devices.filter(d=>allowed.has(d.id)).length;
+    return selected+' de '+n+' TVs selecionadas';
+  }
+
+  function openMediaTvTargets(mediaId,playlistId) {
+    const media=state.media.find(m=>m.id===mediaId);
+    const playlist=state.playlists.find(p=>p.id===playlistId);
+    if(!media||!playlist)return toast('Escolha a playlist','Selecione uma playlist antes de escolher as TVs.','error');
+    const devices=mediaPlaylistDevices(playlistId);
+    if(!devices.length)return toast('Sem TVs para selecionar','Vincule a playlist a uma TV primeiro.','error');
+    const dialog=$('#media-tv-target-dialog');
+    const item=state.playlistItems.find(i=>i.media_id===mediaId&&i.playlist_id===playlistId);
+    dialog.dataset.mediaId=mediaId;
+    dialog.dataset.playlistId=playlistId;
+    $('#media-tv-target-name').textContent=media.name+' — '+playlist.name;
+    const selected=item&&Array.isArray(item.target_device_ids)?new Set(item.target_device_ids):new Set(devices.map(d=>d.id));
+    const list=$('#media-tv-target-list');
+    list.replaceChildren();
+    for(const d of devices) {
+      const label=document.createElement('label');
+      label.className='media-tv-choice';
+      const check=document.createElement('input');
+      check.type='checkbox';
+      check.value=d.id;
+      check.checked=selected.has(d.id);
+      check.setAttribute('data-media-tv-choice','');
+      const text=document.createElement('span');
+      text.textContent=d.name;
+      label.append(check,text);
+      list.append(label);
+    }
+    syncMediaTvTargetCheck();
+    $('#media-tv-target-status').textContent='';
+    dialog.showModal();
+  }
+
+  function syncMediaTvTargetCheck() {
+    const boxes=$('[data-media-tv-choice]','#'+'media-tv-target-list');
+    const checked=boxes.filter(box=>box.checked).length;
+    const all=$('#media-tv-target-all');
+    all.checked=boxes.length>0&&checked===boxes.length;
+    all.indeterminate=checked>0&&checked<boxes.length;
+    $('#media-tv-target-count').textContent=checked+' de '+boxes.length+' TVs selecionadas';
+    $('#media-tv-target-save').disabled=checked===0;
+  }
+
+  async function saveMediaTvTargets(event) {
+    event.preventDefault();
+    const dialog=$('#media-tv-target-dialog'),mediaId=dialog.dataset.mediaId,playlistId=dialog.dataset.playlistId;
+    const eligible=mediaPlaylistDevices(playlistId);
+    const eligibleIds=new Set(eligible.map(d=>d.id));
+    const chosen=$('[data-media-tv-choice]','#'+'media-tv-target-list').filter(box=>box.checked).map(box=>box.value);
+    const status=$('#media-tv-target-status'),button=$('#media-tv-target-save');
+    if(!eligible.length||!chosen.length||chosen.some(id=>!eligibleIds.has(id))) {
+      status.textContent='Selecione pelo menos uma TV válida para esta playlist.';
+      return;
+    }
+    // NULL keeps "all TVs"; only a subset is stored as explicit UUIDs.
+    const selection=chosen.length===eligible.length?null:chosen;
+    button.disabled=true;
+    status.textContent='Salvando seleção...';
+    try {
+      const item=state.playlistItems.find(i=>i.media_id===mediaId&&i.playlist_id===playlistId);
+      if(item) {
+        await restRequest('playlist_items',{
+          method:'PATCH',
+          query:'id=eq.'+encodeURIComponent(item.id)+'&company_id=eq.'+encodeURIComponent(state.company.id),
+          body:{target_device_ids:selection},prefer:'return=minimal'
+        });
+      } else {
+        const success=await linkMediaToPlaylist(mediaId,playlistId,selection);
+        if(!success){status.textContent='A vinculação não foi confirmada. Nenhuma TV foi alterada.';return;}
+      }
+      await loadAllData();
+      state.mediaRenderSignature='';
+      renderMedia();
+      dialog.close();
+      toast('TVs do anúncio atualizadas',chosen.length+' TV(s) selecionada(s) para esta mídia.');
+      void syncPlaylistDevices(playlistId);
+    } catch(error) {
+      status.textContent='Não foi possível salvar: '+String(error?.message||error);
+    } finally {
+      button.disabled=false;
+    }
+  }
+
   function updateMediaPlaylistAction(mediaId) {
     const select = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`);
     const button = document.querySelector(`[data-link-media-playlist="${CSS.escape(mediaId)}"]`);
@@ -2457,6 +2573,10 @@
     const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === select?.value);
     button.textContent = linked ? 'Desvincular' : '+ Vincular';
     button.disabled = !select?.value;
+    const choose=document.querySelector('[data-media-targets="'+CSS.escape(mediaId)+'"]');
+    if(choose)choose.disabled=!select?.value;
+    const summary=document.querySelector('[data-media-tv-summary="'+CSS.escape(mediaId)+'"]');
+    if(summary)summary.textContent=mediaTargetSummary(mediaId,select?.value);
   }
 
   async function unlinkMediaFromPlaylist(mediaId, playlistId) {
@@ -2674,9 +2794,11 @@
           <select data-media-playlist-select="${media.id}" ${state.playlists.length ? '' : 'disabled'}>
             ${mediaPlaylistOptions(media.id)}
           </select>
+          <small class="media-tv-summary" data-media-tv-summary="${media.id}"></small>
         </div>
         <div class="media-actions media-actions-pro">
           <button class="small-icon-button media-link-button" type="button" data-link-media-playlist="${media.id}" ${state.playlists.length ? '' : 'disabled'}>+ Vincular</button>
+          <button class="small-icon-button" type="button" data-media-targets="${media.id}" ${state.playlists.length ? '' : 'disabled'}>Selecionar TVs</button>
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
@@ -4380,7 +4502,7 @@
     }
   }
 
-  async function linkMediaToPlaylist(mediaId, playlistId) {
+  async function linkMediaToPlaylist(mediaId, playlistId, targetIds = null) {
     const media = state.media.find(item => item.id === mediaId);
     const playlist = state.playlists.find(item => item.id === playlistId);
     if (!media || !playlist) return toast('Escolha uma playlist', 'Selecione a playlist antes de vincular a mídia.', 'error');
@@ -4400,6 +4522,7 @@
           position:nextPosition,
           duration_override_seconds:media.media_type === 'image' ? 10 : null,
           enabled:true,
+          target_device_ids:targetIds,
         },
         prefer:'return=minimal',
       });
@@ -4407,8 +4530,10 @@
       toast('Mídia vinculada', `${media.name} foi adicionada à playlist ${playlist.name}.`);
       state.mediaRenderSignature = '';
       await loadAllData();
+      return true;
     } catch (error) {
       toast('Não foi possível vincular', error.message, 'error');
+      return false;
     }
   }
 
@@ -5129,7 +5254,13 @@
     });
     $$('[data-online-preset]').forEach(button => button.addEventListener('click', () => openOnlineMediaDialog(button.dataset.onlinePreset)));
 
-    $$('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
+    $('[data-close-dialog]').forEach(btn => btn.addEventListener('click', () => closeDialog(btn.dataset.closeDialog)));
+    $('#media-tv-target-form').addEventListener('submit',saveMediaTvTargets);
+    $('#media-tv-target-all').addEventListener('change',event=>{
+      $('[data-media-tv-choice]','#'+'media-tv-target-list').forEach(box=>{box.checked=event.target.checked;});
+      syncMediaTvTargetCheck();
+    });
+    $('#media-tv-target-list').addEventListener('change',syncMediaTvTargetCheck);
 
     document.addEventListener('change', event => {
       const mediaPlaylist = event.target.closest?.('[data-media-playlist-select]');
@@ -5188,12 +5319,18 @@
       if (openMediaButton) return openMedia(openMediaButton.dataset.openMedia);
       const rotateMediaButton = event.target.closest('[data-rotate-media]');
       if (rotateMediaButton) return rotateMediaImage(rotateMediaButton.dataset.rotateMedia, Number(rotateMediaButton.dataset.rotation || 90));
+      const chooseMediaTvs=event.target.closest('[data-media-targets]');
+      if(chooseMediaTvs) {
+        const mediaId=chooseMediaTvs.dataset.mediaTargets;
+        const playlistId=document.querySelector('[data-media-playlist-select="'+CSS.escape(mediaId)+'"]')?.value||'';
+        return openMediaTvTargets(mediaId,playlistId);
+      }
       const linkMediaButton = event.target.closest('[data-link-media-playlist]');
       if (linkMediaButton) {
         const mediaId = linkMediaButton.dataset.linkMediaPlaylist;
         const playlistId = document.querySelector(`[data-media-playlist-select="${CSS.escape(mediaId)}"]`)?.value || '';
         const linked = state.playlistItems.some(item => item.media_id === mediaId && item.playlist_id === playlistId);
-        return linked ? unlinkMediaFromPlaylist(mediaId, playlistId) : linkMediaToPlaylist(mediaId, playlistId);
+        return linked ? unlinkMediaFromPlaylist(mediaId, playlistId) : openMediaTvTargets(mediaId, playlistId);
       }
       const deleteMediaButton = event.target.closest('[data-delete-media]');
       if (deleteMediaButton) return deleteMedia(deleteMediaButton.dataset.deleteMedia);
