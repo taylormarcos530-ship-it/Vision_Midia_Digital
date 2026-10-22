@@ -9,3 +9,28 @@
 .hours-line input:disabled{opacity:.38}
 .hours-public{white-space:pre-line;line-height:1.7}
 @media(max-width:470px){.hours-line{grid-template-columns:1fr 1fr}.hours-line .check{grid-column:1/-1;min-height:25px}}
+
+/* Comercial plans: isolated to Rede de Pontos, never affects the player. */
+.save-confirmation{display:inline-flex;align-items:center;gap:8px;margin-top:7px;border:1px solid #39956f;border-radius:11px;background:#114c39;color:#d2ffe9;padding:11px 14px;font-size:14px;font-weight:800}
+.save-confirmation[hidden]{display:none!important}
+.save-confirmation.dirty{background:#493d18;border-color:#b59031;color:#fff0bd}
+.plans-editor{margin-top:22px}
+.plan-editor-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.plan-editor-card{display:flex;flex-direction:column;gap:12px;background:#0b1b2e;border:1px solid #2f5279;border-radius:15px;padding:18px;min-width:0}
+.plan-editor-card label:not(.check){display:grid;gap:5px;font-size:14px}
+.plan-editor-card textarea{min-height:108px}
+.plan-editor-card button{margin-top:auto}
+.starting-price{font-size:14px;color:#e7f1ff;margin:0 0 5px}
+.starting-price strong{color:#ffce6c}
+.pick-plan{margin:23px 0;border-top:1px solid #355475;padding-top:14px}
+.pick-plan h3{font-size:19px;margin:0 0 4px}
+.pick-plan-options{display:flex;flex-direction:column;gap:11px;margin:15px 0}
+.pick-plan-card{display:flex;gap:12px;align-items:center;border:1px solid #406386;border-radius:14px;padding:13px;background:#122b47;cursor:pointer}
+.pick-plan-card:has(input:checked){border-color:#71c7aa;background:#164238;box-shadow:0 0 0 1px #71c7aa inset}
+.pick-plan-card input{width:18px;height:18px;min-height:18px;flex-shrink:0;accent-color:#44c699}
+.pick-plan-details{flex:1;display:flex;flex-direction:column;gap:3px;min-width:0}
+.pick-plan-details small{font-size:12px;color:#bdd5ed;white-space:pre-line}
+.pick-plan-card b{color:#ffce6c;white-space:nowrap;font-size:16px}
+.button.is-disabled{pointer-events:none;opacity:.6;filter:grayscale(40%)}
+@media(max-width:900px){.plan-editor-grid{grid-template-columns:1fr}}
+@media(max-width:460px){.pick-plan-card{flex-wrap:wrap}.pick-plan-card b{margin-left:31px}}
