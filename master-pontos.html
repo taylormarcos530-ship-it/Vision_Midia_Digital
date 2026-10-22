@@ -1,7 +1,7 @@
 <!doctype html><html lang="pt-BR"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#07101f">
-<title>Pontos Vision • Master</title><link rel="stylesheet" href="./vision-points.css?v=hours-20261021">
+<title>Pontos Vision • Master</title><link rel="stylesheet" href="./vision-points.css?v=plans-20261021">
 </head><body>
 <header class="header"><div class="wrap"><a href="./master.html" class="brand">VISION<small>MASTER · PONTOS</small></a>
 <nav><a href="./master.html" class="ghostlink">← Voltar ao Master</a><a href="./pontos.html" target="_blank" rel="noopener" class="ghostlink">Ver catálogo público ↗</a></nav></div></header>
@@ -40,6 +40,7 @@
 <label class="check"><input type="checkbox" name="share_address"><span>Também autorizou mostrar o endereço completo ao público.</span></label>
 <label class="check"><input type="checkbox" name="published"><span>Publicar este ponto no catálogo compartilhável.</span></label>
 <div class="toolbar"><button class="button" type="submit" id="save-point">Salvar ponto</button><button class="button secondary" type="button" id="reset-point">Limpar formulário</button></div>
+<div id="point-save-confirmation" class="save-confirmation" role="status" aria-live="polite" hidden>✓ Salvo com sucesso!</div>
 </form>
 <section id="photo-section" hidden><div class="section-title"><h2>Fotos do ponto</h2></div>
 <p class="small-note">Até 3 fotos reais por ponto. Fotos grandes do celular são otimizadas automaticamente antes do envio. Se o ponto ainda não estiver salvo, a primeira foto criará um rascunho privado. As fotos só aparecem ao público depois da publicação.</p>
@@ -48,6 +49,12 @@
 <button id="upload-photo" type="button" class="button secondary">Enviar foto</button></section>
 </section>
 </div>
+<section class="panel plans-editor" aria-labelledby="plans-title">
+ <div class="section-title"><h2 id="plans-title">Planos comerciais — 3 opções</h2><a class="ghostlink" href="./pontos.html" target="_blank" rel="noopener">Ver como o anunciante escolhe ↗</a></div>
+ <p class="muted">Cadastre o nome, a descrição e o valor de cada plano. Somente planos marcados como <strong>Disponível no catálogo</strong> aparecerão para o anunciante. A solicitação será encaminhada ao WhatsApp para combinar e confirmar o pagamento.</p>
+ <div id="plans-list" class="plan-editor-grid"><p class="muted">Carregando planos…</p></div>
+</section>
+</div>
 </main><footer class="wrap foot">Rede Vision · Dados publicados apenas com autorização. Sem alterações na programação das TVs.</footer>
-<script src="./config.js"></script><script src="./master-pontos.js?v=photo-hours-20261021" defer></script>
+<script src="./config.js"></script><script src="./master-pontos.js?v=plans-20261021" defer></script>
 </body></html>
