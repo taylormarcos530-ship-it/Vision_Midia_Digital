@@ -1,7 +1,7 @@
 <!doctype html><html lang="pt-BR"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#07101f">
-<title>Pontos Vision • Master</title><link rel="stylesheet" href="./vision-points.css?v=hours-20261021">
+<title>Pontos Vision • Master</title><link rel="stylesheet" href="./vision-points.css?v=planos-v1-20261021">
 </head><body>
 <header class="header"><div class="wrap"><a href="./master.html" class="brand">VISION<small>MASTER · PONTOS</small></a>
 <nav><a href="./master.html" class="ghostlink">← Voltar ao Master</a><a href="./pontos.html" target="_blank" rel="noopener" class="ghostlink">Ver catálogo público ↗</a></nav></div></header>
@@ -10,6 +10,11 @@
 <p>Cadastre locais reais, fotos das TVs e informações comerciais. Somente os pontos autorizados e publicados ficarão visíveis para o anunciante.</p>
 </section>
 <div id="status" class="notice" role="status" aria-live="polite">Verificando acesso do Master…</div>
+<section id="plans-workspace" class="panel network-plan-panel" hidden aria-label="Planos comerciais Rede Vision">
+<div class="section-title"><h2>3 planos comerciais para anunciar</h2><a class="ghostlink" href="./pontos.html" target="_blank" rel="noopener">Ver planos no catálogo ↗</a></div>
+<p class="small-note">Configure nome, descrição e valor em reais. Um plano só aparece no catálogo quando você ativá-lo. Estes planos são diferentes das assinaturas do software Vision.</p>
+<div id="plan-editor" class="network-plan-grid"></div>
+</section>
 <div id="workspace" class="layout" hidden>
 <section class="panel"><div class="section-title"><h2>Pontos cadastrados</h2><button id="new-point" class="button" type="button">+ Novo ponto</button></div>
 <div id="entries"></div></section>
@@ -39,7 +44,7 @@
 <label class="check"><input type="checkbox" name="consent"><span>Confirmo que o estabelecimento autorizou divulgar essas informações e fotos.</span></label>
 <label class="check"><input type="checkbox" name="share_address"><span>Também autorizou mostrar o endereço completo ao público.</span></label>
 <label class="check"><input type="checkbox" name="published"><span>Publicar este ponto no catálogo compartilhável.</span></label>
-<div class="toolbar"><button class="button" type="submit" id="save-point">Salvar ponto</button><button class="button secondary" type="button" id="reset-point">Limpar formulário</button></div>
+<div class="toolbar"><button class="button" type="submit" id="save-point">Salvar ponto</button><button class="button secondary" type="button" id="reset-point">Limpar formulário</button><span class="save-confirmation" id="point-save-confirmation" role="status" aria-live="polite">Alterações ainda não salvas</span></div>
 </form>
 <section id="photo-section" hidden><div class="section-title"><h2>Fotos do ponto</h2></div>
 <p class="small-note">Até 3 fotos reais por ponto. Fotos grandes do celular são otimizadas automaticamente antes do envio. Se o ponto ainda não estiver salvo, a primeira foto criará um rascunho privado. As fotos só aparecem ao público depois da publicação.</p>
@@ -49,5 +54,5 @@
 </section>
 </div>
 </main><footer class="wrap foot">Rede Vision · Dados publicados apenas com autorização. Sem alterações na programação das TVs.</footer>
-<script src="./config.js"></script><script src="./master-pontos.js?v=photo-hours-20261021" defer></script>
+<script src="./config.js"></script><script src="./master-pontos.js?v=planos-v1-20261021" defer></script>
 </body></html>
