@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07101f"><title>Rede de Pontos Vision | Onde anunciar</title>
+<meta name="description" content="Conheça os estabelecimentos participantes da Rede Vision Mídia Digital e solicite um orçamento para anunciar.">
+<link rel="stylesheet" href="./vision-points.css">
+</head><body>
+<header class="header"><div class="wrap"><a class="brand" href="./index.html">VISION<small>MÍDIA DIGITAL</small></a><nav><a class="ghostlink" href="./index.html">Conheça a Vision</a></nav></div></header>
+<main class="wrap">
+<section class="hero">
+<span class="eyebrow">Rede de Pontos Vision</span>
+<h1>Seu anúncio nos lugares onde as pessoas estão.</h1>
+<p>Conheça os estabelecimentos participantes, confira informações sobre as TVs e escolha onde deseja divulgar sua empresa.</p>
+</section>
+<section aria-label="Pesquisar estabelecimentos">
+<div class="toolbar">
+  <div class="field"><label for="search">Buscar estabelecimento ou bairro</label><input id="search" type="search" placeholder="Ex.: academia, centro..." autocomplete="off"></div>
+  <div class="field"><label for="city">Cidade</label><select id="city"><option value="">Todas as cidades</option></select></div>
+  <div class="field"><label for="category">Tipo de estabelecimento</label><select id="category"><option value="">Todas as categorias</option></select></div>
+</div>
+<div id="state" class="notice" role="status" aria-live="polite">Consultando estabelecimentos publicados…</div>
+<div id="point-grid" class="grid" aria-live="polite"></div>
+<p class="small-note">O fluxo de pessoas, quando informado, é uma estimativa fornecida pelo estabelecimento, não uma medição certificada. A disponibilidade dos anúncios depende de confirmação comercial.</p>
+</section>
+</main>
+<dialog id="point-dialog" aria-label="Detalhes do estabelecimento">
+<div class="dialog-head"><h2 id="detail-title">Estabelecimento</h2><button class="close" type="button" id="close-dialog" aria-label="Fechar">×</button></div>
+<div class="dialog-body"><div id="detail-content"></div></div>
+</dialog>
+<footer class="wrap foot">© Vision Mídia Digital · Somente estabelecimentos autorizados aparecem neste catálogo. <span id="demo-note"></span></footer>
+<script src="./config.js"></script>
+<script src="./pontos.js?v=1" defer></script>
+</body></html>
