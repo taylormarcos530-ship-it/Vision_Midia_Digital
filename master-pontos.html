@@ -15,6 +15,12 @@
 <p class="small-note">Configure nome, descrição e valor em reais. Um plano só aparece no catálogo quando você ativá-lo. Estes planos são diferentes das assinaturas do software Vision.</p>
 <div id="plan-editor" class="network-plan-grid"></div>
 </section>
+<section id="addons-workspace" class="panel upsell-master-panel" hidden aria-label="Serviços Adicionais da Rede Vision">
+<div class="section-title"><h2>Serviços Adicionais</h2><button id="addon-new" class="button secondary" type="button">+ Cadastrar adicional</button></div>
+<p class="small-note">Produtos opcionais cobrados uma única vez. O anunciante escolhe livremente se quer contratar. Marque os planos que aceitam cada adicional, ative ou desative e altere a ordem. Valores cadastrados são usados no catálogo e no WhatsApp.</p>
+<div id="addons-editor" class="network-plan-grid"></div>
+<p id="addons-status" class="small-note" role="status" aria-live="polite"></p>
+</section>
 <div id="workspace" class="layout" hidden>
 <section class="panel"><div class="section-title"><h2>Pontos cadastrados</h2><button id="new-point" class="button" type="button">+ Novo ponto</button></div>
 <div id="entries"></div></section>
@@ -54,5 +60,5 @@
 </section>
 </div>
 </main><footer class="wrap foot">Rede Vision · Dados publicados apenas com autorização. Sem alterações na programação das TVs.</footer>
-<script src="./config.js"></script><script src="./master-pontos.js?v=webp-otimizado-20261022" defer></script>
+<script src="./config.js"></script><script src="./master-pontos.js?v=upsell-preview-20261022" defer></script>
 </body></html>
