@@ -32,7 +32,7 @@ async function api(action,body={},retry=true){
   publication_requires_consent_and_location:'Confirme autorização e informe cidade e bairro antes de publicar.',
   publication_requires_tv:'Selecione pelo menos uma TV do estabelecimento.',
   tv_not_eligible_for_public_catalog:'TV inválida, residencial ou não pareada; selecione uma TV real do ponto.',
-  tv_already_used_by_another_point:'Esta TV já pertence a outro ponto do catálogo.',
+  tv_already_used_by_another_point:'Uma TV selecionada já está vinculada a outro ponto. Use “Editar este ponto” no aviso junto às TVs, ou escolha outra TV.',
   photo_limit_three:'O limite é de três fotos por estabelecimento.',
  }[data.error])||data.error||'Não foi possível concluir a operação.');
  return data;
@@ -134,6 +134,14 @@ function renderScreens(selectedTvs=[]){
   '<input type="number" aria-label="Polegadas da TV '+esc(d.name)+'" min="10" max="120" step="1" name="inches_'+esc(d.id)+'" placeholder="Pol." value="'+esc(row?.screen_inches??'')+'">'+
   '<input class="placement" type="text" aria-label="Posição da TV '+esc(d.name)+'" name="place_'+esc(d.id)+'" maxlength="120" placeholder="Posição: entrada, recepção, sala..." value="'+esc(row?.placement||'')+'"></div>';
  }).join('');
+ const conflicts=state.list.points.filter(p=>p.company_id===id&&p.id!==state.pointId&&(p.tvs||[]).some(t=>options.some(d=>d.id===t.device_id)));
+ if(conflicts.length){
+  const notice=document.createElement('div');
+  notice.className='notice';
+  notice.innerHTML='<strong>TV já cadastrada</strong><p>Este estabelecimento possui TV vinculada a outro ponto. Para alterar as informações e preservar o cadastro anterior, abra o ponto existente:</p>'+
+    conflicts.map(p=>'<button class="button secondary" type="button" data-edit-existing="'+esc(p.id)+'">Editar '+esc(p.name)+'</button>').join(' ');
+  $('#screen-list').prepend(notice);
+ }
 }
 function renderPhotos(){
  const p=selected();
@@ -278,7 +286,7 @@ async function save(event){
    pointSaveState('✓ Salvo no servidor (lista aguardando atualização)','saved');
    setStatus('Ponto salvo no servidor, mas a lista não atualizou: '+error.message,true);
   }
- }catch(error){pointSaveState('✕ Não salvo','error');setStatus('Não foi possível salvar: '+error.message,true)}
+ }catch(error){pointSaveState('✕ Não salvo: '+error.message,'error');setStatus('Não foi possível salvar: '+error.message,true)}
  finally{state.busy=false;$('#save-point').disabled=false}
 }
 async function preparePhoto(file){
@@ -369,7 +377,26 @@ for(const eventType of ['input','change'])$('#point-form').addEventListener(even
  pointSaveState('Alterações não salvas','pending');
 });
 
-$('#point-form [name="company_id"]').addEventListener('change',()=>renderScreens());
+$('#point-form [name="company_id"]').addEventListener('change',()=>{
+ const form=$('#point-form'),id=form.elements.company_id.value;
+ const matches=(state.list?.points||[]).filter(p=>p.company_id===id);
+ const screens=(state.list?.devices||[]).filter(d=>d.company_id===id&&d.allowed);
+ const used=new Set(matches.flatMap(p=>(p.tvs||[]).map(t=>t.device_id)));
+ const hasDetails=!!(form.elements.name.value.trim()||form.elements.city.value.trim()||form.elements.neighborhood.value.trim()||form.elements.public_address.value.trim());
+ if(!state.pointId&&matches.length===1&&screens.length>0&&screens.every(d=>used.has(d.id))&&!hasDetails){
+  editPoint(matches[0]);
+  setStatus('Cadastro existente aberto para edição: '+matches[0].name+'. Altere os dados e clique em Salvar ponto.');
+ }else{
+  renderScreens();
+  if(!state.pointId&&matches.length)setStatus('Este estabelecimento já tem ponto cadastrado. Para editar as TVs vinculadas, toque em “Editar este ponto” junto às TVs.');
+ }
+});
+$('#screen-list').addEventListener('click',event=>{
+ const button=event.target.closest('[data-edit-existing]');
+ if(!button)return;
+ const point=state.list?.points?.find(p=>p.id===button.dataset.editExisting);
+ if(point){editPoint(point);setStatus('Editando o cadastro existente: '+point.name+'. Confira as alterações e salve.')}
+});
 $('#new-point').addEventListener('click',()=>editPoint());
 $('#reset-point').addEventListener('click',()=>editPoint());
 $('#upload-photo').addEventListener('click',photoUpload);
