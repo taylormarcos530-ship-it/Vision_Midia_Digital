@@ -24,7 +24,14 @@
 <label>Cidade<input name="city" maxlength="100" placeholder="Ex.: Anápolis" required></label>
 <label>Bairro<input name="neighborhood" maxlength="100" placeholder="Ex.: Calistolândia" required></label></div>
 <label>Endereço comercial autorizado<input name="public_address" maxlength="220" placeholder="Rua, número (opcional)"></label>
-<label>Horário de funcionamento<input name="opening_hours" maxlength="220" placeholder="Ex.: Seg a sex 6h–22h"></label>
+<fieldset class="opening-hours-panel"><legend>Dias e horários de funcionamento</legend>
+<p class="small-note">Ative os dias em que o estabelecimento abre. Escolha os horários em cada grupo.</p>
+<div class="hours-line"><label class="check"><input type="checkbox" data-hours-day="weekdays"><span>Segunda a sexta</span></label><label>Abertura<input type="time" data-hours-open="weekdays" disabled></label><label>Fechamento<input type="time" data-hours-close="weekdays" disabled></label></div>
+<div class="hours-line"><label class="check"><input type="checkbox" data-hours-day="saturday"><span>Sábado</span></label><label>Abertura<input type="time" data-hours-open="saturday" disabled></label><label>Fechamento<input type="time" data-hours-close="saturday" disabled></label></div>
+<div class="hours-line"><label class="check"><input type="checkbox" data-hours-day="sunday"><span>Domingo</span></label><label>Abertura<input type="time" data-hours-open="sunday" disabled></label><label>Fechamento<input type="time" data-hours-close="sunday" disabled></label></div>
+<p id="hours-legacy" class="small-note" hidden></p>
+<p class="small-note">Exibição no catálogo: Seg a sexta — 05:00 às 23:00; Sábado — 08:00 às 12:00.</p>
+</fieldset>
 <label>Fluxo médio estimado (pessoas/dia)<input type="number" name="estimated_daily_visitors" min="0" max="1000000" step="1" placeholder="Opcional"></label>
 <p class="small-note">Registre apenas uma estimativa informada pelo estabelecimento. Não apresente como medição certificada.</p>
 <div class="section-title"><h2>TVs instaladas neste ponto</h2></div>
@@ -35,12 +42,12 @@
 <div class="toolbar"><button class="button" type="submit" id="save-point">Salvar ponto</button><button class="button secondary" type="button" id="reset-point">Limpar formulário</button></div>
 </form>
 <section id="photo-section" hidden><div class="section-title"><h2>Fotos do ponto</h2></div>
-<p class="small-note">Até 3 fotos reais por ponto. Formatos PNG, JPG ou WebP, até 4 MB cada. As fotos só aparecem ao público quando o ponto estiver publicado.</p>
+<p class="small-note">Até 3 fotos reais por ponto. Fotos grandes do celular são otimizadas automaticamente antes do envio. Se o ponto ainda não estiver salvo, a primeira foto criará um rascunho privado. As fotos só aparecem ao público depois da publicação.</p>
 <div id="photo-list" class="point-photos"></div>
-<label class="field"><span>Adicionar foto do estabelecimento ou da TV</span><input type="file" id="photo-input" accept="image/png,image/jpeg,image/webp"></label>
+<label class="field"><span>Adicionar foto do estabelecimento ou da TV</span><input type="file" id="photo-input" accept="image/*"></label>
 <button id="upload-photo" type="button" class="button secondary">Enviar foto</button></section>
 </section>
 </div>
 </main><footer class="wrap foot">Rede Vision · Dados publicados apenas com autorização. Sem alterações na programação das TVs.</footer>
-<script src="./config.js"></script><script src="./master-pontos.js?v=1" defer></script>
+<script src="./config.js"></script><script src="./master-pontos.js?v=photo-hours-20261021" defer></script>
 </body></html>
