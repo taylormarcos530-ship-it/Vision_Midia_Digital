@@ -2,18 +2,31 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const state={points:[],whatsapp:'',ready:false};
+const state={points:[],plans:[],whatsapp:'',ready:false,openedPoint:null};
 const fake=new URLSearchParams(location.search).get('demo')==='1';
 const demoPoints=[{id:'demo-life',slug:'academia-life-exemplo',name:'Academia Life — exemplo',category:'Academia',
   city:'Anápolis',neighborhood:'A cadastrar',address:'',hours:'A cadastrar',tv_count:2,
   tvs:[{size_inches:null,orientation:'portrait',placement:''},{size_inches:null,orientation:'landscape',placement:''}],
   estimated_daily_visitors:null,photos:[]}];
+const demoPlans=[
+ {slot:1,name:'Plano 1 — exemplo',description:'Oferta demonstrativa. Valores não publicados.',price_cents:3500},
+ {slot:2,name:'Plano 2 — exemplo',description:'Oferta demonstrativa. Valores não publicados.',price_cents:6000},
+ {slot:3,name:'Plano 3 — exemplo',description:'Oferta demonstrativa. Valores não publicados.',price_cents:10000}
+];
 function setStatus(message,error=false){const el=$('#state');el.textContent=message;el.className='notice'+(error?' error':'');el.hidden=false;}
-function formatWhatsApp(number,point){
+const formatBRL=centavos=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(centavos)/100);
+function formatWhatsApp(number,point,plan=null){
  let digits=String(number||'').replace(/\D/g,'');
  if(digits.length===11||digits.length===10)digits='55'+digits;
  if(!/^55\d{10,11}$/.test(digits))return '';
- const text='Olá! Gostaria de saber como anunciar minha empresa no ponto '+point.name+' da Rede Vision.';
+ const text=plan
+   ? 'Olá! Quero anunciar minha empresa pela Vision Mídia Digital.\n'+
+     'Ponto escolhido: '+point.name+' ('+[point.neighborhood,point.city].filter(Boolean).join(' / ')+').\n'+
+     'Plano escolhido: '+plan.name+'.\n'+
+     'Descrição: '+plan.description+'.\n'+
+     'Valor informado: '+formatBRL(plan.price_cents)+'.\n'+
+     'Gostaria de confirmar a disponibilidade e receber as instruções de pagamento.'
+   : 'Olá! Gostaria de saber como anunciar minha empresa no ponto '+point.name+' da Rede Vision.';
  return 'https://wa.me/'+digits+'?text='+encodeURIComponent(text);
 }
 function selectFilters(){
@@ -43,12 +56,23 @@ function render(){
 }
 function openPoint(slug){
  const p=state.points.find(p=>p.slug===slug);if(!p)return;
+ state.openedPoint=p;
  $('#detail-title').textContent=p.name;
  const gallery=(p.photos||[]).length?'<div class="gallery">'+p.photos.map((src,i)=>'<img src="'+esc(src)+'" alt="Foto '+(i+1)+' do ponto '+esc(p.name)+'" loading="lazy">').join('')+'</div>':'';
  const tvs=(p.tvs||[]).map((t,i)=>'<li>TV '+(i+1)+' — '+(t.size_inches?esc(t.size_inches)+' polegadas':'tamanho a confirmar')+
    (t.placement?' · '+esc(t.placement):'')+
    (t.orientation&&t.orientation!=='auto'?' · '+esc(t.orientation==='portrait'?'vertical':'horizontal'):'')+'</li>').join('');
  const whatsapp=formatWhatsApp(state.whatsapp,p);
+ const plans=state.plans.filter(plan=>Number.isInteger(plan.price_cents)&&plan.price_cents>=0);
+ const offerSelection=plans.length?'<section class="offers-public" aria-label="Escolha seu plano">'+
+  '<h3>Escolha seu plano para anunciar</h3><p class="muted mini">Selecione uma opção. Você irá ao WhatsApp com o ponto, o plano e o valor já preenchidos para confirmar a contratação.</p>'+
+  '<div class="offer-choices">'+plans.map(plan=>'<label class="offer-choice"><input type="radio" name="offer_slot" value="'+plan.slot+'">'+
+    '<span class="offer-text"><strong>'+esc(plan.name)+'</strong><small>'+esc(plan.description)+'</small></span>'+
+    '<b>'+esc(formatBRL(plan.price_cents))+'</b></label>').join('')+'</div>'+
+  (whatsapp?'<a id="request-plan" class="button good is-disabled" aria-disabled="true" tabindex="-1">Selecione um plano</a>':
+  '<p class="notice">WhatsApp comercial indisponível no momento.</p>')+
+  '<p class="small-note">Pedido pelo WhatsApp. A disponibilidade e o pagamento são confirmados pela Vision.</p>'+
+  '</section>':'';
  $('#detail-content').innerHTML='<span class="chip">'+esc(p.category)+'</span>'+gallery+
   '<table class="details-table"><tbody>'+
   '<tr><td>Localização</td><td>'+esc([p.neighborhood,p.city].filter(Boolean).join(' · '))+(p.address?'<div>'+esc(p.address)+'</div>':'')+'</td></tr>'+
@@ -58,13 +82,14 @@ function openPoint(slug){
   '<tr><td>Fluxo diário estimado</td><td>'+(p.estimated_daily_visitors!=null?'Aproximadamente '+Number(p.estimated_daily_visitors).toLocaleString('pt-BR')+' pessoas':'Não informado')+'</td></tr>'+
   '</tbody></table>'+
   '<p class="small-note">Estimativas não representam audiência garantida nem medição certificada.</p>'+
-  (whatsapp?'<a class="button good" href="'+esc(whatsapp)+'" rel="noopener noreferrer" target="_blank">Quero anunciar neste ponto ↗</a>':
-  '<div class="notice">Contato comercial ainda não configurado. Consulte a Vision Mídia Digital.</div>');
+  (plans.length?offerSelection:
+    (whatsapp?'<a class="button good" href="'+esc(whatsapp)+'" rel="noopener noreferrer" target="_blank">Consultar planos neste ponto ↗</a>':
+  '<div class="notice">Contato comercial ainda não configurado. Consulte a Vision Mídia Digital.</div>'));
  $('#point-dialog').showModal();
  history.replaceState(null,'',new URL(location.href).pathname+'?ponto='+encodeURIComponent(p.slug)+(fake?'&demo=1':''));
 }
 async function load(){
- if(fake){state.points=demoPoints;state.whatsapp='';state.ready=true;selectFilters();render();$('#demo-note').textContent='Demonstração ilustrativa, sem dados reais ou solicitações.';return;}
+ if(fake){state.points=demoPoints;state.plans=demoPlans;state.whatsapp='';state.ready=true;selectFilters();render();$('#demo-note').textContent='Demonstração ilustrativa: preços fictícios, sem solicitações.';return;}
  try{
   const cfg=window.VISION_CONFIG||{};
   if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)throw Error('Configuração pública indisponível');
@@ -74,6 +99,7 @@ async function load(){
   const data=await response.json().catch(()=>({}));
   if(!response.ok)throw Error(data.error||'Catálogo indisponível');
   state.points=Array.isArray(data.points)?data.points:[];
+  state.plans=Array.isArray(data.plans)?data.plans.filter(p=>Number.isInteger(p.price_cents)&&p.price_cents>=0):[];
   state.whatsapp=String(data.whatsapp||'');state.ready=true;selectFilters();render();
   const selected=new URLSearchParams(location.search).get('ponto');
   if(selected)openPoint(selected);
@@ -84,6 +110,18 @@ $('#city').addEventListener('change',render);
 $('#category').addEventListener('change',render);
 $('#point-grid').addEventListener('click',e=>{
  const button=e.target.closest('[data-open]');if(button)openPoint(button.dataset.open);
+});
+$('#point-dialog').addEventListener('change',event=>{
+ const radio=event.target.closest('input[name="offer_slot"]');
+ if(!radio||!state.openedPoint)return;
+ const plan=state.plans.find(p=>String(p.slot)===radio.value);
+ const button=$('#request-plan');
+ if(!plan||!button)return;
+ const link=formatWhatsApp(state.whatsapp,state.openedPoint,plan);
+ if(!link)return;
+ button.href=link;button.target='_blank';button.rel='noopener noreferrer';
+ button.classList.remove('is-disabled');button.removeAttribute('aria-disabled');button.removeAttribute('tabindex');
+ button.textContent='Quero anunciar — '+plan.name+' ↗';
 });
 $('#close-dialog').addEventListener('click',()=>$('#point-dialog').close());
 $('#point-dialog').addEventListener('click',event=>{if(event.target===$('#point-dialog'))$('#point-dialog').close()});
