@@ -2,7 +2,7 @@
 -- Apply only with explicit approval for the official Supabase project.
 create table if not exists public.vision_network_points (
   id uuid primary key default gen_random_uuid(),
-  company_id uuid not null references public.companies(id) on delete restrict,
+  company_id uuid not null references public.companies(id) on delete cascade,
   slug text not null unique check (slug ~ '^[a-z0-9][a-z0-9-]{2,100}$'),
   name text not null check (char_length(name) between 2 and 120),
   category text not null default 'Comércio' check (char_length(category) between 2 and 70),
@@ -14,7 +14,7 @@ create table if not exists public.vision_network_points (
   photo_paths text[] not null default '{}'::text[] check (cardinality(photo_paths) <= 3),
   share_address boolean not null default false,
   consent_confirmed_at timestamptz,
-  consent_confirmed_by uuid references auth.users(id) on delete set null,
+  consent_confirmed_by uuid,
   published boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
@@ -28,7 +28,7 @@ create index if not exists vision_network_points_public_idx
  on public.vision_network_points (city,category,name) where published;
 create table if not exists public.vision_network_point_tvs (
   point_id uuid not null references public.vision_network_points(id) on delete cascade,
-  device_id uuid not null references public.devices(id) on delete restrict,
+  device_id uuid not null references public.devices(id) on delete cascade,
   screen_inches integer check (screen_inches between 10 and 120),
   placement text not null default '' check (char_length(placement) <= 120),
   primary key (point_id,device_id),
