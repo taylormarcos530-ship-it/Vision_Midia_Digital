@@ -32,7 +32,7 @@ function formatWhatsApp(number,point,plan=null){
 function selectFilters(){
  for(const [id,key] of [['city','city'],['category','category']]){
   const items=[...new Set(state.points.map(p=>p[key]).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'pt-BR'));
-  $(id).replaceChildren(new Option(id==='city'?'Todas as cidades':'Todas as categorias',''),...items.map(v=>new Option(v,v)));
+  $('#'+id).replaceChildren(new Option(id==='city'?'Todas as cidades':'Todas as categorias',''),...items.map(v=>new Option(v,v)));
  }
 }
 function filtered(){
