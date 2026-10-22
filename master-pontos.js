@@ -38,6 +38,73 @@ async function api(action,body={},retry=true){
  return data;
 }
 function selected(){return state.list?.points?.find(p=>p.id===state.pointId)||null}
+
+function pointSaveState(message,kind='pending'){
+ const el=$('#point-save-confirmation');
+ if(!el)return;
+ el.textContent=message;el.dataset.state=kind;
+}
+function moneyFromCents(value){
+ return (Number(value)/100).toLocaleString('pt-BR',{minimumFractionDigits:2,maximumFractionDigits:2});
+}
+function centsFromInput(value){
+ const raw=String(value||'').trim().replace(/^R\$\s*/i,'');
+ if(!/^\d{1,7}(?:[,.]\d{1,2})?$/.test(raw))throw Error('Informe um preço válido, por exemplo: 35,00.');
+ const [whole,fraction='']=raw.replace('.',',').split(',');
+ const cents=Number(whole)*100+Number(fraction.padEnd(2,'0'));
+ if(!Number.isSafeInteger(cents)||cents>100000000)throw Error('O valor informado está fora do limite permitido.');
+ return cents;
+}
+function renderPlans(){
+ const root=$('#plan-editor');
+ const plans=new Map((state.list?.plans||[]).map(p=>[Number(p.slot),p]));
+ root.innerHTML=[1,2,3].map(slot=>{
+  const p=plans.get(slot)||{name:'Plano '+slot,description:'',price_cents:null,active:false};
+  return '<form class="network-plan-item" data-plan-slot="'+slot+'">'+
+   '<strong>Plano '+slot+'</strong>'+
+   '<label>Nome do plano<input name="name" maxlength="80" minlength="2" required value="'+esc(p.name||'Plano '+slot)+'" placeholder="Ex.: 7 dias"></label>'+
+   '<label>Descrição<textarea name="description" maxlength="280" rows="3" placeholder="Ex.: Divulgação em uma TV por sete dias">'+esc(p.description||'')+'</textarea></label>'+
+   '<label>Valor do anúncio (R$)<input name="price" inputmode="decimal" type="text" placeholder="35,00" value="'+esc(p.price_cents==null?'':moneyFromCents(p.price_cents))+'"></label>'+
+   '<label class="check"><input name="active" type="checkbox" '+(p.active?'checked':'')+'><span>Mostrar este plano no catálogo</span></label>'+
+   '<div class="network-plan-actions"><button class="button secondary" type="submit">Salvar plano '+slot+'</button>'+
+   '<span class="save-confirmation" data-plan-status="'+slot+'" role="status" aria-live="polite">Sem alterações</span></div>'+
+   '</form>';
+ }).join('');
+ $('#plans-workspace').hidden=false;
+}
+$('#plan-editor').addEventListener('input',event=>{
+ const form=event.target.closest('form[data-plan-slot]');
+ if(form){const status=form.querySelector('[data-plan-status]');status.textContent='Alterações não salvas';status.dataset.state='pending'}
+});
+$('#plan-editor').addEventListener('change',event=>{
+ const form=event.target.closest('form[data-plan-slot]');
+ if(form){const status=form.querySelector('[data-plan-status]');status.textContent='Alterações não salvas';status.dataset.state='pending'}
+});
+$('#plan-editor').addEventListener('submit',async event=>{
+ const form=event.target.closest('form[data-plan-slot]');
+ if(!form)return;
+ event.preventDefault();
+ const button=form.querySelector('button[type="submit"]');
+ const status=form.querySelector('[data-plan-status]');
+ if(button.disabled||!form.reportValidity())return;
+ try{
+  const slot=Number(form.dataset.planSlot);
+  const name=form.elements.name.value.trim(),description=form.elements.description.value.trim();
+  const raw=form.elements.price.value.trim();
+  const active=form.elements.active.checked;
+  const price_cents=raw?centsFromInput(raw):null;
+  if(active&&(price_cents===null||!description))throw Error('Para mostrar o plano, preencha a descrição e o valor.');
+  button.disabled=true;status.textContent='Gravando plano…';status.dataset.state='pending';
+  const result=await api('save_plan',{plan:{slot,name,description,price_cents,active}});
+  const index=(state.list.plans||[]).findIndex(p=>Number(p.slot)===slot);
+  if(index<0)state.list.plans.push(result.plan);else state.list.plans[index]=result.plan;
+  status.textContent='✓ Salvo no Master às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
+  status.dataset.state='saved';
+ }catch(error){
+  status.textContent='✕ Não salvo: '+error.message;status.dataset.state='error';
+ }finally{button.disabled=false}
+});
+
 function renderEntries(){
  const points=state.list.points;
  $('#entries').innerHTML=points.length?points.map(p=>
@@ -154,6 +221,7 @@ function editPoint(p=null){
  form.elements.share_address.checked=!!p?.share_address;
  form.elements.published.checked=!!p?.published;
  $('#edit-title').textContent=p?'Editar: '+p.name:'Cadastrar ponto';
+ pointSaveState(p?'Ponto carregado':'Novo ponto ainda não salvo');
  renderScreens(p?.tvs||[]);
  renderPhotos();
  if(p)$('#point-form').scrollIntoView({behavior:'smooth',block:'start'});
@@ -162,7 +230,7 @@ async function load(idToOpen=null){
  const data=await api('master_list');
  state.list=data;
  $('#workspace').hidden=false;
- renderCompanies();renderEntries();
+ renderCompanies();renderEntries();renderPlans();
  if(idToOpen!==null)state.pointId=idToOpen;
  editPoint(selected());
  setStatus('Painel conectado. Pontos publicados aparecem no catálogo; rascunhos permanecem privados.');
@@ -203,12 +271,14 @@ async function save(event){
   setStatus('Dados gravados com sucesso. Atualizando informações…');
   try{
    await load(result.id);
-   setStatus('Informações salvas. '+(point.published?'Ponto publicado no catálogo.':'Rascunho privado salvo.'));
+   pointSaveState('✓ Salvo no Master às '+new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}),'saved');
+   setStatus('✓ Informações salvas. '+(point.published?'Ponto publicado no catálogo.':'Rascunho privado salvo.'));
   }catch(error){
    state.pointId=result.id;
-   setStatus('O ponto foi salvo no servidor, mas a lista não atualizou: '+error.message,true);
+   pointSaveState('✓ Salvo no servidor (lista aguardando atualização)','saved');
+   setStatus('Ponto salvo no servidor, mas a lista não atualizou: '+error.message,true);
   }
- }catch(error){setStatus('Não foi possível salvar: '+error.message,true)}
+ }catch(error){pointSaveState('✕ Não salvo','error');setStatus('Não foi possível salvar: '+error.message,true)}
  finally{state.busy=false;$('#save-point').disabled=false}
 }
 async function preparePhoto(file){
@@ -295,6 +365,10 @@ async function removePhoto(path){
  catch(error){setStatus(error.message,true)}
 }
 $('#point-form').addEventListener('submit',save);
+for(const eventType of ['input','change'])$('#point-form').addEventListener(eventType,()=>{
+ pointSaveState('Alterações não salvas','pending');
+});
+
 $('#point-form [name="company_id"]').addEventListener('change',()=>renderScreens());
 $('#new-point').addEventListener('click',()=>editPoint());
 $('#reset-point').addEventListener('click',()=>editPoint());
