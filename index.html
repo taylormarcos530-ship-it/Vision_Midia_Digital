@@ -13,6 +13,13 @@
   <script src="./pwa-icon.js?v=panel-logo-20261018" defer></script>
   <link rel="stylesheet" href="./pwa-install.css" />
   <script src="./pwa-install.js" defer></script>
+<style>
+/* Only visible while the SaaS section is open. No other navigation is changed. */
+#vision-saas-return{display:none;align-items:center;justify-content:center;min-height:40px;padding:8px 12px;border:1px solid #405a82;border-radius:11px;background:#172a49;color:#f0f6ff;font-weight:700;font-size:14px;white-space:nowrap;cursor:pointer}
+body:has(#view-saas-admin:not(.hidden)) #vision-saas-return{display:inline-flex}
+#vision-saas-return:focus-visible{outline:2px solid #80aaff;outline-offset:2px}
+@media(max-width:560px){#vision-saas-return{padding:8px 9px;font-size:12px}}
+</style>
 </head>
 <body>
   <div id="toast-root" class="toast-root" aria-live="polite"></div>
@@ -205,6 +212,7 @@
           </div>
         </div>
         <div class="topbar-right">
+          <button id="vision-saas-return" type="button" aria-label="Retornar ao painel operacional">← Retornar</button>
           <div id="connection-status" class="status-badge neutral">● Sincronização</div>
           <button id="refresh-button" class="icon-button" type="button" aria-label="Atualizar">↻</button>
         </div>
