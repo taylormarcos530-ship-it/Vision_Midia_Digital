@@ -2,7 +2,7 @@
 'use strict';
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const state={points:[],plans:[],whatsapp:'',ready:false,openedPoint:null};
+const state={points:[],plans:[],addons:[],whatsapp:'',ready:false,openedPoint:null};
 const fake=new URLSearchParams(location.search).get('demo')==='1';
 const demoPoints=[{id:'demo-life',slug:'academia-life-exemplo',name:'Academia Life — exemplo',category:'Academia',
   city:'Anápolis',neighborhood:'A cadastrar',address:'',hours:'A cadastrar',tv_count:2,
@@ -15,19 +15,87 @@ const demoPlans=[
 ];
 function setStatus(message,error=false){const el=$('#state');el.textContent=message;el.className='notice'+(error?' error':'');el.hidden=false;}
 const formatBRL=centavos=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(centavos)/100);
-function formatWhatsApp(number,point,plan=null){
+function planDays(plan){
+ // Plans in the existing Master already store "Duração: N dias" in their
+ // descriptions. Never guess a duration from a price or a marketing name.
+ const match=String(plan?.description||'').match(/Dura(?:ç|c)[ãa]o:\s*(\d{1,3})\s*dias?/i);
+ return match&&Number(match[1])>0?Number(match[1]):null;
+}
+function sumOrder(plan,addons){
+ const price=Number(plan?.price_cents);
+ if(!Number.isSafeInteger(price)||price<0)throw Error('Valor do plano inválido.');
+ return (addons||[]).reduce((sum,a)=>{
+  const cents=Number(a.price_cents);
+  if(!Number.isSafeInteger(cents)||cents<0||sum+cents>100000000)throw Error('Valor adicional inválido.');
+  return sum+cents;
+ },price);
+}
+function formatWhatsApp(number,point,plan=null,addons=[]){
  let digits=String(number||'').replace(/\D/g,'');
  if(digits.length===11||digits.length===10)digits='55'+digits;
  if(!/^55\d{10,11}$/.test(digits))return '';
- const text=plan
-   ? 'Olá! Quero anunciar minha empresa pela Vision Mídia Digital.\n\n'+
-     'Ponto escolhido: '+point.name+' ('+[point.neighborhood,point.city].filter(Boolean).join(' / ')+').\n\n'+
-     'Plano escolhido: '+plan.name+'.\n\n'+
-     'Descrição: '+plan.description+'.\n\n'+
-     'Valor informado: '+formatBRL(plan.price_cents)+'.\n\n'+
-     'Gostaria de confirmar a disponibilidade e receber as instruções de pagamento.'
-   : 'Olá! Gostaria de saber como anunciar minha empresa no ponto '+point.name+' da Rede Vision.';
+ let text;
+ if(!plan)text='Olá! Gostaria de saber como anunciar minha empresa no ponto '+point.name+' da Rede Vision.';
+ else {
+  const duration=planDays(plan);
+  const parts=[
+   'Olá! Quero anunciar minha empresa pela Vision Mídia Digital.',
+   '📍 Estabelecimento: '+point.name+' ('+[point.neighborhood,point.city].filter(Boolean).join(' / ')+')',
+   '📺 Plano: '+plan.name,
+   '📅 Duração: '+(duration?duration+' dias':'A confirmar com a Vision'),
+   '💰 Valor do plano: '+formatBRL(plan.price_cents)
+  ];
+  (addons||[]).forEach(a=>parts.push('🎬 '+a.name+': '+formatBRL(a.price_cents)));
+  parts.push('💵 Total: '+formatBRL(sumOrder(plan,addons)));
+  parts.push('Gostaria de finalizar minha contratação.');
+  text=parts.join('\n\n');
+ }
  return 'https://wa.me/'+digits+'?text='+encodeURIComponent(text);
+}
+function eligibleAddons(plan){
+ return state.addons.filter(a=>a&&Array.isArray(a.eligible_plan_slots)&&
+  a.eligible_plan_slots.includes(Number(plan.slot))&&
+  Number.isInteger(a.price_cents)&&a.price_cents>=0);
+}
+function renderOrder(){
+ const point=state.openedPoint;
+ const radio=$('#point-dialog input[name="offer_slot"]:checked');
+ const plan=state.plans.find(p=>String(p.slot)===radio?.value);
+ const section=$('#upsell-section'),summary=$('#order-summary'),button=$('#request-plan');
+ if(!point||!plan||!summary)return;
+ const picked=eligibleAddons(plan);
+ const checks=[...$('#point-dialog').querySelectorAll('input[name="addon_id"]:checked')];
+ const addOns=picked.filter(a=>checks.some(box=>box.value===a.id));
+ const days=planDays(plan);
+ const lines=[
+  '<div><span>Estabelecimento</span><strong>'+esc(point.name)+'</strong></div>',
+  '<div><span>Plano</span><strong>'+esc(plan.name)+'</strong></div>',
+  '<div><span>Duração</span><strong>'+esc(days?days+' dias':'A confirmar')+'</strong></div>',
+  '<div><span>Valor do plano</span><strong>'+esc(formatBRL(plan.price_cents))+'</strong></div>'
+ ];
+ addOns.forEach(a=>lines.push('<div><span>'+esc(a.name)+'</span><strong>'+esc(formatBRL(a.price_cents))+'</strong></div>'));
+ const total=sumOrder(plan,addOns);
+ lines.push('<div class="order-total"><span>Total</span><strong>'+esc(formatBRL(total))+'</strong></div>');
+ summary.innerHTML=lines.join('');
+ summary.hidden=false;
+ if(section)section.hidden=!picked.length;
+ if(button){
+  const url=formatWhatsApp(state.whatsapp,point,plan,addOns);
+  if(url){button.href=url;button.target='_blank';button.rel='noopener noreferrer';button.classList.remove('is-disabled');button.removeAttribute('aria-disabled');button.removeAttribute('tabindex');button.textContent='FINALIZAR PELO WHATSAPP';}
+  else{button.removeAttribute('href');button.textContent='WhatsApp comercial indisponível';button.classList.add('is-disabled');button.setAttribute('aria-disabled','true');button.setAttribute('tabindex','-1');}
+ }
+}
+function showUpsellsForPlan(plan){
+ const section=$('#upsell-section'),root=$('#addon-choices');
+ if(!section||!root)return;
+ const addons=eligibleAddons(plan).sort((a,b)=>Number(a.sort_order)-Number(b.sort_order));
+ // Re-create checkboxes on every plan change: never carry implicit consent.
+ root.innerHTML=addons.map(a=>'<label class="addon-choice">'+
+  '<input type="checkbox" name="addon_id" value="'+esc(a.id)+'">'+
+  '<span><strong>'+esc(a.name)+'</strong><small>'+esc(a.description||'').replace(/\n/g,'<br>')+'</small></span>'+
+  '<b>+'+esc(formatBRL(a.price_cents))+'</b></label>').join('');
+ section.hidden=!addons.length;
+ renderOrder();
 }
 function selectFilters(){
  for(const [id,key] of [['city','city'],['category','category']]){
@@ -69,6 +137,11 @@ function openPoint(slug){
   '<div class="offer-choices">'+plans.map(plan=>'<label class="offer-choice"><input type="radio" name="offer_slot" value="'+plan.slot+'">'+
     '<span class="offer-text"><strong>'+esc(plan.name)+'</strong><small>'+esc(plan.description)+'</small></span>'+
     '<b>'+esc(formatBRL(plan.price_cents))+'</b></label>').join('')+'</div>'+
+  '<section id="upsell-section" class="upsell-public" hidden><h3>Destaque sua empresa com um vídeo profissional!</h3>'+
+  '<p class="muted">Não tem um vídeo pronto? A Vision cria seu anúncio com inteligência artificial para você!</p>'+
+  '<p class="small-note">Serviços adicionais opcionais. Nenhum serviço é incluído automaticamente.</p>'+
+  '<div id="addon-choices" class="addon-choices"></div></section>'+
+  '<section class="order-summary-section"><h3>Resumo da contratação</h3><div id="order-summary" class="order-summary" hidden></div></section>'+
   (whatsapp?'<a id="request-plan" class="button good is-disabled" aria-disabled="true" tabindex="-1">Selecione um plano</a>':
   '<p class="notice">WhatsApp comercial indisponível no momento.</p>')+
   '<p class="small-note">Pedido pelo WhatsApp. A disponibilidade e o pagamento são confirmados pela Vision.</p>'+
@@ -89,7 +162,7 @@ function openPoint(slug){
  history.replaceState(null,'',new URL(location.href).pathname+'?ponto='+encodeURIComponent(p.slug)+(fake?'&demo=1':''));
 }
 async function load(){
- if(fake){state.points=demoPoints;state.plans=demoPlans;state.whatsapp='';state.ready=true;selectFilters();render();$('#demo-note').textContent='Demonstração ilustrativa: preços fictícios, sem solicitações.';return;}
+ if(fake){state.points=demoPoints;state.plans=demoPlans;state.addons=[];state.whatsapp='';state.ready=true;selectFilters();render();$('#demo-note').textContent='Demonstração ilustrativa: preços fictícios, sem solicitações.';return;}
  try{
   const cfg=window.VISION_CONFIG||{};
   if(!cfg.supabaseUrl||!cfg.supabasePublishableKey)throw Error('Configuração pública indisponível');
@@ -100,6 +173,8 @@ async function load(){
   if(!response.ok)throw Error(data.error||'Catálogo indisponível');
   state.points=Array.isArray(data.points)?data.points:[];
   state.plans=Array.isArray(data.plans)?data.plans.filter(p=>Number.isInteger(p.price_cents)&&p.price_cents>=0):[];
+  state.addons=Array.isArray(data.addons)?data.addons.filter(a=>a&&typeof a.id==='string'&&
+   Array.isArray(a.eligible_plan_slots)&&Number.isInteger(a.price_cents)&&a.price_cents>=0):[];
   state.whatsapp=String(data.whatsapp||'');state.ready=true;selectFilters();render();
   const selected=new URLSearchParams(location.search).get('ponto');
   if(selected)openPoint(selected);
@@ -113,15 +188,12 @@ $('#point-grid').addEventListener('click',e=>{
 });
 $('#point-dialog').addEventListener('change',event=>{
  const radio=event.target.closest('input[name="offer_slot"]');
- if(!radio||!state.openedPoint)return;
- const plan=state.plans.find(p=>String(p.slot)===radio.value);
- const button=$('#request-plan');
- if(!plan||!button)return;
- const link=formatWhatsApp(state.whatsapp,state.openedPoint,plan);
- if(!link)return;
- button.href=link;button.target='_blank';button.rel='noopener noreferrer';
- button.classList.remove('is-disabled');button.removeAttribute('aria-disabled');button.removeAttribute('tabindex');
- button.textContent='Quero anunciar — '+plan.name+' ↗';
+ if(radio){
+  const plan=state.plans.find(p=>String(p.slot)===radio.value);
+  if(plan)showUpsellsForPlan(plan);
+  return;
+ }
+ if(event.target.matches('input[name="addon_id"]'))renderOrder();
 });
 $('#close-dialog').addEventListener('click',()=>$('#point-dialog').close());
 $('#point-dialog').addEventListener('click',event=>{if(event.target===$('#point-dialog'))$('#point-dialog').close()});
