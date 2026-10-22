@@ -7,7 +7,7 @@
   <meta name="description" content="Vision Mídia Digital — gestão de TVs, mídias e playlists." />
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" href="./icon.svg" type="image/svg+xml" />
-  <link rel="stylesheet" href="./styles.css?v=50" />
+  <link rel="stylesheet" href="./styles.css?v=51-device-targets" />
   <link rel="preconnect" href="https://fpadgedrgcxrrqflzhjt.supabase.co" crossorigin />
   <title>Vision Mídia Digital</title>
   <script src="./pwa-icon.js?v=panel-logo-20261018" defer></script>
@@ -691,6 +691,31 @@
 
 
 
+  <dialog id="media-tv-target-dialog" class="app-dialog" aria-labelledby="media-tv-target-title">
+    <form id="media-tv-target-form" class="dialog-body" method="dialog">
+      <div class="dialog-header">
+        <div>
+          <span class="eyebrow">EXIBIÇÃO POR TV</span>
+          <h3 id="media-tv-target-title">Em quais TVs mostrar?</h3>
+          <p id="media-tv-target-name" class="dialog-subtitle"></p>
+        </div>
+        <button type="button" class="icon-button" data-close-dialog="media-tv-target-dialog" aria-label="Fechar">×</button>
+      </div>
+      <p class="form-hint">Marque uma, várias ou todas as TVs desta playlist. As outras mídias continuam normalmente.</p>
+      <label class="media-tv-select-all">
+        <input id="media-tv-target-all" type="checkbox" checked />
+        <strong>Selecionar todas as TVs</strong>
+      </label>
+      <div id="media-tv-target-list" class="media-tv-choices" aria-label="Televisões desta playlist"></div>
+      <p id="media-tv-target-count" class="form-hint" role="status" aria-live="polite">0 TVs selecionadas</p>
+      <p id="media-tv-target-status" class="form-hint" role="status" aria-live="polite"></p>
+      <div class="dialog-actions">
+        <button type="button" class="button ghost" data-close-dialog="media-tv-target-dialog">Cancelar</button>
+        <button type="submit" id="media-tv-target-save" class="button primary" disabled>Salvar TVs do anúncio</button>
+      </div>
+    </form>
+  </dialog>
+
   <dialog id="media-preview-dialog" class="app-dialog">
     <div class="dialog-header"><h3 id="media-preview-title">Visualizar mídia</h3><button type="button" class="icon-button" data-close-dialog="media-preview-dialog" aria-label="Fechar prévia">×</button></div>
     <p id="media-preview-status" role="status">Carregando mídia…</p>
@@ -1083,7 +1108,7 @@
   </dialog>
 
   <script src="./config.js"></script>
-  <script src="./app.js?v=54" defer></script>
+  <script src="./app.js?v=55-device-targets" defer></script>
   <script src="./payment-ui.js" defer></script>
   <script src="./saas-shell.js" defer></script>
 </body>
