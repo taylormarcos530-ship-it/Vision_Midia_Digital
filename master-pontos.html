@@ -1,0 +1,46 @@
+<!doctype html><html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><meta name="theme-color" content="#07101f">
+<title>Pontos Vision • Master</title><link rel="stylesheet" href="./vision-points.css">
+</head><body>
+<header class="header"><div class="wrap"><a href="./master.html" class="brand">VISION<small>MASTER · PONTOS</small></a>
+<nav><a href="./master.html" class="ghostlink">← Voltar ao Master</a><a href="./pontos.html" target="_blank" rel="noopener" class="ghostlink">Ver catálogo público ↗</a></nav></div></header>
+<main class="wrap">
+<section class="hero"><span class="eyebrow">Exclusivo do Master Vision</span><h1>Rede de Pontos Vision</h1>
+<p>Cadastre locais reais, fotos das TVs e informações comerciais. Somente os pontos autorizados e publicados ficarão visíveis para o anunciante.</p>
+</section>
+<div id="status" class="notice" role="status" aria-live="polite">Verificando acesso do Master…</div>
+<div id="workspace" class="layout" hidden>
+<section class="panel"><div class="section-title"><h2>Pontos cadastrados</h2><button id="new-point" class="button" type="button">+ Novo ponto</button></div>
+<div id="entries"></div></section>
+<section class="panel"><h2 id="edit-title">Cadastrar ponto</h2>
+<form id="point-form">
+<input type="hidden" name="id">
+<label>Estabelecimento vinculado à Vision<select name="company_id" required><option value="">Selecione um cliente</option></select></label>
+<div class="form-grid">
+<label>Nome público<input name="name" minlength="2" maxlength="120" placeholder="Ex.: Academia Life" required></label>
+<label>Categoria<select name="category"><option>Academia</option><option>Lotérica</option><option>Hortifruti</option><option>Açougue</option><option>Oficina</option><option>Mercado</option><option>Salão e estética</option><option>Clínica</option><option>Comércio</option><option>Outros</option></select></label></div>
+<div class="form-grid">
+<label>Cidade<input name="city" maxlength="100" placeholder="Ex.: Anápolis" required></label>
+<label>Bairro<input name="neighborhood" maxlength="100" placeholder="Ex.: Calistolândia" required></label></div>
+<label>Endereço comercial autorizado<input name="public_address" maxlength="220" placeholder="Rua, número (opcional)"></label>
+<label>Horário de funcionamento<input name="opening_hours" maxlength="220" placeholder="Ex.: Seg a sex 6h–22h"></label>
+<label>Fluxo médio estimado (pessoas/dia)<input type="number" name="estimated_daily_visitors" min="0" max="1000000" step="1" placeholder="Opcional"></label>
+<p class="small-note">Registre apenas uma estimativa informada pelo estabelecimento. Não apresente como medição certificada.</p>
+<div class="section-title"><h2>TVs instaladas neste ponto</h2></div>
+<div id="screen-list" class="notice">Escolha um estabelecimento para mostrar as TVs.</div>
+<label class="check"><input type="checkbox" name="consent"><span>Confirmo que o estabelecimento autorizou divulgar essas informações e fotos.</span></label>
+<label class="check"><input type="checkbox" name="share_address"><span>Também autorizou mostrar o endereço completo ao público.</span></label>
+<label class="check"><input type="checkbox" name="published"><span>Publicar este ponto no catálogo compartilhável.</span></label>
+<div class="toolbar"><button class="button" type="submit" id="save-point">Salvar ponto</button><button class="button secondary" type="button" id="reset-point">Limpar formulário</button></div>
+</form>
+<section id="photo-section" hidden><div class="section-title"><h2>Fotos do ponto</h2></div>
+<p class="small-note">Até 3 fotos reais por ponto. Formatos PNG, JPG ou WebP, até 4 MB cada. As fotos só aparecem ao público quando o ponto estiver publicado.</p>
+<div id="photo-list" class="point-photos"></div>
+<label class="field"><span>Adicionar foto do estabelecimento ou da TV</span><input type="file" id="photo-input" accept="image/png,image/jpeg,image/webp"></label>
+<button id="upload-photo" type="button" class="button secondary">Enviar foto</button></section>
+</section>
+</div>
+</main><footer class="wrap foot">Rede Vision · Dados publicados apenas com autorização. Sem alterações na programação das TVs.</footer>
+<script src="./config.js"></script><script src="./master-pontos.js?v=1" defer></script>
+</body></html>
