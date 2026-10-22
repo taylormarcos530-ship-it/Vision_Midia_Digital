@@ -133,8 +133,22 @@ async function savePoint(admin:any,user:any,raw:any){
   };
   // Set new/updated master metadata before linking TV; never mutate devices or their playlists.
   unwrap(await admin.from('vision_network_points').upsert(row,{onConflict:'id'}).select('id').single());
-  if(existing){unwrap(await admin.from('vision_network_point_tvs').delete().eq('point_id',id));}
-  if(tvs.length){unwrap(await admin.from('vision_network_point_tvs').insert(tvs.map((t:any)=>({...t,point_id:id}))));}
+  // Add/update validated TVs before removing obsolete links. A failed insert can no
+  // longer erase previously saved screen associations.
+  if(tvs.length){
+    unwrap(await admin.from('vision_network_point_tvs')
+      .upsert(tvs.map((t:any)=>({...t,point_id:id})),{onConflict:'point_id,device_id'}));
+  }
+  if(existing){
+    const removed=unwrap(await admin.from('vision_network_point_tvs')
+      .select('device_id').eq('point_id',id))||[];
+    for(const row of removed){
+      if(!tvIds.includes(row.device_id)){
+        unwrap(await admin.from('vision_network_point_tvs')
+          .delete().eq('point_id',id).eq('device_id',row.device_id));
+      }
+    }
+  }
   return{id};
 }
 async function uploadStart(admin:any,body:any){
