@@ -2845,6 +2845,7 @@
           <button class="small-icon-button" data-open-media="${media.id}">Visualizar</button>
           <button class="small-icon-button" type="button" data-media-duration="${media.id}">Tempo</button>
           <button class="small-icon-button" data-delete-media="${media.id}">Excluir</button>
+          <button class="small-icon-button" type="button" data-media-schedule="${media.id}">Programação</button>
           ${state.isPlatformAdmin && ["image","video"].includes(media.media_type) ? `<button class="small-icon-button advertiser-link-button" type="button" data-link-media-advertiser="${media.id}" disabled>Consultando…</button>` : ""}
         </div>
       </article>`;
@@ -4810,7 +4811,7 @@
   }
 
   function playlistScheduleSelectedWeekdays() {
-    return $('[data-playlist-weekday]')
+    return $$('[data-playlist-weekday]')
       .filter(input => input.checked)
       .map(input => Number(input.dataset.playlistWeekday));
   }
@@ -5393,6 +5394,14 @@
       if (addMedia) return addMediaToPlaylist(addMedia.dataset.addMediaToPlaylist);
       const mediaDuration = event.target.closest('[data-media-duration]');
       if (mediaDuration) return openMediaDuration(mediaDuration.dataset.mediaDuration, mediaDuration.closest('[data-media-card]'));
+      const mediaSchedule = event.target.closest('[data-media-schedule]');
+      if (mediaSchedule) {
+        const mediaId = mediaSchedule.dataset.mediaSchedule;
+        const playlistId = selectedMediaPlaylistId(mediaId);
+        const item = state.playlistItems.find(row => row.media_id === mediaId && row.playlist_id === playlistId);
+        if (!item) return toast('Escolha uma playlist', 'Vincule esta mídia a uma playlist para definir sua programação.', 'error');
+        return openPlaylistScheduleDialog([item.id]);
+      }
       const saveDuration = event.target.closest('[data-save-item-duration]');
       if (saveDuration) return savePlaylistItemDuration(saveDuration.dataset.saveItemDuration);
       const editItemSchedule = event.target.closest('[data-edit-item-schedule]');
