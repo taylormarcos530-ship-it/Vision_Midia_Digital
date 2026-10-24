@@ -220,7 +220,10 @@ async function deliver(admin: any, job: QueueRow) {
         body: clip(job.message, 450),
         url: ORIGIN + '/#monitoring',
         icon: ORIGIN + '/icon.svg',
-        tag: 'vision-health-' + job.kind + '-' + job.device_id,
+        // Stable for retries of one incident, unique across different reconnections.
+        // Avoid silently replacing a previous Android notification from this same TV.
+        tag: 'vision-health-' + job.kind + '-' + job.device_id + '-' + job.id,
+        renotify: true,
       }), { TTL: 3600, urgency: 'high' })
       sent++
     } catch (e: any) {
