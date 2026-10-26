@@ -72,6 +72,8 @@ public class MainActivity extends Activity {
     private boolean mutedMusicByPlayer = false;
     private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
+    // Only for the isolated Aquário test build. Opens the already-published APK from GitHub directly.
+    private static final String AQUARIO_DIAGNOSTIC_APK_URL = "https://raw.githubusercontent.com/taylormarcos530-ship-it/Vision_Midia_Digital/refs/heads/fix/aquario-webview-black-screen-diagnostics-20261026/downloads/Vision-Player-Aquario-Diagnostico.apk";
     private static final long KIOSK_RETURN_RETRY_MS = 200L;
     private static final long KIOSK_RETURN_GUARD_MS = 1500L;
     private static final long KIOSK_MAINTENANCE_DURATION_MS = 10L * 60L * 1000L;
@@ -305,6 +307,7 @@ public class MainActivity extends Activity {
                         "Abrir configurações (manutenção por 10 min)",
                         isKioskReturnEnabled() ? "Desativar quiosque" : "Ativar quiosque",
                         "Baixar atualização do Player Estável",
+                        "Baixar APK de diagnóstico (Aquário)",
                         "Alterar código",
                         canReturnFromBackground() ? "Retorno e auto início: permissão liberada" : "Liberar retorno e auto início no Android"
                 }, (dialog, which) -> {
@@ -319,8 +322,10 @@ public class MainActivity extends Activity {
                     } else if (which == 4) {
                         openPlayerUpdateDownload();
                     } else if (which == 5) {
-                        showSetupDialog(true);
+                        openAquarioDiagnosticDownload();
                     } else if (which == 6) {
+                        showSetupDialog(true);
+                    } else if (which == 7) {
                         requestBackgroundReturnPermission();
                     }
                 })
@@ -360,6 +365,25 @@ public class MainActivity extends Activity {
         } catch (Exception error) {
             prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
             Toast.makeText(this, "Baixe o APK pelo painel em Aplicativos / Downloads.", Toast.LENGTH_LONG).show();
+        }
+    }
+
+    private void openAquarioDiagnosticDownload() {
+        prefs.edit().putLong(KEY_KIOSK_MAINTENANCE_UNTIL,
+                System.currentTimeMillis() + KIOSK_MAINTENANCE_DURATION_MS).apply();
+        try {
+            Intent downloadIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(AQUARIO_DIAGNOSTIC_APK_URL));
+            downloadIntent.addCategory(Intent.CATEGORY_BROWSABLE);
+            startActivity(downloadIntent);
+            Toast.makeText(this, "Download exclusivo para testar no Aquário. Não instale nas outras TVs.",
+                    Toast.LENGTH_LONG).show();
+        } catch (Exception error) {
+            prefs.edit().remove(KEY_KIOSK_MAINTENANCE_UNTIL).apply();
+            new AlertDialog.Builder(this)
+                    .setTitle("Download do Aquário")
+                    .setMessage("Não foi possível abrir o navegador neste TV Box. Confira se o Chrome está disponível.")
+                    .setPositiveButton("OK", null)
+                    .show();
         }
     }
 
