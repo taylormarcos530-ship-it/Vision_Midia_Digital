@@ -374,10 +374,14 @@
   }
 
   async function refreshSession() {
-    if (!state.session?.refresh_token) return null;
+    const requestedToken = state.session?.refresh_token;
+    if (!requestedToken) return null;
     const data = await authRequest('/token?grant_type=refresh_token', {
-      body: { refresh_token: state.session.refresh_token },
+      body: { refresh_token: requestedToken },
     });
+    // A resposta de uma sessão antiga nunca pode restaurar um usuário após Sair/Trocar conta.
+    if (state.session?.refresh_token !== requestedToken ||
+        loadSavedSession()?.refresh_token !== requestedToken) return null;
     if (!data?.access_token) throw new Error('Não foi possível renovar a sessão.');
     saveSession(data);
     return data;
@@ -5040,17 +5044,18 @@
     await persistPlaylistOrder(ids, playlistId);
   }
 
-  async function logout() {
-    try {
-      if (state.session?.access_token) {
-        await fetch(`${CONFIG.supabaseUrl}/auth/v1/logout`, { method: 'POST', headers: sessionHeaders(false) });
-      }
-    } catch { /* local logout still proceeds */ }
+  function logout() {
+    // Sair deve funcionar sem internet ou resposta do servidor.
+    const oldAccessToken = state.session?.access_token || null;
     saveSession(null);
     const brandingForm = $('#player-branding-form');
     if (brandingForm) { brandingForm.reset(); delete brandingForm.dataset.dirty; }
     localStorage.removeItem(COMPANY_KEY);
+    state.companies = [];
     state.company = null;
+    state.subscription = null;
+    state.companyRole = null;
+    state.isPlatformAdmin = false;
     state.devices = [];
     state.media = [];
     state.playlists = [];
@@ -5059,8 +5064,26 @@
     state.campaigns = [];
     state.campaignDevices = [];
     state.report = null;
+    $('#sidebar')?.classList.remove('open');
     showScreen('auth');
+    switchAuthTab('login');
     toast('Você saiu da conta');
+
+    // Revoga apenas a sessão antiga sem bloquear a troca de conta.
+    if (oldAccessToken) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 5000);
+      fetch(`${CONFIG.supabaseUrl}/auth/v1/logout?scope=local`, {
+        method: 'POST',
+        headers: {
+          apikey: CONFIG.supabasePublishableKey,
+          Authorization: `Bearer ${oldAccessToken}`,
+        },
+        signal: controller.signal,
+        cache: 'no-store',
+        keepalive: true,
+      }).catch(() => {}).finally(() => clearTimeout(timeout));
+    }
   }
 
   function switchAuthTab(tab) {
