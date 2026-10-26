@@ -2,7 +2,7 @@ name: Build Vision Player APK
 
 on:
   push:
-    branches: [main, fix/android-tv-native-rotation-20261020, fix/android-tv-boot-autostart-1519-20261020]
+    branches: [main, fix/android-tv-native-rotation-20261020, fix/android-tv-boot-autostart-1519-20261020, fix/aquario-webview-black-screen-diagnostics-20261026]
     paths:
       - 'android-player/**'
       - 'player.html'
