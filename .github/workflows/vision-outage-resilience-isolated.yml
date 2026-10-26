@@ -7,6 +7,7 @@ on:
       - player.js
       - master.js
       - tests/vision-outage-resilience.test.cjs
+      - tests/master-outage-recovery.test.cjs
       - tests/player-network-backoff.test.cjs
       - .github/workflows/vision-outage-resilience-isolated.yml
   workflow_dispatch:
@@ -31,7 +32,7 @@ jobs:
       # (missing DOM document in its audio VM fixture); do not change audio or
       # pretend it is a regression introduced by this branch.
       - name: Offline resiliency tests
-        run: node --test tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs
+        run: node --test tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
       - name: Prepare Android test build assets
         run: |
           mkdir -p android-player/app/src/main/assets
