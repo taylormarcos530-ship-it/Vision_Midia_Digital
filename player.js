@@ -394,6 +394,7 @@
       $('#access-message').textContent = 'Aguardando confirmação do servidor. Não é necessário ajustar o relógio do TV Box.';
       $('#access-expiry').textContent = 'Pareamento preservado.';
       $('#access-status').textContent = 'A verificação será repetida automaticamente.';
+      try { window.VisionAndroid?.playerReady?.(); } catch {}
       return true;
     }
     showAccessBlocked({
