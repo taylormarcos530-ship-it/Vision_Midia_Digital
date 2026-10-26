@@ -68,6 +68,25 @@ jobs:
       # Compatibilidade exclusiva do APK de diagnóstico do Aquário.
       # O WebView 78 não interpreta optional chaining/nullish coalescing.
       # Transpilar SOMENTE as cópias dentro de assets; não alterar player.js do site.
+      # Builds an independent installation ONLY in CI for the Aquario branch.
+      # Source Gradle and production/stable APK configurations stay unchanged.
+      - name: Isolate Aquario diagnostic package at build time
+        if: github.ref == 'refs/heads/fix/aquario-webview-black-screen-diagnostics-20261026'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+          file = Path('android-player/app/build.gradle')
+          text = file.read_text(encoding='utf-8')
+          old = "        debug {\\n            versionNameSuffix '-preview'\\n        }".replace('\\n', '\n')
+          new = "        debug {\\n            applicationIdSuffix '.aquario'\\n            versionNameSuffix '-aquario-diagnostic'\\n            manifestPlaceholders = [playerLabel: 'Vision Player Aquario Teste', setupScheme: 'visionmidia-aquario']\\n        }".replace('\\n', '\n')
+          if text.count(old) != 1:
+              raise SystemExit('Aborted: unexpected Android debug configuration')
+          file.write_text(text.replace(old, new), encoding='utf-8')
+          PY
+          grep -F "applicationIdSuffix '.aquario'" android-player/app/build.gradle
+
       - name: Adapt bundled scripts for Aquario WebView 78
         if: github.ref == 'refs/heads/fix/aquario-webview-black-screen-diagnostics-20261026'
         shell: bash

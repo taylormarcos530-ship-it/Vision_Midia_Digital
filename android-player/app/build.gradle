@@ -17,11 +17,7 @@ android {
 
     buildTypes {
         debug {
-            // Device-only diagnostic APK: independent of any already installed Vision Player.
-            // Restrict this to the isolated Aquario branch; no production package is changed.
-            applicationIdSuffix '.aquario'
-            versionNameSuffix '-aquario-diagnostic'
-            manifestPlaceholders = [playerLabel: 'Vision Player Aquario Teste', setupScheme: 'visionmidia-aquario']
+            versionNameSuffix '-preview'
         }
         release {
             applicationIdSuffix '.stable'
