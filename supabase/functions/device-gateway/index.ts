@@ -415,7 +415,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -444,13 +444,26 @@ async function authenticateDevice(admin, req) {
   const accountBlock = accountSubscriptionBlock(company, subscription)
   if (accountBlock) return { ...device, account_block: accountBlock }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
+  // Device requests can arrive every few seconds. Refresh the credential activity
+  // timestamp at most once per minute rather than writing on every read action.
+  // The database-side predicate prevents duplicate updates from concurrent calls.
+  const touchedAtMs = credential.last_used_at ? Date.parse(credential.last_used_at) : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(touchedAtMs) || nowMs - touchedAtMs >= 60_000) {
+    const nowIso = new Date(nowMs).toISOString()
+    const cutoffIso = new Date(nowMs - 60_000).toISOString()
+    await admin.from('device_credentials')
+      .update({ last_used_at: nowIso })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
+  }
+
+  // Keep issued-token invalidation, but do not rewrite already cleared values.
   await admin.from('device_pairing_requests')
     .update({ issued_token: null })
     .eq('device_id', device.id)
     .eq('status', 'issued')
+    .not('issued_token', 'is', 'null')
 
   return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
