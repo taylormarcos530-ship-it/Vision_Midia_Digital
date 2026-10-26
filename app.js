@@ -283,15 +283,44 @@
     return data;
   }
 
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 15000) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } catch (error) {
+      if (error?.name === 'AbortError') {
+        const timeoutError = new Error('O servidor demorou para responder. Tente novamente mais tarde.');
+        timeoutError.code = 'VISION_REQUEST_TIMEOUT';
+        throw timeoutError;
+      }
+      throw error;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  function friendlyAuthError(error) {
+    const message = String(error?.message || '').trim();
+    if ([502, 503, 504].includes(error?.status) ||
+        error?.code === 'VISION_REQUEST_TIMEOUT' ||
+        /failed to fetch|networkerror|timeout|tempo de resposta|demorou para responder|upstream request timeout/i.test(message)) {
+      return 'O servidor da Vision está demorando a responder. Tente novamente mais tarde; não é necessário trocar a senha.';
+    }
+    if (/invalid.login.credentials|invalid.grant|invalid credentials/i.test(message)) return 'Confira seu e-mail e senha.';
+    return message || 'Não foi possível entrar. Verifique a conexão e tente novamente.';
+  }
+
   async function authRequest(path, { method = 'POST', body } = {}) {
-    const response = await fetch(`${CONFIG.supabaseUrl}/auth/v1${path}`, {
+    const response = await fetchWithTimeout(`${CONFIG.supabaseUrl}/auth/v1${path}`, {
       method,
       headers: {
         apikey: CONFIG.supabasePublishableKey,
         'Content-Type': 'application/json',
       },
       body: body ? JSON.stringify(body) : undefined,
-    });
+    }, 15000);
     return parseResponse(response);
   }
 
@@ -299,11 +328,10 @@
     const url = `${CONFIG.supabaseUrl}/rest/v1/${table}${query ? `?${query}` : ''}`;
     const headers = sessionHeaders();
     if (prefer) headers.Prefer = prefer;
-    const response = await fetch(url, {
-      method,
-      headers,
-      body: body === undefined ? undefined : JSON.stringify(body),
-    });
+    const options = { method, headers, body: body === undefined ? undefined : JSON.stringify(body) };
+    const response = method === 'GET'
+      ? await fetchWithTimeout(url, options, 15000)
+      : await fetch(url, options);
     if (response.status === 401 && state.session?.refresh_token) {
       const refreshed = await refreshSession().catch(() => null);
       if (refreshed) return restRequest(table, { method, query, body, prefer });
@@ -323,21 +351,20 @@
     return parseResponse(response);
   }
 
-  async function functionRequest(name, { body = {}, authenticated = true } = {}) {
+  async function functionRequest(name, { body = {}, authenticated = true, timeoutMs = 0 } = {}) {
     const headers = {
       apikey: CONFIG.supabasePublishableKey,
       'Content-Type': 'application/json',
     };
     if (authenticated && state.session?.access_token) headers.Authorization = `Bearer ${state.session.access_token}`;
-    const response = await fetch(`${CONFIG.supabaseUrl}/functions/v1/${name}`, {
-      method: 'POST',
-      headers,
-      body: JSON.stringify(body),
-      cache: 'no-store',
-    });
+    const url = `${CONFIG.supabaseUrl}/functions/v1/${name}`;
+    const options = { method: 'POST', headers, body: JSON.stringify(body), cache: 'no-store' };
+    const response = timeoutMs > 0
+      ? await fetchWithTimeout(url, options, timeoutMs)
+      : await fetch(url, options);
     if (response.status === 401 && authenticated && state.session?.refresh_token) {
       const refreshed = await refreshSession().catch(() => null);
-      if (refreshed) return functionRequest(name, { body, authenticated });
+      if (refreshed) return functionRequest(name, { body, authenticated, timeoutMs });
     }
     return parseResponse(response);
   }
@@ -391,14 +418,14 @@
   async function loadPublicConfig() {
     let data = null;
     try {
-      data = await functionRequest('public-config', { authenticated: false, body: {} });
+      data = await functionRequest('public-config', { authenticated: false, body: {}, timeoutMs: 10000 });
     } catch (primaryError) {
       // Fallback público: os planos ativos e a configuração pública possuem RLS de leitura anon.
       try {
         const headers = { apikey: CONFIG.supabasePublishableKey, 'Content-Type': 'application/json' };
         const [plansResponse, configResponse] = await Promise.all([
-          fetch(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }),
-          fetch(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle,web_push_public_key&id=eq.1&limit=1`, { headers, cache: 'no-store' }),
+          fetchWithTimeout(`${CONFIG.supabaseUrl}/rest/v1/plans?select=id,name,description,monthly_price_cents,max_devices,storage_limit_mb,max_users,max_campaigns,sort_order&is_active=eq.true&order=sort_order.asc`, { headers, cache: 'no-store' }, 10000),
+          fetchWithTimeout(`${CONFIG.supabaseUrl}/rest/v1/platform_public_config?select=support_whatsapp,signup_whatsapp_message,renewal_whatsapp_message,signup_enabled,login_image_path,login_image_fit,login_image_position,login_image_overlay,login_image_title,login_image_subtitle,web_push_public_key&id=eq.1&limit=1`, { headers, cache: 'no-store' }, 10000),
         ]);
         if (!plansResponse.ok || !configResponse.ok) throw primaryError;
         const plans = await plansResponse.json();
@@ -635,7 +662,9 @@
 
   async function bootstrap() {
     bindEvents();
-    await loadPublicConfig().catch(() => null);
+    // Keep the login visible even if the public config service is unavailable.
+    showScreen('auth');
+    loadPublicConfig().catch(() => null);
     updateConnectionStatus();
     window.addEventListener('online', updateConnectionStatus);
     window.addEventListener('offline', updateConnectionStatus);
@@ -666,9 +695,9 @@
       await enterAuthenticatedApp();
     } catch (error) {
       console.warn(error);
-      saveSession(null);
+      if ([401, 403].includes(error?.status)) saveSession(null);
       showScreen('auth');
-      toast('Sessão encerrada', 'Entre novamente para continuar.', 'error');
+      toast('Não foi possível carregar o painel', friendlyAuthError(error), 'error');
     }
   }
 
