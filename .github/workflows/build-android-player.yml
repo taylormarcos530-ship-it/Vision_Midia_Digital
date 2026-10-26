@@ -97,4 +97,8 @@ jobs:
             exit 0
           fi
           git commit -m 'build(test): publish Aquario diagnostic APK on isolated branch'
+          # The web download page may have been updated while the APK was building.
+          # Replay this binary-only commit on the latest isolated-branch head.
+          git fetch origin fix/aquario-webview-black-screen-diagnostics-20261026
+          git rebase origin/fix/aquario-webview-black-screen-diagnostics-20261026
           git push origin HEAD:fix/aquario-webview-black-screen-diagnostics-20261026
