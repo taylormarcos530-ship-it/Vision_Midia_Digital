@@ -4035,6 +4035,23 @@
     }
   }
 
+  // Orientation is stored in device settings, but also needs an immediate
+  // remote sync command so the installed TV Box fetches and applies it.
+  async function requestOrientationSync(deviceId){
+    try {
+      const response=await functionRequest('device-control',{
+        body:{action:'sync_now',company_id:state.company.id,device_id:deviceId},
+        authenticated:true,
+      });
+      if(response?.ok!==true)throw new Error('O servidor não confirmou o comando.');
+      return true;
+    }catch(error){
+      toast('Configuração salva, mas comando não enviado',
+        (error?.message||'Falha ao solicitar sincronização.')+' Use “Sincronizar agora” para tentar novamente.','error');
+      return false;
+    }
+  }
+
   async function updateDeviceRotationDegrees(deviceId,value,control){
     const device=state.devices.find(d=>d.id===deviceId);
     const degrees=Number(value);
@@ -4045,7 +4062,8 @@
       const settings={...(device.settings||{}),screen_rotation_degrees:degrees};
       await restRequest('devices',{method:'PATCH',query:`id=eq.${encodeURIComponent(deviceId)}&company_id=eq.${encodeURIComponent(state.company.id)}`,body:{settings},prefer:'return=minimal'});
       device.settings=settings;
-      toast('Rotação salva',`${degrees}°. A TV aplicará o ajuste na próxima sincronização.`);
+      const queued=await requestOrientationSync(deviceId);
+      if(queued)toast('Rotação salva · sincronização enviada',`${degrees}°. Comando enviado ao TV Box; aguarde a confirmação do aparelho.`);
       await loadAllData();return true;
     }catch(error){control.value=String(old);toast('Erro ao ajustar rotação',error.message,'error');return false}
     finally{if(control.isConnected)control.disabled=false}
@@ -4069,7 +4087,8 @@
         prefer:'return=minimal',
       });
       device.orientation = orientation;
-      toast('Rotação da TV atualizada', `${orientationLabel(orientation)}. O Vision Player aplicará a tela inteira na próxima sincronização.`);
+      const queued=await requestOrientationSync(deviceId);
+      if(queued)toast('Orientação salva · sincronização enviada', `${orientationLabel(orientation)}. Comando enviado ao TV Box; aguarde a confirmação do aparelho.`);
       await loadAllData();
       return true;
     } catch (error) {
