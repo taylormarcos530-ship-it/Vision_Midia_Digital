@@ -810,12 +810,19 @@
     if (!item?.media || !['image','video'].includes(item.media.type)) return false;
     const key = cacheKey(item);
     let cached = await cache.match(key);
-    if (cached) return true;
+    if (cached) {
+      // A zero-byte cache entry must never be treated as a playable asset.
+      if (Number(cached.headers.get('Content-Length')) > 0) return true;
+      await cache.delete(key);
+    }
     try {
       if (foreground) setStatus(`Preparando ${item.media.name}…`);
       const response = await fetch(item.media.url, { cache:'no-store' });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const blob = await response.blob();
+      if (!blob.size || String(response.headers.get('Content-Type') || '').includes('text/html')) {
+        throw new Error('Arquivo de mídia vazio ou resposta HTML inválida.');
+      }
       await cache.put(key, new Response(blob, {
         headers: {
           'Content-Type': item.media.mime_type || blob.type || 'application/octet-stream',
@@ -874,13 +881,16 @@
 
     // Preserve the old playlist's binaries until every incoming local item exists.
     async function pruneAfterCompleteDownload() {
+      // Do not erase offline media for a URL-only playlist or stale download.
+      if (!candidates.length || state.manifest?.version !== manifest.version) return false;
       for (const item of candidates) {
-        if (!await cache.match(cacheKey(item))) return;
+        if (!await cache.match(cacheKey(item))) return false;
       }
       const keys = await cache.keys();
       await Promise.all(keys
         .filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url))
         .map(key => cache.delete(key)));
+      return true;
     }
 
     const warmCount = Math.min(8, candidates.length);
@@ -890,8 +900,8 @@
 
     const rest = candidates.slice(warmCount);
     if (!rest.length) {
-      state.cachePrefetchVersion = manifest.version || null;
-      await pruneAfterCompleteDownload();
+      state.cachePrefetchVersion = await pruneAfterCompleteDownload()
+        ? (manifest.version || null) : null;
       return;
     }
 
@@ -903,7 +913,7 @@
       await cacheWithConcurrency(cache, rest, 2, false, version);
       if (state.cachePrefetchVersion === version) {
         await refreshCacheStats(cache, candidates);
-        await pruneAfterCompleteDownload();
+        if (!await pruneAfterCompleteDownload()) state.cachePrefetchVersion = null;
       }
     })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
@@ -930,7 +940,8 @@
         state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
       }
       state.manifest = manifest;
-      if (changed) void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
+      if (changed || state.cachePrefetchVersion !== manifest.version)
+        void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
       if (enforceLocalAccess()) return;
