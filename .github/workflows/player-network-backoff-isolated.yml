@@ -1,0 +1,27 @@
+name: Player network backoff (isolated)
+on:
+  push:
+    branches:
+      - fix/player-network-backoff-isolated-20261026
+    paths:
+      - player.js
+      - tests/player-network-backoff.test.cjs
+      - .github/workflows/player-network-backoff-isolated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  network-policy-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: node --check player.js
+      - name: Validate network backoff behavior
+        run: node --test tests/player-network-backoff.test.cjs
