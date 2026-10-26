@@ -59,6 +59,7 @@
       cache: 'no-store',
     });
     const data = await parse(response);
+    if (readSession()?.refresh_token !== session.refresh_token) return null;
     saveSession(data);
     return data;
   }
