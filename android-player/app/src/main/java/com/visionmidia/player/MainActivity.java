@@ -658,17 +658,81 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public String postJson(String url, String jsonBody, String apiKey, String deviceToken) {
-            HttpURLConnection connection = null;
             try {
-                URL target = new URL(url);
-                if (!"https".equalsIgnoreCase(target.getProtocol())) {
+                URL direct = new URL(url);
+                if (!"https".equalsIgnoreCase(direct.getProtocol())) {
                     throw new IllegalArgumentException("Apenas HTTPS é permitido.");
                 }
+                // Diagnostic-only fallback: never change the behavior of production/stable packages.
+                String prefix = "/functions/v1/";
+                String functionName = direct.getPath().startsWith(prefix)
+                        ? direct.getPath().substring(prefix.length()) : "";
+                boolean aquarioDiagnostic = getPackageName().endsWith(".aquario");
+                boolean approvedFunction = "device-bootstrap".equals(functionName)
+                        || "device-gateway".equals(functionName)
+                        || "device-monitoring".equals(functionName);
+                boolean allowProxy = aquarioDiagnostic
+                        && "fpadgedrgcxrrqflzhjt.supabase.co".equalsIgnoreCase(direct.getHost())
+                        && approvedFunction;
+                try {
+                    return performPost(direct, jsonBody, apiKey, deviceToken, null, allowProxy);
+                } catch (Exception directFailure) {
+                    if (!allowProxy || !isRetryableNetworkFailure(directFailure)) {
+                        return encodeNetworkFailure(directFailure, null);
+                    }
+                    try {
+                        // Existing Vision HTTPS endpoint forwards to the same Supabase function.
+                        // No authorization, expiration, or device checks are bypassed.
+                        URL alternative = new URL("https://vision-midia-digital.vercel.app/api/player-proxy?fn="
+                                + functionName);
+                        return performPost(alternative, jsonBody, apiKey, deviceToken, functionName, true);
+                    } catch (Exception proxyFailure) {
+                        return encodeNetworkFailure(proxyFailure, directFailure);
+                    }
+                }
+            } catch (Exception error) {
+                return encodeNetworkFailure(error, null);
+            }
+        }
 
+        private boolean isRetryableNetworkFailure(Exception error) {
+            return error instanceof java.net.SocketTimeoutException
+                    || error instanceof java.net.UnknownHostException
+                    || error instanceof java.net.ConnectException;
+        }
+
+        private String encodeNetworkFailure(Exception error, Exception directError) {
+            String message;
+            if (error instanceof javax.net.ssl.SSLHandshakeException) {
+                message = "Conexao HTTPS falhou. Ative Data e hora automaticas no TV Box.";
+            } else if (error instanceof java.net.UnknownHostException) {
+                message = "Nao foi possivel localizar o servidor. Verifique o DNS/Wi-Fi.";
+            } else if (error instanceof java.net.ConnectException) {
+                message = "Nao foi possivel conectar ao servidor. Confira a rede.";
+            } else if (error instanceof java.net.SocketTimeoutException) {
+                message = "A rede do TV Box nao respondeu no tempo esperado.";
+            } else {
+                message = "Falha de rede: " + error.getClass().getSimpleName()
+                        + ": " + String.valueOf(error.getMessage());
+            }
+            if (directError != null) {
+                message += " Direto=" + directError.getClass().getSimpleName()
+                        + "; alternativo=" + error.getClass().getSimpleName() + ".";
+            }
+            return "0\\n".replace("\\n", "\n")
+                    + Base64.encodeToString(message.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+        }
+
+        private String performPost(URL target, String jsonBody, String apiKey,
+                                   String deviceToken, String proxyFunction, boolean diagnostic)
+                throws Exception {
+            HttpURLConnection connection = null;
+            try {
                 connection = (HttpURLConnection) target.openConnection();
                 connection.setRequestMethod("POST");
-                connection.setConnectTimeout(15000);
-                connection.setReadTimeout(20000);
+                // Keep both attempts inside the WebView's bounded async deadline.
+                connection.setConnectTimeout(diagnostic ? 5000 : 15000);
+                connection.setReadTimeout(diagnostic ? 7000 : 20000);
                 connection.setDoOutput(true);
                 connection.setUseCaches(false);
                 connection.setRequestProperty("Content-Type", "application/json");
@@ -676,6 +740,7 @@ public class MainActivity extends Activity {
                 connection.setRequestProperty("User-Agent", "VisionPlayerAndroid/" + getAppVersion());
                 if (apiKey != null && !apiKey.isEmpty()) connection.setRequestProperty("apikey", apiKey);
                 if (deviceToken != null && !deviceToken.isEmpty()) connection.setRequestProperty("x-device-token", deviceToken);
+                if (proxyFunction != null) connection.setRequestProperty("x-vision-function", proxyFunction);
 
                 byte[] payload = (jsonBody == null ? "{}" : jsonBody).getBytes(StandardCharsets.UTF_8);
                 connection.setFixedLengthStreamingMode(payload.length);
@@ -683,32 +748,18 @@ public class MainActivity extends Activity {
                     output.write(payload);
                     output.flush();
                 }
-
                 int status = connection.getResponseCode();
                 InputStream input = status >= 400 ? connection.getErrorStream() : connection.getInputStream();
-                byte[] body = new byte[0];
+                byte[] response = new byte[0];
                 if (input != null) {
                     try (InputStream stream = input; ByteArrayOutputStream buffer = new ByteArrayOutputStream()) {
                         byte[] chunk = new byte[4096];
                         int read;
                         while ((read = stream.read(chunk)) != -1) buffer.write(chunk, 0, read);
-                        body = buffer.toByteArray();
+                        response = buffer.toByteArray();
                     }
                 }
-                return status + "\n" + Base64.encodeToString(body, Base64.NO_WRAP);
-            } catch (Exception error) {
-                String type = error.getClass().getSimpleName();
-                String message;
-                if (error instanceof javax.net.ssl.SSLHandshakeException) {
-                    message = "Não foi possível conectar com segurança. Verifique a internet e ative Data e hora automáticas no TV Box.";
-                } else if (error instanceof java.net.UnknownHostException || error instanceof java.net.ConnectException) {
-                    message = "Sem conexão com a internet. Verifique Wi-Fi ou cabo de rede do TV Box.";
-                } else if (error instanceof java.net.SocketTimeoutException) {
-                    message = "A internet do TV Box não respondeu a tempo. Verifique a conexão e tente novamente.";
-                } else {
-                    message = "Falha de rede no TV Box: " + type + ": " + String.valueOf(error.getMessage());
-                }
-                return "0\n" + Base64.encodeToString(message.getBytes(StandardCharsets.UTF_8), Base64.NO_WRAP);
+                return status + "\n" + Base64.encodeToString(response, Base64.NO_WRAP);
             } finally {
                 if (connection != null) connection.disconnect();
             }

@@ -579,7 +579,11 @@
 
   async function gateway(body) {
     try {
-      return await functionRequest('device-gateway', body, state.deviceToken, body?.action === 'manifest' ? 8000 : 40000);
+      // Aquario diagnostic may retry via the existing Vision HTTPS proxy after an Android network timeout.
+      const timeout = body?.action === 'manifest'
+        ? (String(nativeAppVersion() || '').includes('aquario-diagnostic') ? 30000 : 8000)
+        : 40000;
+      return await functionRequest('device-gateway', body, state.deviceToken, timeout);
     } catch (error) {
       if (error.status === 403 && isAccessError(error)) {
         showAccessBlocked(error);
