@@ -1,0 +1,90 @@
+name: Vision - authorized change scope
+
+# This workflow is intentionally fail-closed. It checks only the Aquario fix's
+# explicitly permitted files. A new task needs its own explicit owner approval
+# and a separate scope; never silently expand the list.
+on:
+  push:
+    branches:
+      - fix/aquario-webview-black-screen-diagnostics-20261026
+  pull_request_target:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  guard-aquario-branch:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Reject out-of-scope changes
+        shell: bash
+        env:
+          BASELINE_SHA: 6ed229570052a9152c61323187c706deae5d4d9f
+        run: |
+          set -euo pipefail
+          git cat-file -e "${BASELINE_SHA}^{commit}"
+          mapfile -t changed < <(git diff --name-only "${BASELINE_SHA}" HEAD)
+          for file in "${changed[@]}"; do
+            case "$file" in
+              .github/workflows/build-android-player.yml|\
+              .github/workflows/vision-authorized-scope.yml|\
+              android-player/app/src/main/java/com/visionmidia/player/MainActivity.java|\
+              aquario-download.html|\
+              downloads.html|\
+              downloads/Vision-Player-Aquario-Diagnostico.apk|\
+              downloads/Vision-Player-Aquario-Diagnostico.sha256|\
+              player.js)
+                echo "AUTHORIZED: $file"
+                ;;
+              *)
+                echo "::error file=$file::Blocked: file is outside approved Aquario diagnostic scope."
+                exit 1
+                ;;
+            esac
+          done
+          echo "Scope validated: ${#changed[@]} files. No other module changed."
+
+  guard-production-pr:
+    if: github.event_name == 'pull_request_target'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce owner-authorized file scope without checking out PR code
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            // The whitelist below is the ONLY currently authorized change scope.
+            // Do not alter it without a new, explicit owner authorization.
+            const authorizedBranch = 'fix/aquario-webview-black-screen-diagnostics-20261026';
+            if (pr.head.ref !== authorizedBranch ||
+                pr.head.repo.full_name !== context.repo.owner + '/' + context.repo.repo) {
+              core.setFailed('No owner-authorized scope for this PR. Request explicit authorization before altering other features.');
+              return;
+            }
+            const allowed = new Set([
+              '.github/workflows/build-android-player.yml',
+              '.github/workflows/vision-authorized-scope.yml',
+              'android-player/app/src/main/java/com/visionmidia/player/MainActivity.java',
+              'aquario-download.html',
+              'downloads.html',
+              'downloads/Vision-Player-Aquario-Diagnostico.apk',
+              'downloads/Vision-Player-Aquario-Diagnostico.sha256',
+              'player.js'
+            ]);
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner, repo: context.repo.repo, pull_number: pr.number, per_page: 100
+            });
+            const unexpected = files.filter(f => !allowed.has(f.filename));
+            if (unexpected.length) {
+              core.setFailed('Unauthorized file changes: ' + unexpected.map(f => f.filename).join(', '));
+            } else {
+              core.info('Changed file paths within the owner-authorized Aquario scope.');
+            }
