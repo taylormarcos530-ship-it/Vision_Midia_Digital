@@ -21,8 +21,9 @@ on:
     branches: [fix/android-tv-native-rotation-20261020]
   workflow_dispatch:
 
+# This workflow change lives only on the diagnostic branch; uploads remain isolated.
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   build:
@@ -78,3 +79,22 @@ jobs:
           path: android-player/app/build/outputs/apk/debug/Vision-Player-preview.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Publish Aquario test APK only to its isolated branch
+        if: github.ref == 'refs/heads/fix/aquario-webview-black-screen-diagnostics-20261026'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p downloads
+          cp android-player/app/build/outputs/apk/debug/Vision-Player-preview.apk downloads/Vision-Player-Aquario-Diagnostico.apk
+          test -s downloads/Vision-Player-Aquario-Diagnostico.apk
+          sha256sum downloads/Vision-Player-Aquario-Diagnostico.apk > downloads/Vision-Player-Aquario-Diagnostico.sha256
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add downloads/Vision-Player-Aquario-Diagnostico.apk downloads/Vision-Player-Aquario-Diagnostico.sha256
+          if git diff --cached --quiet; then
+            echo 'Diagnostic APK unchanged.'
+            exit 0
+          fi
+          git commit -m 'build(test): publish Aquario diagnostic APK on isolated branch'
+          git push origin HEAD:fix/aquario-webview-black-screen-diagnostics-20261026
