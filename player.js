@@ -62,6 +62,42 @@
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const BACKGROUND_POLL_INTERVALS = Object.freeze({
+    heartbeat: 90_000,
+    manifest: 60_000,
+    commands: 15_000,
+  });
+  const BACKGROUND_RETRY_BASE_MS = 15_000;
+  const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
+  const backgroundPollState = { inFlight: false, failures: 0, retryAt: 0 };
+
+  // All recurring polls share one in-flight slot. A failing backend must not
+  // accumulate requests or cause a retry storm while cached media is playing.
+  async function runBackgroundPoll(task) {
+    if (!state.deviceToken || !navigator.onLine || backgroundPollState.inFlight ||
+        Date.now() < backgroundPollState.retryAt) return false;
+    backgroundPollState.inFlight = true;
+    try {
+      await task();
+      backgroundPollState.failures = 0;
+      backgroundPollState.retryAt = 0;
+      return true;
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      if (status !== 401 && status !== 403 && !isAccessError(error)) {
+        backgroundPollState.failures = Math.min(7, backgroundPollState.failures + 1);
+        const delay = Math.min(
+          BACKGROUND_RETRY_MAX_MS,
+          BACKGROUND_RETRY_BASE_MS * 2 ** (backgroundPollState.failures - 1)
+        );
+        backgroundPollState.retryAt = Date.now() + delay + Math.floor(Math.random() * 3_000);
+      }
+      return false;
+    } finally {
+      backgroundPollState.inFlight = false;
+    }
+  }
+
   function replaceNodeChildren(node, ...children) {
     if (!node) return;
     while (node.firstChild) node.removeChild(node.firstChild);
@@ -488,6 +524,7 @@
   }
 
   async function pollPairing(pairing) {
+    let temporaryFailures = 0;
     while (!state.deviceToken && state.pairing?.request_id === pairing.request_id) {
       if (new Date(pairing.expires_at).getTime() <= Date.now()) return;
       try {
@@ -496,6 +533,7 @@
           request_id: pairing.request_id,
           request_secret: pairing.request_secret,
         });
+        temporaryFailures = 0;
         if (result.status === 'claimed') $('#pairing-status').textContent = 'Autorizado. Finalizando vínculo…';
         if (result.status === 'issued' && result.device_token) {
           state.deviceToken = result.device_token;
@@ -519,9 +557,10 @@
           $('#new-code-button').classList.remove('hidden');
           return;
         }
+        temporaryFailures = Math.min(5, temporaryFailures + 1);
         $('#pairing-status').textContent = navigator.onLine ? 'Reconectando ao servidor…' : 'Sem internet. Aguardando conexão…';
       }
-      await sleep(3000);
+      await sleep(temporaryFailures ? Math.min(30_000, 3_000 * 2 ** (temporaryFailures - 1)) : 3_000);
     }
   }
 
@@ -1360,11 +1399,18 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
-    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
-    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    state.heartbeatTimer = setInterval(() => {
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
+    }, BACKGROUND_POLL_INTERVALS.heartbeat);
+    state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, BACKGROUND_POLL_INTERVALS.manifest);
+    state.commandTimer = setInterval(() => { void runBackgroundPoll(pollDeviceCommands); }, BACKGROUND_POLL_INTERVALS.commands);
+    // Payment expiry remains enforced locally every second, independent of network polling.
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
-    pollDeviceCommands().catch(() => {});
+    void runBackgroundPoll(pollDeviceCommands);
   }
 
   async function requestFullscreenAndWakeLock() {
@@ -1385,6 +1431,8 @@
     state.commandTimer = null;
     state.accessTimer = null;
     state.processingCommands.clear();
+    backgroundPollState.failures = 0;
+    backgroundPollState.retryAt = 0;
     localStorage.removeItem(DEVICE_TOKEN_KEY);
     try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
@@ -1451,10 +1499,12 @@
     });
     const resumeSync = () => {
       if (!state.deviceToken) return;
-      heartbeat().catch(() => {});
-      syncManifest().catch(() => {});
-      flushPlaybackQueue().catch(() => {});
-      flushDeviceEventQueue().catch(() => {});
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await syncManifest();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
     };
     window.addEventListener('online', resumeSync);
     window.addEventListener('focus', resumeSync);
