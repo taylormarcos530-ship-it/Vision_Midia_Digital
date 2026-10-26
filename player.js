@@ -335,6 +335,7 @@
     $('#access-message').textContent = message;
     $('#access-expiry').textContent = expiry;
     $('#access-status').textContent = 'A TV verificará a autorização automaticamente.';
+    try { window.VisionAndroid?.playerReady?.(); } catch {}
   }
 
   // Use the timestamp issued by the authenticated device gateway, never the TV Box wall clock.
@@ -420,12 +421,14 @@
     $('#pairing-screen').classList.remove('hidden');
     $('#playback-screen').classList.add('hidden');
     $('#access-screen').classList.add('hidden');
+    try { window.VisionAndroid?.playerReady?.(); } catch {}
   }
 
   function showPlayback() {
     $('#pairing-screen').classList.add('hidden');
     $('#access-screen').classList.add('hidden');
     $('#playback-screen').classList.remove('hidden');
+    try { window.VisionAndroid?.playerReady?.(); } catch {}
   }
 
   async function startPairing(force = false) {
