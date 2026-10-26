@@ -62,6 +62,60 @@
   const $ = (selector) => document.querySelector(selector);
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+  const BACKGROUND_POLL_INTERVALS = Object.freeze({
+    heartbeat: 120_000,
+    manifest: 120_000,
+    commands: 45_000,
+  });
+  const BACKGROUND_RETRY_BASE_MS = 15_000;
+  const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
+  // Reject truncated or foreign-device responses before replacing cached authorization.
+  function validateManifestPayload(manifest, previous = state.manifest) {
+    const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+    const validDate = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
+    if (!isRecord(manifest) || typeof manifest.version !== 'string' || !manifest.version ||
+        !isRecord(manifest.device) || !manifest.device.id ||
+        !validDate(manifest.device.access_expires_at) || !validDate(manifest.generated_at) ||
+        !isRecord(manifest.program) || !Array.isArray(manifest.items) ||
+        !(manifest.playlist === null || (isRecord(manifest.playlist) && manifest.playlist.id)) ||
+        (previous?.device?.id && manifest.device.id !== previous.device.id) ||
+        (manifest.playlist === null && (manifest.items.length !== 0 || manifest.program.source !== 'none')) ||
+        (manifest.playlist && manifest.items.some(item =>
+          !isRecord(item) || !isRecord(item.media) || !item.media.id || !['image', 'video', 'url'].includes(item.media.type)))) {
+      throw new Error('Programação recebida incompleta ou inválida; conteúdo anterior preservado.');
+    }
+    return manifest;
+  }
+
+  const backgroundPollState = { inFlight: false, failures: 0, retryAt: 0 };
+
+  // All recurring polls share one in-flight slot. A failing backend must not
+  // accumulate requests or cause a retry storm while cached media is playing.
+  async function runBackgroundPoll(task) {
+    if (!state.deviceToken || !navigator.onLine || backgroundPollState.inFlight ||
+        Date.now() < backgroundPollState.retryAt) return false;
+    backgroundPollState.inFlight = true;
+    try {
+      await task();
+      backgroundPollState.failures = 0;
+      backgroundPollState.retryAt = 0;
+      return true;
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      if (status !== 401 && status !== 403 && !isAccessError(error)) {
+        backgroundPollState.failures = Math.min(7, backgroundPollState.failures + 1);
+        const delay = Math.min(
+          BACKGROUND_RETRY_MAX_MS,
+          BACKGROUND_RETRY_BASE_MS * 2 ** (backgroundPollState.failures - 1)
+        );
+        backgroundPollState.retryAt = Date.now() + delay + Math.floor(Math.random() * 3_000);
+      }
+      return false;
+    } finally {
+      backgroundPollState.inFlight = false;
+    }
+  }
+
   function replaceNodeChildren(node, ...children) {
     if (!node) return;
     while (node.firstChild) node.removeChild(node.firstChild);
@@ -488,6 +542,7 @@
   }
 
   async function pollPairing(pairing) {
+    let temporaryFailures = 0;
     while (!state.deviceToken && state.pairing?.request_id === pairing.request_id) {
       if (new Date(pairing.expires_at).getTime() <= Date.now()) return;
       try {
@@ -496,6 +551,7 @@
           request_id: pairing.request_id,
           request_secret: pairing.request_secret,
         });
+        temporaryFailures = 0;
         if (result.status === 'claimed') $('#pairing-status').textContent = 'Autorizado. Finalizando vínculo…';
         if (result.status === 'issued' && result.device_token) {
           state.deviceToken = result.device_token;
@@ -519,9 +575,10 @@
           $('#new-code-button').classList.remove('hidden');
           return;
         }
+        temporaryFailures = Math.min(5, temporaryFailures + 1);
         $('#pairing-status').textContent = navigator.onLine ? 'Reconectando ao servidor…' : 'Sem internet. Aguardando conexão…';
       }
-      await sleep(3000);
+      await sleep(temporaryFailures ? Math.min(30_000, 3_000 * 2 ** (temporaryFailures - 1)) : 3_000);
     }
   }
 
@@ -815,10 +872,16 @@
     });
     const keep = new Set(candidates.map(item => cacheKey(item).url));
 
-    const keys = await cache.keys();
-    await Promise.all(keys
-      .filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url))
-      .map(key => cache.delete(key)));
+    // Preserve the old playlist's binaries until every incoming local item exists.
+    async function pruneAfterCompleteDownload() {
+      for (const item of candidates) {
+        if (!await cache.match(cacheKey(item))) return;
+      }
+      const keys = await cache.keys();
+      await Promise.all(keys
+        .filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url))
+        .map(key => cache.delete(key)));
+    }
 
     const warmCount = Math.min(8, candidates.length);
     const warm = candidates.slice(0, warmCount);
@@ -828,6 +891,7 @@
     const rest = candidates.slice(warmCount);
     if (!rest.length) {
       state.cachePrefetchVersion = manifest.version || null;
+      await pruneAfterCompleteDownload();
       return;
     }
 
@@ -837,15 +901,28 @@
 
     void (async () => {
       await cacheWithConcurrency(cache, rest, 2, false, version);
-      if (state.cachePrefetchVersion === version) await refreshCacheStats(cache, candidates);
+      if (state.cachePrefetchVersion === version) {
+        await refreshCacheStats(cache, candidates);
+        await pruneAfterCompleteDownload();
+      }
     })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
 
   async function syncManifest() {
     if (!state.deviceToken) return;
     try {
-      const manifest = await gateway({ action: 'manifest', supports_item_schedules: true });
+      const manifest = validateManifestPayload(await gateway({ action: 'manifest', supports_item_schedules: true }));
       const changed = !state.manifest || state.manifest.version !== manifest.version;
+      // Keep playing the old program if the first essential new local item cannot load.
+      if (changed && state.manifest && manifest.playlist) {
+        const firstMedia = manifest.items.find(item => ['image','video'].includes(item.media?.type));
+        if (firstMedia) {
+          const stagedCache = await caches.open(MEDIA_CACHE);
+          if (!await cacheMediaItem(stagedCache, firstMedia)) {
+            throw new Error('Primeira mídia da nova playlist indisponível; mantendo programação anterior.');
+          }
+        }
+      }
       await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
       if (changed) state.priorityMediaId = null;
       if (changed && state.manifest && state.manifest?.playlist?.id === manifest?.playlist?.id) {
@@ -853,7 +930,7 @@
         state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
       }
       state.manifest = manifest;
-      void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
+      if (changed) void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
       writeJson(MANIFEST_KEY, manifest);
       if (enforceLocalAccess()) return;
@@ -1127,7 +1204,8 @@
           duration_seconds: Math.max(0, (endedAt - startedAt) / 1000),
           completed,
         });
-        flushPlaybackQueue().catch(() => {});
+        // Batch playback proof on heartbeat; flush early only for large queues.
+        if (playbackQueue().length >= 40) flushPlaybackQueue().catch(() => {});
         if (completed && state.playbackHadError) {
           queueDeviceEvent('playback_recovered', 'info', 'Reprodução normal restabelecida após uma falha.', {
             media_id: item.media?.id || null,
@@ -1351,20 +1429,28 @@
       queueDeviceEvent('watchdog_restart','warning','Watchdog reiniciou o Vision Player após perda de resposta.',{recovered_at:watchdogRecovery,apk_version:nativeAppVersion()},15000);
     }
     queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
-    try { await heartbeat(); await flushPlaybackQueue(); await flushDeviceEventQueue(); }
-    catch { /* sync below handles visual state */ }
-    try { await syncManifest(); }
-    catch { /* offline fallback or access screen is handled */ }
-
+    // Timers and offline playback must not wait for a blocked backend call.
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
-    state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • verifique internet e Data/hora automáticas')), 30_000);
-    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
-    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    state.heartbeatTimer = setInterval(() => {
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
+    }, BACKGROUND_POLL_INTERVALS.heartbeat);
+    state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, BACKGROUND_POLL_INTERVALS.manifest);
+    state.commandTimer = setInterval(() => { void runBackgroundPoll(pollDeviceCommands); }, BACKGROUND_POLL_INTERVALS.commands);
+    // Payment expiry remains enforced locally every second, independent of network polling.
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
-    pollDeviceCommands().catch(() => {});
+    void runBackgroundPoll(async () => {
+      await syncManifest();
+      await heartbeat();
+      await flushPlaybackQueue();
+      await flushDeviceEventQueue();
+    });
   }
 
   async function requestFullscreenAndWakeLock() {
@@ -1380,11 +1466,15 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
+    backgroundPollState.failures = 0;
+    backgroundPollState.retryAt = 0;
     state.heartbeatTimer = null;
     state.syncTimer = null;
     state.commandTimer = null;
     state.accessTimer = null;
     state.processingCommands.clear();
+    backgroundPollState.failures = 0;
+    backgroundPollState.retryAt = 0;
     localStorage.removeItem(DEVICE_TOKEN_KEY);
     try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
@@ -1451,10 +1541,12 @@
     });
     const resumeSync = () => {
       if (!state.deviceToken) return;
-      heartbeat().catch(() => {});
-      syncManifest().catch(() => {});
-      flushPlaybackQueue().catch(() => {});
-      flushDeviceEventQueue().catch(() => {});
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await syncManifest();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
     };
     window.addEventListener('online', resumeSync);
     window.addEventListener('focus', resumeSync);
