@@ -240,7 +240,8 @@ public class MainActivity extends Activity {
         if (intent == null || intent.getData() == null) return false;
         Uri uri = intent.getData();
         String expectedScheme = getPackageName().endsWith(".stable") ? "visionmidia-stable"
-                : (getPackageName().endsWith(".aquario") ? "visionmidia-aquario" : "visionmidia");
+                : (getPackageName().endsWith(".aquarionet") ? "visionmidia-aquarionet"
+                : (getPackageName().endsWith(".aquario") ? "visionmidia-aquario" : "visionmidia"));
         if (!expectedScheme.equalsIgnoreCase(uri.getScheme()) || !"setup".equalsIgnoreCase(uri.getHost())) return false;
         String code = uri.getLastPathSegment();
         if (!isValidSetupCode(code)) return false;
@@ -667,7 +668,7 @@ public class MainActivity extends Activity {
                 String prefix = "/functions/v1/";
                 String functionName = direct.getPath().startsWith(prefix)
                         ? direct.getPath().substring(prefix.length()) : "";
-                boolean aquarioDiagnostic = getPackageName().endsWith(".aquario");
+                boolean aquarioDiagnostic = getPackageName().endsWith(".aquario") || getPackageName().endsWith(".aquarionet");
                 boolean approvedFunction = "device-bootstrap".equals(functionName)
                         || "device-gateway".equals(functionName)
                         || "device-monitoring".equals(functionName);
