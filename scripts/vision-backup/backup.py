@@ -114,7 +114,9 @@ def full_backup(destination, settings):
         root = scratch / "archive"
         root.mkdir(mode=0o700)
         dump = root / "database.dump"
-        verify_command(["pg_dump", "-Fc", "--no-owner", "--no-acl",
+        # Preserve original ownership, ACL and RLS metadata for forensic recovery.
+        # A future restore into a different project must handle managed Supabase roles.
+        verify_command(["pg_dump", "-Fc",
                         "-f", str(dump), "-d", settings["VISION_BACKUP_DATABASE_URL"]])
         listing = verify_command(["pg_restore", "-l", str(dump)]).decode("utf-8", "replace")
         if not dump.stat().st_size or "TABLE DATA" not in listing or "auth users" not in listing:
@@ -125,10 +127,12 @@ def full_backup(destination, settings):
         buckets = request_json(base, secret, "/storage/v1/bucket")
         if not isinstance(buckets, list):
             raise ValueError("Storage bucket enumeration failed")
+        with dump.open("rb") as db_handle:
+            database_checksum = hashlib.file_digest(db_handle, "sha256").hexdigest()
         manifest = {"project_ref": PROJECT_REF, "kind": "read_only_encrypted_disaster_backup",
                     "captured_at_utc": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
                     "database": {"bytes": dump.stat().st_size,
-                                 "sha256": hashlib.file_digest(dump.open("rb"), "sha256").hexdigest()},
+                                 "sha256": database_checksum},
                     "objects": []}
         for bucket_row in buckets:
             bucket = safe_segment(bucket_row["id"])
