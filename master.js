@@ -423,6 +423,7 @@
   function show(id){ ['master-auth','master-denied','master-shell'].forEach(x => $(`#${x}`).classList.toggle('hidden',x!==id)); }
   // Outage mode is an in-memory snapshot from an already verified Master session.
   // Never persist tenant data or bypass whoami on a new login.
+  let verifiedMasterEmail = null;
   let masterBackendOnline = true;
   let masterReconnectInFlight = false;
   let masterRetryAt = 0;
@@ -441,7 +442,8 @@
     try {
       // Revalidate current authorization before refreshing any old Master data.
       const current = await master({ action: 'whoami' });
-      if (!current?.role || current.role !== state.role) {
+      if (!current?.role || current.role !== state.role ||
+          String(current.email || '').toLowerCase() !== verifiedMasterEmail) {
         logout();
         return;
       }
@@ -794,9 +796,9 @@
       throw e;
     }
   }
-  async function enter(){ try{const who=await master({action:'whoami'}); state.role=who.role; $('#master-role-label').textContent=who.role==='super_admin'?'Super Master':who.role; $('#master-email-label').textContent=who.email||''; show('master-shell'); setView('dashboard'); return await load().then(()=>true,()=>false);}catch(e){ if(e.status===403)show('master-denied'); else throw e; return false; } }
+  async function enter(){ try{const who=await master({action:'whoami'}); state.role=who.role; verifiedMasterEmail=String(who.email||'').toLowerCase(); $('#master-role-label').textContent=who.role==='super_admin'?'Super Master':who.role; $('#master-email-label').textContent=who.email||''; show('master-shell'); setView('dashboard'); return await load().then(()=>true,()=>false);}catch(e){ if(e.status===403)show('master-denied'); else throw e; return false; } }
   async function login(ev){ev.preventDefault();const b=$('#master-login-submit');busy(b,true,'Entrando...');try{const d=await auth('/token?grant_type=password',{email:$('#master-login-email').value.trim(),password:$('#master-login-password').value});saveSession(d);const loaded=await enter();if(loaded)toast('Acesso Master liberado');}catch(e){toast('Não foi possível entrar',friendlyLoginError(e),'error')}finally{busy(b,false)}}
-  function logout(){saveSession(null);state.data=null;state.role=null;show('master-auth')}
+  function logout(){saveSession(null);state.data=null;state.role=null;verifiedMasterEmail=null;show('master-auth')}
   function openDialog(id){const d=$(`#${id}`); if(d?.showModal)d.showModal()}
   function closeDialog(id){const d=$(`#${id}`); if(d?.close)d.close()}
   function fillPlanSelects(){ const opts=(state.data.plans||[]).filter(p=>p.is_active).map(p=>`<option value="${p.id}">${esc(p.name)} • ${esc(money(p.monthly_price_cents))}</option>`).join(''); $('#mc-plan').innerHTML=opts; $('#me-plan').innerHTML=(state.data.plans||[]).map(p=>`<option value="${p.id}">${esc(p.name)}${p.is_active?'':' (inativo)'}</option>`).join(''); }
