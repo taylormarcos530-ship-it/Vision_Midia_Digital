@@ -19,6 +19,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.view.Gravity;
 import android.os.SystemClock;
 import android.provider.Settings;
 import android.text.InputFilter;
@@ -26,13 +27,17 @@ import android.text.InputType;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebResourceError;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.widget.EditText;
+import android.widget.FrameLayout;
+import android.widget.TextView;
 import android.widget.Toast;
 import android.util.Base64;
 
@@ -74,6 +79,9 @@ public class MainActivity extends Activity {
     private final ExecutorService networkExecutor = new ThreadPoolExecutor(3, 3, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(12));
     private volatile boolean destroyed = false;
     private WebView webView;
+    private TextView startupNotice;
+    private final Handler startupHandler = new Handler(Looper.getMainLooper());
+    private Runnable startupTimeout;
     private SharedPreferences prefs;
     private WebViewAssetLoader assetLoader;
     private final Handler watchdogHandler = new Handler(Looper.getMainLooper());
@@ -110,7 +118,19 @@ public class MainActivity extends Activity {
 
         webView = new WebView(this);
         webView.setBackgroundColor(Color.BLACK);
-        setContentView(webView);
+        FrameLayout root = new FrameLayout(this);
+        root.addView(webView, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        startupNotice = new TextView(this);
+        startupNotice.setTextColor(Color.WHITE);
+        startupNotice.setBackgroundColor(Color.rgb(18, 20, 23));
+        startupNotice.setTextSize(21);
+        startupNotice.setGravity(Gravity.CENTER);
+        int pad = (int) (24 * getResources().getDisplayMetrics().density);
+        startupNotice.setPadding(pad, pad, pad, pad);
+        root.addView(startupNotice, new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT));
+        setContentView(root);
         configureWebView();
 
         applySetupFromIntent(getIntent());
@@ -143,14 +163,65 @@ public class MainActivity extends Activity {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) settings.setSafeBrowsingEnabled(true);
 
         webView.addJavascriptInterface(new PlayerBridge(), "VisionAndroid");
-        webView.setWebChromeClient(new WebChromeClient());
+        webView.setWebChromeClient(new WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(ConsoleMessage message) {
+                if (message.messageLevel() == ConsoleMessage.MessageLevel.ERROR
+                        && message.message().contains("SyntaxError")
+                        && startupNotice != null && startupNotice.getVisibility() == View.VISIBLE) {
+                    showStartupFailure("JavaScript incompatível com o WebView deste TV Box. " +
+                            "Confira a versão do Android System WebView/Chrome no Aquário.");
+                }
+                return super.onConsoleMessage(message);
+            }
+        });
         webView.setWebViewClient(new WebViewClientCompat() {
             @Nullable
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
+
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) {
+                    showStartupFailure("Erro ao abrir a página interna do Player (código "
+                            + error.getErrorCode() + ").");
+                }
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame()) {
+                    showStartupFailure("Erro HTTP " + response.getStatusCode() + " ao carregar o Player.");
+                }
+            }
         });
+    }
+
+    private void showStartupFailure(String detail) {
+        runOnUiThread(() -> {
+            if (startupNotice == null) return;
+            if (startupTimeout != null) startupHandler.removeCallbacks(startupTimeout);
+            startupNotice.setVisibility(View.VISIBLE);
+            startupNotice.setText("VISION PLAYER - DIAGNÓSTICO AQUÁRIO\n\n"
+                    + detail + "\n\nPressione Voltar/Menu e escolha Recarregar. "
+                    + "Outras TVs não precisam ser alteradas.");
+        });
+    }
+
+    private void showStartupProgress() {
+        if (startupNotice == null) return;
+        if (startupTimeout != null) startupHandler.removeCallbacks(startupTimeout);
+        startupNotice.setText("VISION PLAYER\n\nIniciando tela de vinculação...");
+        startupNotice.setVisibility(View.VISIBLE);
+        startupTimeout = () -> {
+            if (startupNotice != null && startupNotice.getVisibility() == View.VISIBLE) {
+                showStartupFailure("O WebView não concluiu o início em 15 segundos. "
+                        + "Verifique Android System WebView/Chrome no Aquário.");
+            }
+        };
+        startupHandler.postDelayed(startupTimeout, 15_000L);
     }
 
     private void loadPlayer(String setupCode) {
@@ -158,6 +229,7 @@ public class MainActivity extends Activity {
             showSetupDialog(false);
             return;
         }
+        showStartupProgress();
         String url = LOCAL_PLAYER + "?setup=" + Uri.encode(setupCode.toUpperCase(Locale.ROOT));
         webView.loadUrl(url);
     }
@@ -396,6 +468,14 @@ public class MainActivity extends Activity {
 
 
     private class PlayerBridge {
+        @JavascriptInterface
+        public void playerReady() {
+            runOnUiThread(() -> {
+                if (startupTimeout != null) startupHandler.removeCallbacks(startupTimeout);
+                if (startupNotice != null) startupNotice.setVisibility(View.GONE);
+            });
+        }
+
         @JavascriptInterface
         public boolean requestApkUpdate(String downloadUrl) {
             // Only the official HTTPS distribution endpoint is permitted.
@@ -731,6 +811,7 @@ public class MainActivity extends Activity {
         networkExecutor.shutdownNow();
         watchdogActive = false;
         watchdogHandler.removeCallbacks(playerWatchdog);
+        startupHandler.removeCallbacksAndMessages(null);
         kioskHandler.removeCallbacksAndMessages(null);
         restorePlayerMusicMute();
         if (webView != null) {
