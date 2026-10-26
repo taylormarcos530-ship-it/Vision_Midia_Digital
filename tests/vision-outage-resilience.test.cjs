@@ -52,7 +52,7 @@ test('sync stages incoming media before replacing the previous playlist',()=>{
   assert.ok(stage>0 && swap>stage);
   assert.match(code,/throw new Error\('Primeira mídia da nova playlist indisponível/);
   assert.match(code,/validateManifestPayload\(await gateway/);
-  assert.match(code,/if \(changed\) void cacheManifestAssets/);
+  assert.match(code,/if \(changed \|\| state\.cachePrefetchVersion !== manifest\.version\)/);
 });
 test('cached playlist starts before backend requests finish, local expiry still ticks',()=>{
   const start=isolatedFunction('async function startPlayer()', '  async function requestFullscreenAndWakeLock(');
@@ -79,7 +79,7 @@ function cacheHarness(loaded) {
     async keys(){return [...existing.keys()].map(url=>({url}))},
     async delete(key){removed.push(key.url);return existing.delete(key.url)}
   };
-  const state={cachePrefetchVersion:null};
+  const state={cachePrefetchVersion:null,manifest:{version:'new-version'}};
   const env=vm.createContext({
     state,MEDIA_CACHE:'vision-player-media-v1',console,
     caches:{async open(){return cache}},
@@ -98,6 +98,7 @@ test('failed download never evicts previous cached programming',async()=>{
   await h.ready;
   assert.equal(h.existing.has(h.original),true);
   assert.deepEqual(h.removed,[]);
+  assert.equal(h.existing.has(h.original),true);
 });
 test('previous media is pruned only after replacement is fully downloaded',async()=>{
   const h=cacheHarness(true);
