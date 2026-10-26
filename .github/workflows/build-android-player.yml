@@ -65,6 +65,21 @@ jobs:
       - name: Validate web player JavaScript
         run: node --check player.js
 
+      # Compatibilidade exclusiva do APK de diagnóstico do Aquário.
+      # O WebView 78 não interpreta optional chaining/nullish coalescing.
+      # Transpilar SOMENTE as cópias dentro de assets; não alterar player.js do site.
+      - name: Adapt bundled scripts for Aquario WebView 78
+        if: github.ref == 'refs/heads/fix/aquario-webview-black-screen-diagnostics-20261026'
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in player.js news-feed.js sw.js; do
+            npx --yes esbuild@0.25.5 "android-player/app/src/main/assets/${file}" \
+              --target=chrome78 --format=iife --outfile="/tmp/${file}"
+            mv "/tmp/${file}" "android-player/app/src/main/assets/${file}"
+            node --check "android-player/app/src/main/assets/${file}"
+          done
+
       - name: Build debug APK
         run: gradle -p android-player --no-daemon assembleDebug
 
