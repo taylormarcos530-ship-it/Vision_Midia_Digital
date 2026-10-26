@@ -29,7 +29,7 @@ import android.view.View;
 import android.view.WindowManager;
 import android.webkit.ConsoleMessage;
 import android.webkit.JavascriptInterface;
-import android.webkit.WebResourceError;
+import androidx.webkit.WebResourceErrorCompat;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
@@ -183,7 +183,7 @@ public class MainActivity extends Activity {
             }
 
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceErrorCompat error) {
                 if (request.isForMainFrame()) {
                     showStartupFailure("Erro ao abrir a página interna do Player (código "
                             + error.getErrorCode() + ").");
