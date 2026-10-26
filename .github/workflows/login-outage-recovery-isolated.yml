@@ -1,0 +1,31 @@
+name: Login outage recovery - isolated checks
+on:
+  push:
+    branches:
+      - fix/login-504-timeout-recovery-20261026
+    paths:
+      - app.js
+      - master.js
+      - index.html
+      - master.html
+      - tests/login-outage-recovery.test.cjs
+      - .github/workflows/login-outage-recovery-isolated.yml
+permissions:
+  contents: read
+jobs:
+  login-safety:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts --no-audit --no-fund
+      - run: node --check app.js
+      - run: node --check master.js
+      - run: node --test tests/login-outage-recovery.test.cjs
+      - run: npm test
