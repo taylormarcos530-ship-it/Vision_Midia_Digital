@@ -421,7 +421,46 @@
   async function platformSettingsRequest(body,retry=true){const url=`${CONFIG.supabaseUrl}/functions/v1/platform-settings`;const options={method:'POST',headers:{apikey:CONFIG.supabasePublishableKey,Authorization:`Bearer ${state.session?.access_token||''}`,'Content-Type':'application/json'},body:JSON.stringify(body),cache:'no-store'};const res=['get','email_provider_status'].includes(body?.action) ? await fetchWithTimeout(url,options,15000) : await fetch(url,options);if(res.status===401&&retry&&state.session?.refresh_token){await refresh();return platformSettingsRequest(body,false)}return parse(res)}
 
   function show(id){ ['master-auth','master-denied','master-shell'].forEach(x => $(`#${x}`).classList.toggle('hidden',x!==id)); }
-  function setConn(ok){ const el=$('#master-connection'); el.className=`pill ${ok?'online':'offline'}`; el.textContent=ok?'● Conectado':'● Sem conexão'; }
+  // Outage mode is an in-memory snapshot from an already verified Master session.
+  // Never persist tenant data or bypass whoami on a new login.
+  let masterBackendOnline = true;
+  let masterReconnectInFlight = false;
+  let masterRetryAt = 0;
+  let masterFailureCount = 0;
+  function setConn(ok){
+    masterBackendOnline = Boolean(ok);
+    const el = $('#master-connection');
+    el.className = `pill ${ok?'online':'offline'}`;
+    el.textContent = ok ? '● Conectado' :
+      (state.data ? '● Servidor indisponível • dados anteriores' : '● Sem conexão');
+  }
+  async function recoverMasterWhenAvailable() {
+    if (masterBackendOnline || masterReconnectInFlight || !state.data || !state.role ||
+        !state.session?.access_token || document.hidden || Date.now() < masterRetryAt) return;
+    masterReconnectInFlight = true;
+    try {
+      // Revalidate current authorization before refreshing any old Master data.
+      const current = await master({ action: 'whoami' });
+      if (!current?.role || current.role !== state.role) {
+        logout();
+        return;
+      }
+      await load();
+      masterFailureCount = 0;
+      masterRetryAt = 0;
+    } catch (error) {
+      if ([401, 403].includes(error?.status)) {
+        logout();
+        return;
+      }
+      masterFailureCount = Math.min(4, masterFailureCount + 1);
+      masterRetryAt = Date.now() + Math.min(5 * 60_000, 30_000 * 2 ** masterFailureCount) +
+        Math.floor(Math.random() * 5000);
+    } finally {
+      masterReconnectInFlight = false;
+    }
+  }
+
   function setView(view){ state.view=view; const map={dashboard:['PLATAFORMA','Dashboard SaaS'],clients:['CONTAS','Clientes'],plans:['COMERCIAL','Planos'],audit:['SEGURANÇA','Auditoria']}; $$('.master-view').forEach(x=>x.classList.add('hidden')); $(`#master-view-${view}`)?.classList.remove('hidden'); $$('[data-master-view]').forEach(x=>x.classList.toggle('active',x.dataset.masterView===view)); $('#master-kicker').textContent=map[view]?.[0]||''; $('#master-title').textContent=map[view]?.[1]||''; }
   function planById(id){ return state.data?.plans?.find(p=>p.id===id)||null; }
   function companyById(id){ return state.data?.companies?.find(c=>c.id===id)||null; }
@@ -1114,6 +1153,6 @@
   }
   function bind(){ document.addEventListener('click',ev=>trackActionButton(ev.target.closest('button')),true); document.addEventListener('submit',ev=>trackActionButton(ev.submitter),true); $('#master-login-form').addEventListener('submit',login); $('#master-logout').addEventListener('click',logout); $('#master-denied-logout').addEventListener('click',logout); $('#master-refresh').addEventListener('click',()=>load().catch(()=>{})); $('#master-push-test')?.addEventListener('click',activateMasterDevicePush); $$('[data-master-view]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.masterView))); $$('[data-go-master]').forEach(b=>b.addEventListener('click',()=>setView(b.dataset.goMaster))); $$('[data-open-client]').forEach(b=>b.addEventListener('click',openNewClient)); $('#open-plan-button').addEventListener('click',()=>openPlan()); $('#master-client-form').addEventListener('submit',createClient); $('#master-company-form').addEventListener('submit',saveCompany); $('#me-delete-company').addEventListener('click',deleteCompany); $('#master-add-user-form').addEventListener('submit',addUser); $('#master-plan-form').addEventListener('submit',savePlan); $('#master-replace-device-form').addEventListener('submit',replaceMasterDevice); $('#mr-old-device').addEventListener('change',syncMasterReplacementDevice); $('#platform-settings-form').addEventListener('submit',savePlatformSettings); $('#email-provider-form')?.addEventListener('submit',saveEmailProviderSettings); $('#master-notification-form')?.addEventListener('submit',sendMasterNotification); $('#mn-fill-expiry')?.addEventListener('click',fillExpiryNotification); $('#master-expiry-enable')?.addEventListener('click',enableMasterExpiryNotifications); $('#login-visual-form')?.addEventListener('submit',saveLoginVisualPreview); $('#lv-file')?.addEventListener('change',handleLoginVisualFile); $('#lv-remove')?.addEventListener('click',removeLoginVisualImage); $('#me-branding-file')?.addEventListener('change',handleMasterPlayerBrandingFile); $('#me-branding-remove')?.addEventListener('click',removeMasterPlayerBrandingImage); $('#me-branding-save')?.addEventListener('click',saveMasterPlayerBranding); ['#me-branding-title','#me-branding-message'].forEach(selector=>$(selector)?.addEventListener('input',syncMasterPlayerBrandingDraft)); ['#lv-fit','#lv-position','#lv-title','#lv-subtitle'].forEach(selector=>$(selector)?.addEventListener('input',()=>{collectLoginVisualDraft();updateLoginVisualMasterPreview()})); $('#lv-overlay')?.addEventListener('input',()=>{const value=Number($('#lv-overlay').value||42);$('#lv-overlay-value').textContent=`${value}%`;collectLoginVisualDraft();updateLoginVisualMasterPreview()}); $('#me-clear-cache').addEventListener('click',clearCompanyCache); $$('[data-trial-minutes]').forEach(button=>button.addEventListener('click',()=>grantTemporaryTrial(Number(button.dataset.trialMinutes||0),button))); $('#me-trial-custom')?.addEventListener('click',()=>grantTemporaryTrial(Number($('#me-trial-custom-minutes')?.value||0),$('#me-trial-custom'))); $('#me-mark-paid').addEventListener('click',confirmPaymentAndRelease); $('#me-reset-owner-password')?.addEventListener('click',resetCompanyOwnerPassword); $('#master-client-search').addEventListener('input',renderClients); $('#master-client-filter').addEventListener('change',renderClients); $$('[data-close]').forEach(b=>b.addEventListener('click',()=>closeDialog(b.dataset.close))); document.addEventListener('click',ev=>{const b=ev.target.closest('button');if(!b)return;if(b.dataset.manageCompany)openCompany(b.dataset.manageCompany);if(b.dataset.companyUsers)openUsers(b.dataset.companyUsers);if(b.dataset.deviceAccessCompany)openMasterDeviceAccess(b.dataset.deviceAccessCompany);if(b.dataset.saveDeviceAccess)saveMasterDeviceAccess(b);if(b.dataset.restartMasterDevice)restartMasterDevice(b);if(b.dataset.masterDeviceCommand)runMasterDeviceCommand(b);if(b.dataset.replaceCompanyDevice)openMasterReplaceDevice(b.dataset.replaceCompanyDevice);if(b.dataset.toggleCompany)toggleCompany(b.dataset.toggleCompany,b.dataset.nextStatus);if(b.dataset.editPlan)openPlan(b.dataset.editPlan);if(b.dataset.toggleMember)toggleMember(b.dataset.toggleMember,b.dataset.nextMember);if(b.dataset.resetUser)resetUser(b.dataset.resetUser)}); window.addEventListener('online',()=>setConn(true)); window.addEventListener('offline',()=>setConn(false)); }
 
-  async function boot(){ bind(); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){if([401,403].includes(e?.status))saveSession(null);show('master-auth');toast('Não foi possível validar a sessão',friendlyLoginError(e),'error')} }
+  async function boot(){ bind(); setInterval(() => { void recoverMasterWhenAvailable(); }, 60_000); if(!CONFIG?.supabaseUrl||!CONFIG?.supabasePublishableKey){show('master-denied');return} const s=savedSession(); if(!s){show('master-auth');return} saveSession(s); try{await enter()}catch(e){if([401,403].includes(e?.status))saveSession(null);show('master-auth');toast('Não foi possível validar a sessão',friendlyLoginError(e),'error')} }
   boot();
 })();
