@@ -1,0 +1,88 @@
+name: Vision QA unsigned APK for owner-side signing (isolated)
+on:
+  push:
+    branches:
+      - fix/vision-supabase-free-traffic-isolated-20261027
+    paths:
+      - android-player/**
+      - player.html
+      - player.css
+      - player.js
+      - config.js
+      - icon.svg
+      - player.webmanifest
+      - sw.js
+      - clock.html
+      - news-feed.html
+      - news-feed.css
+      - news-feed.js
+      - tests/vision-qa-unsigned-apk-safety.test.cjs
+      - .github/workflows/vision-qa-unsigned-apk.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  make-unsigned-qa:
+    if: github.ref == 'refs/heads/fix/vision-supabase-free-traffic-isolated-20261027'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Isolated QA package and unsigned-artifact safeguards
+        run: |
+          node --check player.js
+          node --test tests/vision-homolog-apk-safety.test.cjs tests/vision-qa-unsigned-apk-safety.test.cjs
+      - name: Copy current web player into test-only Android package
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile explicitly UNSIGNED homolog-only variant
+        run: gradle -p android-player --no-daemon assembleHomologUnsigned
+      - name: Validate identity and make zip-aligned unsigned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${ANDROID_HOME:?Android SDK required}"
+          INPUT="$(find android-player/app/build/outputs/apk/homologUnsigned -maxdepth 1 -type f -name '*-unsigned.apk' -print -quit)"
+          if [[ -z "$INPUT" || ! -s "$INPUT" ]]; then
+            echo 'Refusing artifact: Gradle did not produce an explicitly unsigned QA APK.' >&2
+            exit 3
+          fi
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          ALIGN="$ANDROID_HOME/build-tools/35.0.0/zipalign"
+          APKSIGNER="$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          for exe in "$AAPT" "$ALIGN" "$APKSIGNER"; do test -x "$exe"; done
+          OUT=Vision-QA-Homolog-UNSIGNED-aligned.apk
+          "$ALIGN" -f -p 4 "$INPUT" "$OUT"
+          "$ALIGN" -c -p 4 "$OUT"
+          "$AAPT" dump badging "$OUT" | grep -F "package: name='com.visionmidia.player.homolog'"
+          if "$APKSIGNER" verify "$OUT" > /dev/null 2>&1; then
+            echo 'Refusing artifact: an unsigned QA APK must have NO signing identity.' >&2
+            exit 4
+          fi
+          echo 'Verified package is QA-only, zip-aligned and UNSIGNED.'
+          sha256sum "$OUT" > Vision-QA-Homolog-UNSIGNED-SHA256.txt
+          cat Vision-QA-Homolog-UNSIGNED-SHA256.txt
+      - name: Store UNSIGNED QA artifact privately for local owner-side signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-QA-Homolog-UNSIGNED
+          path: |
+            Vision-QA-Homolog-UNSIGNED-aligned.apk
+            Vision-QA-Homolog-UNSIGNED-SHA256.txt
+          if-no-files-found: error
+          retention-days: 7
