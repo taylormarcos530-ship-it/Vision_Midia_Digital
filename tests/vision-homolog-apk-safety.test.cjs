@@ -10,13 +10,18 @@ test('QA package is separate and distinctly identified',()=>{
   assert.match(build,/setupScheme: 'visionmidia-homolog'/);
   assert.match(java,/getPackageName\(\)\.endsWith\("\.homolog"\)/);
 });
-test('QA boot start stays disabled, while kiosk return follows the per-TV Master setting',()=>{
-  assert.match(build,/bootReceiverEnabled: 'false'/);
+test('QA boot start is opt-in, kiosk and autostart honor Master, production default unchanged',()=>{
+  const boot=fs.readFileSync('android-player/app/src/main/java/com/visionmidia/player/BootReceiver.java','utf8');
+  assert.match(build,/bootReceiverEnabled: 'true'/);
   assert.match(manifest, /android:name="\.BootReceiver"\s+android:enabled="\$\{bootReceiverEnabled\}"/);
-  assert.match(java,/if \(isHomologationBuild\(\)\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, false\)\.apply\(\)/);
-  assert.match(java,/public void setAutostart\(boolean enabled\) \{\s*if \(isHomologationBuild\(\)\) enabled = false;/);
-  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) enabled = false;\s*final boolean requestedState = enabled;/);
-  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\)[\s\S]{0,150}putBoolean\(KEY_KIOSK_RETURN, false\)/);
+  assert.match(boot,/Intent\.ACTION_BOOT_COMPLETED/);
+  assert.match(boot,/boolean isQa = context\.getPackageName\(\)\.endsWith\("\.homolog"\)/);
+  assert.match(boot,/getBoolean\(MainActivity\.KEY_AUTOSTART, !isQa\)/);
+  assert.match(boot,/if \(!enabled\) return;/);
+  assert.match(boot,/context\.startActivity\(launch\)/);
+  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) \{[\s\S]{0,160}putBoolean\(KEY_AUTOSTART, false\)/);
+  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) enabled = false;/);
+  assert.match(java,/public void setAutostart\(boolean enabled\) \{[\s\S]{0,260}putBoolean\(KEY_AUTOSTART, enabled\)/);
   assert.match(java,/public void setKioskReturn\(boolean enabled\) \{[\s\S]{0,250}final boolean requestedState = enabled;/);
   assert.match(java,/prefs\.edit\(\)\.putBoolean\(KEY_KIOSK_RETURN, requestedState\)/);
   assert.match(java,/private void openAndroidSettingsForMaintenance\(\)/);
