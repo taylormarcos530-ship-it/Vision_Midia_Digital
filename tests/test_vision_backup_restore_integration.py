@@ -201,7 +201,7 @@ class RestoreRealDatabaseTests(unittest.TestCase):
                                SELECT count(*) FROM public.clients;""", DESTINATION).splitlines()[-1], "1")
         self.assertEqual(pg("""SET ROLE vision_readonly; SET vision.tenant_id='tenant_unknown';
                                SELECT count(*) FROM public.clients;""", DESTINATION).splitlines()[-1], "0")
-        self.assertEqual(pg("INSERT INTO public.clients (tenant_id,name) VALUES ('tenant_a','nova') RETURNING id", DESTINATION).splitlines()[-1], "3")
+        self.assertEqual(pg("INSERT INTO public.clients (tenant_id,name) VALUES ('tenant_a','nova') RETURNING id", DESTINATION).splitlines()[0], "3")
 
     def test_same_count_different_storage_identity_rejected(self):
         StorageHandler.variant = "rename"
