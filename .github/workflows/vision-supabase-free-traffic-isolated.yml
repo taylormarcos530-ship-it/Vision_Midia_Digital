@@ -44,7 +44,7 @@ jobs:
           TEST_HOME="$(mktemp -d)"
           trap 'rm -rf "$TEST_HOME"' EXIT
           TMP_PASSWORD='disposable-key-ci-2026-no-user-secret'
-          printf '%s\\n%s\\n' "$TMP_PASSWORD" "$TMP_PASSWORD" \\
+          printf '%s\n%s\n' "$TMP_PASSWORD" "$TMP_PASSWORD" \
             | HOME="$TEST_HOME" bash scripts/vision-qa-generate-signing.sh
           test -s "$TEST_HOME/vision-qa-signing/vision-qa-homolog.p12"
           test "$(stat -c '%a' "$TEST_HOME/vision-qa-signing/vision-qa-homolog.p12")" = 600
