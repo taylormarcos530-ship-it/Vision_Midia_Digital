@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/vision-supabase-free-traffic-isolated-20261027
+      - integration/vision-traffic-monitoring-qa-20261027
     paths:
       - player.js
       - tests/player-supabase-traffic-safety.test.cjs
