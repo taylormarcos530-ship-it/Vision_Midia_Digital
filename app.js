@@ -1047,7 +1047,9 @@
     if (device.status === 'disabled') return 'disabled';
     if (device.access_status === 'pending') return 'pending';
     if (!device.last_seen_at) return device.paired_at ? 'offline' : (device.status || 'pending');
-    const stale = Date.now() - new Date(device.last_seen_at).getTime() > 90_000;
+    // Align status with device-health-alerts; the optimized player heartbeats every ~120 seconds.
+    const seenAt = Date.parse(device.last_seen_at);
+    const stale = !Number.isFinite(seenAt) || Date.now() - seenAt > 3 * 60_000;
     return stale ? 'offline' : 'online';
   }
 
