@@ -52,7 +52,7 @@ test('one-time signer setup is local, refuses overwriting a private key',()=>{
   const src=fs.readFileSync('scripts/vision-qa-generate-signing.sh','utf8');
   assert.match(src,/umask 077/);
   assert.match(src,/vision-qa-homolog\.p12/);
-  assert.match(src,/\[\[ -e "\\$\{keypath\}" \]\]/);
+  assert.ok(src.includes('if [[ -e "${keypath}" ]]; then'), 'must refuse overwriting keystore');
   assert.match(src,/chmod 600/);
   assert.doesNotMatch(src,/actions\/upload-artifact|github\.com\/.+keystore/);
 });
