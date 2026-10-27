@@ -70,4 +70,16 @@ Não enviar prints com senhas ou material privado. Somente o campo `SHA256` do c
 - Esta nova chave não coincide com a assinatura temporária do APK da TV de teste. **Não usar como atualização** do APK instalado. A primeira transição exigirá procedimento presencial e autorização específica para não perder pareamento/cache.
 - O aplicativo de produção, os demais dispositivos, as tabelas Supabase e o projeto de backup **não devem ser alterados** por esta etapa.
 
-**Status:** geração da chave pelo proprietário pendente; assinatura estável preparada e testada apenas com identidades descartáveis, sem produção.
+## Identidade pública da chave real (informada pelo proprietário em 27/10/2026)
+
+Fingerprint SHA-256 do certificado X.509 exportado em DER (com `keytool -exportcert -storetype PKCS12`, `sha256sum`):
+
+```text
+c26963f76db0bae64c388939ecd0dc81eadd1433a2f098f600d08e362a7bb6c6
+```
+
+Este digest público identifica o certificado destinado **somente ao APK `com.visionmidia.player.homolog`**. A verificação do build local (`scripts/vision-qa-signing-check.sh`) requer `VISION_QA_EXPECTED_CERT_SHA256` com esse valor exato e comparação com o certificado do APK assinado. Não alterar ou regenerar a chave privada para atualizações subsequentes.
+
+**Status informado pelo proprietário:** chave privada criada no Termux; backup `vision-qa-segura.age` recuperado em teste e cópias criptografadas no pendrive e notebook verificadas por SHA-256. Esses resultados foram reportados pelo proprietário, **não auditados diretamente pelo repositório**. A chave privada, senhas e backups cifrados não foram enviados ao GitHub.
+
+**Pendente:** montar um ambiente privado de compilação adequado, assinar um APK de teste com a chave definitiva, verificar fingerprint/pacote e preparar transição presencial do APK antigo **somente após autorização explícita**. Nenhum APK foi assinado com esta identidade nesta etapa; sem publicação e sem mudanças de produção.
