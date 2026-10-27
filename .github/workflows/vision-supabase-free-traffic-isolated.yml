@@ -12,6 +12,8 @@ on:
       - tests/vision-homolog-apk-safety.test.cjs
       - android-player/app/build.gradle
       - scripts/vision-qa-signing-check.sh
+      - scripts/vision-qa-generate-signing.sh
+      - .gitignore
       - android-player/app/src/main/AndroidManifest.xml
       - android-player/app/src/main/java/com/visionmidia/player/MainActivity.java
       - .github/workflows/vision-supabase-free-traffic-isolated.yml
@@ -35,6 +37,22 @@ jobs:
           node --check master.js
       - name: Regression and traffic safety tests
         run: node --test tests/player-traffic-telemetry.test.cjs tests/vision-homolog-apk-safety.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
+      - name: Verify one-time operator key generation with disposable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          TEST_HOME="$(mktemp -d)"
+          trap 'rm -rf "$TEST_HOME"' EXIT
+          TMP_PASSWORD='disposable-key-ci-2026-no-user-secret'
+          printf '%s\\n%s\\n' "$TMP_PASSWORD" "$TMP_PASSWORD" \\
+            | HOME="$TEST_HOME" bash scripts/vision-qa-generate-signing.sh
+          test -s "$TEST_HOME/vision-qa-signing/vision-qa-homolog.p12"
+          test "$(stat -c '%a' "$TEST_HOME/vision-qa-signing/vision-qa-homolog.p12")" = 600
+          if HOME="$TEST_HOME" bash scripts/vision-qa-generate-signing.sh; then
+            echo 'ERROR: second invocation must never replace owner key' >&2
+            exit 1
+          fi
+          echo 'One-time generated key, file permissions and overwrite refusal verified.'
       - name: Prepare Android debug-only test assets
         run: |
           mkdir -p android-player/app/src/main/assets
