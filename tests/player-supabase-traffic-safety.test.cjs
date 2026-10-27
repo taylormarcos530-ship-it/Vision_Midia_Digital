@@ -120,7 +120,10 @@ test('periodic requests are staggered within safe jitter bounds',()=>{
   const intervals=m.readIntervals();
   assert.equal(intervals.commands,45000);
   assert.equal(intervals.manifest,120000);
-  assert.equal(intervals.heartbeat,120000);
+  assert.equal(intervals.heartbeat,60000);
+  // Presence jitter must fit the production Master's 90s offline window.
+  const maxHeartbeatGap = intervals.heartbeat * 1.15;
+  assert.ok(maxHeartbeatGap < 90000, 'Heartbeat interval must stay below Master offline threshold');
   const samples=Array.from({length:200},()=>m.jitter(intervals.commands));
   assert.ok(samples.every(x=>x>=38250&&x<=51750));
   assert.ok(new Set(samples).size>5);
