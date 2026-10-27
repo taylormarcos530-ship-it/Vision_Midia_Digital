@@ -8,7 +8,9 @@ const workflow = fs.readFileSync('.github/workflows/vision-qa-unsigned-apk.yml',
 test('unsigned QA inherits homolog safety controls while explicitly disabling signing', () => {
   assert.match(build, /homologUnsigned\s*\{\s*initWith homolog\s*signingConfig = null\s*\}/);
   assert.match(build, /homolog\s*\{[\s\S]*?applicationIdSuffix '\.homolog'/);
-  assert.match(build, /bootReceiverEnabled: 'false'/);
+  assert.match(build, /bootReceiverEnabled: 'true'/);
+  const boot = fs.readFileSync('android-player/app/src/main/java/com/visionmidia/player/BootReceiver.java', 'utf8');
+  assert.match(boot, /getBoolean\(MainActivity\.KEY_AUTOSTART, !qa\)/);
 });
 
 test('unsigned QA build is isolated and never receives signing credentials', () => {
