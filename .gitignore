@@ -6,3 +6,11 @@ node_modules/
 
 node_modules/
 .vercel/
+
+# Never commit Android signing identities or keystores.
+*.p12
+*.pfx
+*.jks
+*.keystore
+vision-qa-signing/
+android-player/**/build/
