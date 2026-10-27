@@ -161,7 +161,7 @@ class BackupSafetyTests(unittest.TestCase):
             if args[0] == "pg_restore":
                 return b"TABLE DATA auth users"
             raise AssertionError(args)
-        settings = {"VISION_BACKUP_DATABASE_URL": "isolated",
+        settings = {"VISION_BACKUP_DATABASE_URL": "postgresql://tester:fake@localhost/testdb",
                     "VISION_BACKUP_SUPABASE_URL": "https://localhost",
                     "VISION_BACKUP_SERVICE_ROLE_KEY": "dummy",
                     "VISION_BACKUP_AGE_RECIPIENT": "age1dummy"}
@@ -195,10 +195,13 @@ class BackupSafetyTests(unittest.TestCase):
             return mock.Mock(returncode=0, stdout=b"OK", stderr=b"")
         with mock.patch.object(backup.subprocess, "run", side_effect=record_run):
             result = backup.verify_command(["pg_dump", "-Fc", "-f", "fixture.dump"],
-                                          env_override={"PGDATABASE": secret})
+                                          env_override=backup.postgres_env(secret))
         self.assertEqual(result, b"OK")
-        self.assertEqual(called["env"]["PGDATABASE"], secret)
+        self.assertEqual(called["env"]["PGDATABASE"], "postgres")
+        self.assertEqual(called["env"]["PGPASSWORD"], "very-secret-password")
+        self.assertEqual(called["env"]["PGHOST"], "db.example.test")
         self.assertNotIn(secret, " ".join(called["cmd"]))
+        self.assertNotIn("very-secret-password", " ".join(called["cmd"]))
 
 if __name__ == "__main__":
     unittest.main()
