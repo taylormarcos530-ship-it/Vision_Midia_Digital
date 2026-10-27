@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/vision-supabase-free-traffic-isolated-20261027
+      - fix/vision-qa-autostart-install-20261027
     paths:
       - android-player/**
       - player.html
@@ -27,7 +28,7 @@ permissions:
   contents: read
 jobs:
   make-unsigned-qa:
-    if: github.ref == 'refs/heads/fix/vision-supabase-free-traffic-isolated-20261027'
+    if: github.ref == 'refs/heads/fix/vision-supabase-free-traffic-isolated-20261027' || github.ref == 'refs/heads/fix/vision-qa-autostart-install-20261027'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -74,6 +75,8 @@ jobs:
           "$ALIGN" -f -p 4 "$INPUT" "$OUT"
           "$ALIGN" -c -p 4 "$OUT"
           "$AAPT" dump badging "$OUT" | grep -F "package: name='com.visionmidia.player.homolog'"
+          "$AAPT" dump badging "$OUT" | grep -F "versionCode='25'"
+          "$AAPT" dump badging "$OUT" | grep -F "sdkVersion:'24'"
           if "$APKSIGNER" verify "$OUT" > /dev/null 2>&1; then
             echo 'Refusing artifact: an unsigned QA APK must have NO signing identity.' >&2
             exit 4
