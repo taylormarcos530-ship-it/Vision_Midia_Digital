@@ -42,12 +42,12 @@ android {
             versionNameSuffix '-preview'
         }
         // Separate Android package: cannot overwrite the production Player.
-        // Must be launched manually on a dedicated QA TV Box.
+        // Boot start is opt-in in Master and safe on a dedicated QA TV Box.
         homolog {
             initWith debug
             applicationIdSuffix '.homolog'
             versionNameSuffix '-homologacao'
-            manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false']
+            manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'true']
             matchingFallbacks = ['debug']
             // Only operator-provided stable credentials enable reproducible
             // signing. Without them, this is a non-distributable smoke build.
