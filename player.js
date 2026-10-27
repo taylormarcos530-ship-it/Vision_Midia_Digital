@@ -15,6 +15,9 @@
   const MEDIA_CACHE = 'vision-player-media-v1';
   const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
   const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
+  // QA telemetry uses the existing heartbeat; it does not create API calls.
+  // Counts are cumulative attempts, not official Supabase billable invocations.
+  const REQUEST_METRICS_KEY = 'vision_player_request_metrics_v1';
   const SETUP_CODE_KEY = 'vision_player_setup_code_v1';
   const CACHE_REV_KEY = 'vision_player_cache_revision_v1';
   const querySetupCode = new URLSearchParams(location.search).get('setup');
@@ -166,6 +169,39 @@
   function writeJson(key, value) {
     if (value == null) localStorage.removeItem(key);
     else localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  const TRAFFIC_ACTIONS = new Set([
+    'device-gateway.manifest', 'device-gateway.commands',
+    'device-gateway.playback_batch', 'device-gateway.heartbeat',
+    'device-monitoring.heartbeat', 'device-monitoring.event_batch',
+  ]);
+  function requestMetricsSnapshot() {
+    const stored = readJson(REQUEST_METRICS_KEY);
+    if (stored?.version === 1 && stored.counts && typeof stored.counts === 'object' &&
+        typeof stored.started_at === 'string' && Number.isFinite(Date.parse(stored.started_at))) {
+      const counts = {};
+      for (const [key, value] of Object.entries(stored.counts)) {
+        if (TRAFFIC_ACTIONS.has(key) || key === 'device-gateway.other' ||
+            key === 'device-monitoring.other') {
+          const safe = Number(value);
+          if (Number.isSafeInteger(safe) && safe >= 0) counts[key] = safe;
+        }
+      }
+      return { version: 1, started_at: stored.started_at, counts };
+    }
+    return {version: 1, started_at: new Date().toISOString(), counts: {}};
+  }
+  function countRequestAttempt(route, action) {
+    if (!state.deviceToken) return;
+    const key = route + '.' + String(action || 'other');
+    const normalized = TRAFFIC_ACTIONS.has(key) ? key : route + '.other';
+    if (route !== 'device-gateway' && route !== 'device-monitoring') return;
+    try {
+      const snapshot = requestMetricsSnapshot();
+      snapshot.counts[normalized] = Math.min(1000000000, (snapshot.counts[normalized] || 0) + 1);
+      writeJson(REQUEST_METRICS_KEY, snapshot);
+    } catch { /* monitoring failure must never affect playback */ }
   }
 
   function playbackQueue() {
@@ -611,6 +647,7 @@
   }
 
   async function gateway(body) {
+    countRequestAttempt('device-gateway', body?.action);
     try {
       return await functionRequest('device-gateway', body, state.deviceToken);
     } catch (error) {
@@ -626,6 +663,7 @@
 
 
   async function monitorGateway(body) {
+    countRequestAttempt('device-monitoring', body?.action);
     try {
       return await functionRequest('device-monitoring', body, state.deviceToken);
     } catch (error) {
@@ -690,6 +728,9 @@
         network_connected: networkConnected,
         network_validated: networkValidated,
         network_transport: networkTransport,
+        // Persisted, cumulative attempts by action; no extra network request.
+        // Backend stores a sampled heartbeat every ~5min and can diff snapshots.
+        request_metrics: requestMetricsSnapshot(),
       },
     });
   }
@@ -1518,6 +1559,7 @@
     try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
+    localStorage.removeItem(REQUEST_METRICS_KEY);
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
     state.pairing = null;
