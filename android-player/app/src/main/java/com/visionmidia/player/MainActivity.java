@@ -67,6 +67,10 @@ public class MainActivity extends Activity {
     private boolean mutedMusicByPlayer = false;
     private static final String KEY_DEVICE_TOKEN = "device_token";
     private static final String LOCAL_PLAYER = "https://appassets.androidplatform.net/assets/player.html";
+
+    private boolean isHomologationBuild() {
+        return getPackageName().endsWith(".homolog");
+    }
     private static final long KIOSK_RETURN_RETRY_MS = 200L;
     private static final long KIOSK_RETURN_GUARD_MS = 1500L;
     private static final long KIOSK_MAINTENANCE_DURATION_MS = 10L * 60L * 1000L;
@@ -104,6 +108,11 @@ public class MainActivity extends Activity {
         enterImmersiveMode();
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
+        // QA is a separate package; never start at boot or enter kiosk mode.
+        if (isHomologationBuild()) {
+            prefs.edit().putBoolean(KEY_AUTOSTART, false)
+                    .putBoolean(KEY_KIOSK_RETURN, false).apply();
+        }
         assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
@@ -165,7 +174,8 @@ public class MainActivity extends Activity {
     private boolean applySetupFromIntent(Intent intent) {
         if (intent == null || intent.getData() == null) return false;
         Uri uri = intent.getData();
-        String expectedScheme = getPackageName().endsWith(".stable") ? "visionmidia-stable" : "visionmidia";
+        String expectedScheme = isHomologationBuild() ? "visionmidia-homolog"
+                : (getPackageName().endsWith(".stable") ? "visionmidia-stable" : "visionmidia");
         if (!expectedScheme.equalsIgnoreCase(uri.getScheme()) || !"setup".equalsIgnoreCase(uri.getHost())) return false;
         String code = uri.getLastPathSegment();
         if (!isValidSetupCode(code)) return false;
@@ -393,6 +403,7 @@ public class MainActivity extends Activity {
     private class PlayerBridge {
         @JavascriptInterface
         public boolean requestApkUpdate(String downloadUrl) {
+            if (isHomologationBuild()) return false;
             // Only the official HTTPS distribution endpoint is permitted.
             if (!"https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk".equals(downloadUrl)) return false;
             runOnUiThread(() -> {
@@ -440,16 +451,19 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
+            if (isHomologationBuild()) enabled = false;
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
         }
 
         @JavascriptInterface
         public void setKioskReturn(boolean enabled) {
+            if (isHomologationBuild()) enabled = false;
+            final boolean requestedState = enabled;
             runOnUiThread(() -> {
-                SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, enabled);
-                if (!enabled) editor.remove(KEY_KIOSK_MAINTENANCE_UNTIL);
+                SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, requestedState);
+                if (!requestedState) editor.remove(KEY_KIOSK_MAINTENANCE_UNTIL);
                 editor.apply();
-                if (!enabled) {
+                if (!requestedState) {
                     kioskHandler.removeCallbacksAndMessages(null);
                     kioskReturnInProgress = false;
                 }
