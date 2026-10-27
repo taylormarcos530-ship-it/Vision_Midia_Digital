@@ -6,6 +6,7 @@ on:
     paths:
       - player.js
       - tests/player-supabase-traffic-safety.test.cjs
+      - tests/player-network-backoff.test.cjs
       - tests/player-traffic-telemetry.test.cjs
       - tests/vision-supabase-free-budget.test.cjs
       - scripts/vision-supabase-free-budget.cjs
