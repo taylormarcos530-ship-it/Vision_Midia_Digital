@@ -12,12 +12,21 @@ android {
         targetSdk 35
         versionCode 24
         versionName '1.5.12'
-        manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia']
+        manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia', bootReceiverEnabled: 'true']
     }
 
     buildTypes {
         debug {
             versionNameSuffix '-preview'
+        }
+        // Separate Android package: cannot overwrite the production Player.
+        // Must be launched manually on a dedicated QA TV Box.
+        homolog {
+            initWith debug
+            applicationIdSuffix '.homolog'
+            versionNameSuffix '-homologacao'
+            manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false']
+            matchingFallbacks = ['debug']
         }
         release {
             applicationIdSuffix '.stable'
