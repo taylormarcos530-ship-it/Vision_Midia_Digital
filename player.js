@@ -66,7 +66,9 @@
   const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
   const BACKGROUND_POLL_INTERVALS = Object.freeze({
-    heartbeat: 120_000,
+    // Master marks a TV offline after 90s; jittered heartbeat must stay <90s.
+    // 60s average, max 69s, leaves 21s for typical network latency.
+    heartbeat: 60_000,
     manifest: 120_000,
     commands: 45_000,
   });
