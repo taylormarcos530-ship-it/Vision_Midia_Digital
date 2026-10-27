@@ -174,15 +174,28 @@
     writeJson(PLAYBACK_QUEUE_KEY, queue);
   }
 
+  let playbackFlushInFlight = null;
   async function flushPlaybackQueue() {
+    if (playbackFlushInFlight) return playbackFlushInFlight;
     if (!state.deviceToken || !navigator.onLine) return;
-    let queue = playbackQueue();
-    while (queue.length) {
-      const batch = queue.slice(0, 50);
-      await gateway({ action: 'playback_batch', events: batch });
-      queue = queue.slice(batch.length);
-      writeJson(PLAYBACK_QUEUE_KEY, queue.length ? queue : null);
-    }
+    // Only one uploader is allowed to read and acknowledge queued events.
+    // Concurrent automatic + forced uploads used to resend the same records.
+    playbackFlushInFlight = (async () => {
+      let queue = playbackQueue();
+      while (queue.length && state.deviceToken && navigator.onLine) {
+        const batch = queue.slice(0, 50);
+        await gateway({ action: 'playback_batch', events: batch });
+        // Remove only the acknowledged IDs: new events may have arrived during
+        // the HTTP request and must never be lost by overwriting localStorage.
+        const confirmed = new Set(batch.map(event => event.client_event_id));
+        const latest = playbackQueue();
+        const remainder = latest.filter(event => !confirmed.has(event.client_event_id));
+        writeJson(PLAYBACK_QUEUE_KEY, remainder.length ? remainder : null);
+        queue = remainder;
+      }
+    })();
+    try { await playbackFlushInFlight; }
+    finally { playbackFlushInFlight = null; }
   }
 
 
@@ -212,15 +225,24 @@
     writeJson(DEVICE_EVENT_QUEUE_KEY, queue);
   }
 
+  let deviceEventFlushInFlight = null;
   async function flushDeviceEventQueue() {
+    if (deviceEventFlushInFlight) return deviceEventFlushInFlight;
     if (!state.deviceToken || !navigator.onLine) return;
-    let queue = deviceEventQueue();
-    while (queue.length) {
-      const batch = queue.slice(0, 25);
-      await monitorGateway({ action: 'event_batch', events: batch });
-      queue = queue.slice(batch.length);
-      writeJson(DEVICE_EVENT_QUEUE_KEY, queue.length ? queue : null);
-    }
+    deviceEventFlushInFlight = (async () => {
+      let queue = deviceEventQueue();
+      while (queue.length && state.deviceToken && navigator.onLine) {
+        const batch = queue.slice(0, 25);
+        await monitorGateway({ action: 'event_batch', events: batch });
+        const confirmed = new Set(batch.map(event => event.client_event_id));
+        const latest = deviceEventQueue();
+        const remainder = latest.filter(event => !confirmed.has(event.client_event_id));
+        writeJson(DEVICE_EVENT_QUEUE_KEY, remainder.length ? remainder : null);
+        queue = remainder;
+      }
+    })();
+    try { await deviceEventFlushInFlight; }
+    finally { deviceEventFlushInFlight = null; }
   }
 
   async function parseResponse(response) {
