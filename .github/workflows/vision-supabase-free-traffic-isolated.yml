@@ -66,3 +66,27 @@ jobs:
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs android-player/app/build/outputs/apk/homolog/app-homolog.apk | grep -F 'Signer #1 certificate SHA-256 digest:'
           echo 'WARNING: This ephemeral debug-signed APK cannot update an installed QA app.'
           echo 'The APK is deliberately NOT uploaded or published. Stable operator-owned key is required.'
+
+      - name: Exercise stable-signer code path using CI-only disposable identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY_FILE="$RUNNER_TEMP/vision-ci-disposable-signing.p12"
+          # Deliberately public, disposable test-only password; NOT a production credential.
+          TEST_PASSWORD='throwaway-ci-test-pass-2026'
+          keytool -genkeypair -noprompt -storetype PKCS12 -keyalg RSA -keysize 2048 -validity 1 \
+            -dname 'CN=DISPOSABLE Vision CI Test, O=DO NOT DISTRIBUTE' \
+            -alias vision_ci_test_only -keystore "$KEY_FILE" \
+            -storepass "$TEST_PASSWORD" -keypass "$TEST_PASSWORD"
+          export VISION_QA_KEYSTORE_FILE="$KEY_FILE"
+          export VISION_QA_KEYSTORE_PASSWORD="$TEST_PASSWORD"
+          export VISION_QA_KEY_ALIAS='vision_ci_test_only'
+          export VISION_QA_KEY_PASSWORD="$TEST_PASSWORD"
+          export VISION_QA_EXPECTED_CERT_SHA256="$(keytool -list -v -keystore "$KEY_FILE" \
+            -storepass "$TEST_PASSWORD" -alias "$VISION_QA_KEY_ALIAS" \
+            | sed -n 's/.*SHA256: //p' | head -1 | tr -d ':')"
+          bash scripts/vision-qa-signing-check.sh
+          echo 'CI-only signer path validated. Do NOT distribute this APK.'
+          rm -f "$KEY_FILE"
+
