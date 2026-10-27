@@ -6,3 +6,11 @@ node_modules/
 
 node_modules/
 .vercel/
+
+# Never commit production backups or recovery private keys.
+*.dump
+*.backup
+*.age
+*.tar.gz
+backups/
+vision-recovery.key
