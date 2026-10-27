@@ -5,6 +5,9 @@ import test from 'node:test';
 const source = readFileSync(new URL('../app.js', import.meta.url), 'utf8');
 const master = readFileSync(new URL('../supabase/functions/master-admin/index.ts', import.meta.url), 'utf8');
 const monitoring = readFileSync(new URL('../supabase/functions/device-monitoring/index.ts', import.meta.url), 'utf8');
+const portal = readFileSync(new URL('../advertiser-portal.mjs', import.meta.url), 'utf8');
+const portalHtml = readFileSync(new URL('../anunciante.html', import.meta.url), 'utf8');
+const portalSqlReview = readFileSync(new URL('../docs/sql/vision-advertiser-presence-3min.REVIEW.sql', import.meta.url), 'utf8');
 
 const marker = 'function effectiveDeviceStatus(device) {';
 const begin = source.indexOf(marker);
@@ -52,4 +55,30 @@ test('keeps playback counts and report rendering in the admin UI', () => {
   assert.match(source, /#report-started/);
   assert.match(source, /#report-completed/);
   assert.match(source, /#report-media-body/);
+});
+
+test('does not mark a normally synchronizing TV stale before three minutes', () => {
+  assert.match(source, /function deviceSyncIsStale\\(device\\)/);
+  assert.match(source, /new Date\\(device\\.last_sync_at\\)\\.getTime\\(\\) > 3 \\* 60_000/);
+  assert.doesNotMatch(source, /new Date\\(device\\.last_sync_at\\)\\.getTime\\(\\) > 120_000/);
+});
+
+test('advertiser portal reduces polling without losing manual refresh or completed-playback counts', () => {
+  assert.match(portal, /const PORTAL_AUTO_REFRESH_MS = 120_000;/);
+  assert.match(portal, /setInterval\\(\\(\\)=>\\{if\\(!demo&&!document\\.hidden&&!\\$\\('#dashboard'\\)\\.hidden\\)show\\(\\)\\},PORTAL_AUTO_REFRESH_MS\\);/);
+  assert.doesNotMatch(portal, /setInterval[^;]*,15000\\);/);
+  assert.match(portal, /api\\.rpc\\('vision_advertiser_portal'\\)/);
+  assert.match(portal, /\\$\\('#refresh'\\)\\.onclick/);
+  assert.match(portal, /completed_count/);
+  assert.match(portalHtml, /automaticamente a cada 2 minutos/);
+});
+
+test('review-only advertiser SQL aligns both online predicates without broadening access', () => {
+  assert.match(portalSqlReview, /REVIEW ONLY; DO NOT EXECUTE AUTOMATICALLY/);
+  assert.match(portalSqlReview, /CREATE OR REPLACE FUNCTION private\\.vision_portal_data/);
+  assert.equal((portalSqlReview.match(/'3 minutes'/g) || []).length, 2);
+  assert.doesNotMatch(portalSqlReview, /'90 seconds'/);
+  assert.match(portalSqlReview, /SECURITY DEFINER/);
+  assert.match(portalSqlReview, /c\\.advertiser_id=p_advertiser/);
+  assert.match(portalSqlReview, /'daily'/);
 });
