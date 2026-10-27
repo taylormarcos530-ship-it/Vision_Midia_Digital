@@ -17,7 +17,7 @@ import sys
 import tarfile
 import tempfile
 import time
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, unquote, parse_qs
 from urllib.request import Request, urlopen
 
 PROJECT_REF = "fpadgedrgcxrrqflzhjt"
@@ -72,6 +72,34 @@ def require_pg17_tools():
         raise RuntimeError("age is not available")
 
 
+def postgres_env(db_url):
+    # libpq treats PGDATABASE as a literal database name, not as a connection URL.
+    # Split URI into standard PG* variables to keep passwords out of process argv.
+    connection = urlsplit(db_url)
+    if connection.scheme not in ("postgres", "postgresql") or not connection.hostname:
+        raise ValueError("A PostgreSQL connection URL is required")
+    if not connection.username:
+        raise ValueError("PostgreSQL connection URL is missing the username")
+    database = unquote(connection.path.lstrip("/"))
+    if not database or "/" in database:
+        raise ValueError("PostgreSQL database name is invalid")
+    env = {
+        "PGHOST": connection.hostname,
+        "PGPORT": str(connection.port or 5432),
+        "PGDATABASE": database,
+        "PGUSER": unquote(connection.username),
+        "PGPASSWORD": unquote(connection.password or ""),
+    }
+    ssl_mode = parse_qs(connection.query).get("sslmode")
+    if ssl_mode:
+        if len(ssl_mode) != 1 or ssl_mode[0] not in ("require", "verify-ca", "verify-full", "prefer", "disable"):
+            raise ValueError("Invalid PostgreSQL SSL mode")
+        env["PGSSLMODE"] = ssl_mode[0]
+    elif connection.hostname not in ("127.0.0.1", "localhost", "postgres"):
+        env["PGSSLMODE"] = "require"
+    return env
+
+
 def database_storage_inventory(db_url):
     query = ("SELECT COALESCE(json_agg(json_build_object("
              "'bucket',bucket_id,'path',name,'size',metadata->>'size',"
@@ -79,7 +107,7 @@ def database_storage_inventory(db_url):
              "ORDER BY bucket_id,name)::text,'[]') "
              "FROM storage.objects WHERE name IS NOT NULL;")
     raw = verify_command(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-                          "-c", query], env_override={"PGDATABASE": db_url}).decode("utf-8", "replace")
+                          "-c", query], env_override=postgres_env(db_url)).decode("utf-8", "replace")
     items = json.loads(raw.strip())
     if not isinstance(items, list):
         raise ValueError("Storage database inventory invalid")
@@ -187,7 +215,7 @@ def full_backup(destination, settings):
         # A future restore into a different project must handle managed Supabase roles.
         verify_command(["pg_dump", "-Fc",
                         "-f", str(dump)],
-                       env_override={"PGDATABASE": settings["VISION_BACKUP_DATABASE_URL"]})
+                       env_override=postgres_env(settings["VISION_BACKUP_DATABASE_URL"]))
         listing = verify_command(["pg_restore", "-l", str(dump)]).decode("utf-8", "replace")
         if before != database_storage_inventory(settings["VISION_BACKUP_DATABASE_URL"]):
             raise ValueError("Storage changed during database dump; retry later")
