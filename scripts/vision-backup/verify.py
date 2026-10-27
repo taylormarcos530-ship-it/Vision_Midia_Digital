@@ -17,7 +17,7 @@ ARCHIVE_ROOT = "vision-backup/"
 SHA256_RE = re.compile(r"^[a-f0-9]{64}$")
 
 def _valid_relative(value):
-    if not isinstance(value, str) or not value or "\\" in value or "\\x00" in value:
+    if not isinstance(value, str) or not value or "\\" in value or "\x00" in value:
         raise ValueError("Invalid backup archive path")
     parts = value.split("/")
     if any(p in ("", ".", "..") for p in parts):
