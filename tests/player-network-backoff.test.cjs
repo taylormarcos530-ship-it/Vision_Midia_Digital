@@ -30,7 +30,8 @@ function harness() {
 
 test('normal polling intervals lower repeated calls without touching local expiry checks', () => {
   const { policy } = harness();
-  assert.equal(policy.BACKGROUND_POLL_INTERVALS.heartbeat, 120_000);
+  assert.equal(policy.BACKGROUND_POLL_INTERVALS.heartbeat, 60_000);
+  assert.ok(policy.BACKGROUND_POLL_INTERVALS.heartbeat * 1.15 < 90_000, 'Avoid false offline in Master');
   assert.equal(policy.BACKGROUND_POLL_INTERVALS.manifest, 120_000);
   assert.equal(policy.BACKGROUND_POLL_INTERVALS.commands, 45_000);
   assert.match(source, /state\.accessTimer = setInterval\(\(\) => enforceLocalAccess\(\), 1000\)/);
