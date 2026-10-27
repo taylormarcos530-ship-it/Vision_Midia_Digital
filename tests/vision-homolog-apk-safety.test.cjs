@@ -10,12 +10,18 @@ test('QA package is separate and distinctly identified',()=>{
   assert.match(build,/setupScheme: 'visionmidia-homolog'/);
   assert.match(java,/getPackageName\(\)\.endsWith\("\.homolog"\)/);
 });
-test('QA variant disables boot start and kiosk/autostart',()=>{
+test('QA boot start stays disabled, while kiosk return follows the per-TV Master setting',()=>{
   assert.match(build,/bootReceiverEnabled: 'false'/);
   assert.match(manifest, /android:name="\.BootReceiver"\s+android:enabled="\$\{bootReceiverEnabled\}"/);
-  assert.match(java,/if \(isHomologationBuild\(\)\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, false\)/);
+  assert.match(java,/if \(isHomologationBuild\(\)\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, false\)\.apply\(\)/);
   assert.match(java,/public void setAutostart\(boolean enabled\) \{\s*if \(isHomologationBuild\(\)\) enabled = false;/);
-  assert.match(java,/public void setKioskReturn\(boolean enabled\) \{\s*if \(isHomologationBuild\(\)\) enabled = false;/);
+  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) enabled = false;\s*final boolean requestedState = enabled;/);
+  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\)[\s\S]{0,150}putBoolean\(KEY_KIOSK_RETURN, false\)/);
+  assert.match(java,/public void setKioskReturn\(boolean enabled\) \{[\s\S]{0,250}final boolean requestedState = enabled;/);
+  assert.match(java,/prefs\.edit\(\)\.putBoolean\(KEY_KIOSK_RETURN, requestedState\)/);
+  assert.match(java,/private void openAndroidSettingsForMaintenance\(\)/);
+  assert.match(java,/KIOSK_MAINTENANCE_DURATION_MS = 10L \* 60L \* 1000L/);
+  assert.match(java,/protected void onPause\(\) \{[\s\S]{0,350}tryReturnToPlayer\(\)/);
 });
 test('QA app cannot request official APK upgrade from Android bridge',()=>{
   assert.match(java,/public boolean requestApkUpdate\(String downloadUrl\) \{\s*if \(isHomologationBuild\(\)\) return false;/);
