@@ -37,6 +37,10 @@ def require_environment():
     db_host = urlsplit(values["VISION_BACKUP_DATABASE_URL"]).hostname or ""
     if db_host != "db." + PROJECT_REF + ".supabase.co" and not db_host.endswith(".pooler.supabase.com"):
         raise ValueError("Unexpected database hostname; check the Vision database connection")
+    if db_host.endswith(".pooler.supabase.com"):
+        pooler_user = urlsplit(values["VISION_BACKUP_DATABASE_URL"]).username or ""
+        if pooler_user != "postgres." + PROJECT_REF:
+            raise ValueError("Session pooler is not configured for the Vision project")
     if not re.fullmatch(r"age1[0-9a-z]{50,}", values["VISION_BACKUP_AGE_RECIPIENT"]):
         raise ValueError("Expected an age X25519 recipient PUBLIC key")
     return values
