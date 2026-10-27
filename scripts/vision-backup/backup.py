@@ -60,6 +60,45 @@ def request_json(api_base, key, endpoint, payload=None):
     with urlopen(req, timeout=65) as response:
         return json.load(response)
 
+def require_pg17_tools():
+    for tool in ("pg_dump", "pg_restore", "psql"):
+        proc = subprocess.run([tool, "--version"], capture_output=True, check=False)
+        info = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
+        version = re.search(r"PostgreSQL[^0-9]*(\\d+)(?:\\.|\\b)", info)
+        if proc.returncode or not version or int(version.group(1)) != 17:
+            raise RuntimeError(tool + " must be PostgreSQL version 17")
+    age_version = subprocess.run(["age", "--version"], capture_output=True, check=False)
+    if age_version.returncode:
+        raise RuntimeError("age is not available")
+
+
+def database_storage_inventory(db_url):
+    query = ("SELECT COALESCE(json_agg(json_build_object("
+             "'bucket',bucket_id,'path',name,'size',metadata->>'size',"
+             "'etag',COALESCE(metadata->>'eTag',metadata->>'etag')) "
+             "ORDER BY bucket_id,name)::text,'[]') "
+             "FROM storage.objects WHERE name IS NOT NULL;")
+    raw = verify_command(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
+                          "-d", db_url, "-c", query]).decode("utf-8", "replace")
+    items = json.loads(raw.strip())
+    if not isinstance(items, list):
+        raise ValueError("Storage database inventory invalid")
+    inventory = {}
+    for row in items:
+        bucket, path = row["bucket"], row["path"]
+        safe_segment(bucket)
+        for component in PurePosixPath(path).parts:
+            safe_segment(component)
+        key = (bucket, path)
+        if key in inventory:
+            raise ValueError("Duplicate object in database inventory")
+        raw_size = row.get("size")
+        if raw_size is None or not str(raw_size).isdigit():
+            raise ValueError("Storage source size is missing or invalid")
+        inventory[key] = {"size": int(raw_size), "etag": row.get("etag")}
+    return inventory
+
+
 def storage_objects(api_base, key, bucket, prefix=""):
     # Supabase Storage represents folders with null id/metadata; walk each path.
     offset = 0
@@ -74,15 +113,26 @@ def storage_objects(api_base, key, bucket, prefix=""):
             if row.get("id") is None and row.get("metadata") is None:
                 yield from storage_objects(api_base, key, bucket, prefix + name + "/")
             else:
-                yield prefix + name
+                metadata = row.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    raise ValueError("Storage object metadata is invalid")
+                size = metadata.get("size")
+                if size is None or not str(size).isdigit():
+                    raise ValueError("Storage source size is missing or invalid")
+                yield {"path": prefix + name, "size": int(size),
+                       "etag": metadata.get("eTag") or metadata.get("etag")}
         offset += len(rows)
         if len(rows) < 100:
             break
 
-def download_object(api_base, key, bucket, object_path, destination):
+def download_object(api_base, key, bucket, object_path, destination,
+                    expected_size=None, expected_etag=None):
+    if expected_size is None or not isinstance(expected_size, int) or expected_size < 0:
+        raise ValueError("Source size must be verified before downloading")
     endpoint = "/storage/v1/object/authenticated/" + quote(bucket, safe="") + "/" + quote(object_path, safe="/")
     req = Request(api_base + endpoint, headers={"Authorization": "Bearer " + key, "apikey": key})
     sha = hashlib.sha256()
+    md5 = hashlib.md5(usedforsecurity=False)
     length = 0
     destination.parent.mkdir(parents=True, exist_ok=True)
     with urlopen(req, timeout=120) as response, destination.open("xb") as output:
@@ -93,11 +143,20 @@ def download_object(api_base, key, bucket, object_path, destination):
             if not data:
                 break
             sha.update(data)
+            md5.update(data)
             output.write(data)
             length += len(data)
         expected = response.headers.get("Content-Length")
         if expected is not None and int(expected) != length:
             raise ValueError("Media download truncated")
+    if expected_size != length:
+        raise ValueError("Media download does not match trusted source size")
+    # For single-part S3 ETags, validate actual source content, not just a new
+    # checksum of whatever bytes happened to arrive. Multipart ETags are not MD5s.
+    normalized_etag = (expected_etag or "").strip('"')
+    if re.fullmatch(r"[a-fA-F0-9]{32}", normalized_etag):
+        if md5.hexdigest().lower() != normalized_etag.lower():
+            raise ValueError("Media checksum mismatch against source ETag")
     return {"bytes": length, "sha256": sha.hexdigest()}
 
 def verify_command(cmd, stdout=None):
@@ -113,6 +172,8 @@ def full_backup(destination, settings):
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.exists():
         raise FileExistsError("Refusing to overwrite existing backup")
+    require_pg17_tools()
+    before = database_storage_inventory(settings["VISION_BACKUP_DATABASE_URL"])
     with tempfile.TemporaryDirectory(prefix="vision-secure-backup-") as tmp:
         scratch = Path(tmp)
         root = scratch / "archive"
@@ -123,6 +184,8 @@ def full_backup(destination, settings):
         verify_command(["pg_dump", "-Fc",
                         "-f", str(dump), "-d", settings["VISION_BACKUP_DATABASE_URL"]])
         listing = verify_command(["pg_restore", "-l", str(dump)]).decode("utf-8", "replace")
+        if before != database_storage_inventory(settings["VISION_BACKUP_DATABASE_URL"]):
+            raise ValueError("Storage changed during database dump; retry later")
         if not dump.stat().st_size or "TABLE DATA" not in listing or "auth users" not in listing:
             raise ValueError("Database archive verification failed: table data or auth users missing")
 
@@ -138,25 +201,36 @@ def full_backup(destination, settings):
                     "database": {"bytes": dump.stat().st_size,
                                  "sha256": database_checksum},
                     "objects": []}
+        seen = set()
         for bucket_row in buckets:
             bucket = safe_segment(bucket_row["id"])
-            for object_path in storage_objects(base, secret, bucket):
+            for row in storage_objects(base, secret, bucket):
+                object_path = row["path"]
+                key = (bucket, object_path)
+                if key in seen:
+                    raise ValueError("Storage returned a duplicate object")
+                seen.add(key)
+                if key not in before:
+                    raise ValueError("Storage listing includes an unexpected object")
+                source = before[key]
+                if source["size"] != row["size"]:
+                    raise ValueError("Storage listing disagrees with database size")
+                if source["etag"] and row["etag"] != source["etag"]:
+                    raise ValueError("Storage listing disagrees with source ETag")
                 components = [safe_segment(c) for c in PurePosixPath(object_path).parts]
                 local_file = root / "storage" / bucket
                 for part in components:
                     local_file = local_file / part
-                item = download_object(base, secret, bucket, object_path, local_file)
+                item = download_object(base, secret, bucket, object_path, local_file,
+                                       expected_size=source["size"],
+                                       expected_etag=source["etag"])
                 manifest["objects"].append({"bucket": bucket, "path": object_path, **item})
-                # Limit storage download concurrency to one and avoid bursty traffic.
                 time.sleep(0.25)
 
-        # Cross-check row counts; avoids silently incomplete recursive listings.
-        raw_count = verify_command(["psql", "-X", "-A", "-t", "-d",
-                                    settings["VISION_BACKUP_DATABASE_URL"],
-                                    "-c", "SELECT count(*) FROM storage.objects;"])
-        database_count = int(raw_count.decode().strip())
-        if database_count != len(manifest["objects"]):
-            raise ValueError("Storage object count mismatch; aborting incomplete backup")
+        if seen != set(before):
+            raise ValueError("Storage inventory mismatch: missing or renamed objects")
+        if before != database_storage_inventory(settings["VISION_BACKUP_DATABASE_URL"]):
+            raise ValueError("Storage inventory changed during media export")
 
         (root / "manifest.json").write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
         plaintext_tar = scratch / "plaintext.tar.gz"
@@ -181,11 +255,8 @@ def main():
     parser.add_argument("--check", action="store_true", help="Check prerequisites only; do not connect or export")
     args = parser.parse_args()
     if args.check:
-        for tool in ("pg_dump", "pg_restore", "psql", "age"):
-            p = subprocess.run([tool, "--version"], capture_output=True, check=False)
-            if p.returncode:
-                raise RuntimeError("Required tool unavailable: " + tool)
-        print("Backup tools available. No production data accessed.")
+        require_pg17_tools()
+        print("PostgreSQL 17 clients and age available. No production data accessed.")
         return
     if not args.output or not str(args.output).endswith(".age"):
         parser.error("Use --output PATH.age (encrypted output required)")
