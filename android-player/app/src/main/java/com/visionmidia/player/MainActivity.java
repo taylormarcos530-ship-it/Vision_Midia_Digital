@@ -108,10 +108,11 @@ public class MainActivity extends Activity {
         enterImmersiveMode();
 
         prefs = getSharedPreferences(PREFS, MODE_PRIVATE);
-        // QA is a separate package; never start at boot or enter kiosk mode.
+        // QA must never auto-start at boot. Kiosk RETURN is a separate,
+        // opt-in setting saved by the Master for this specific test device.
+        // Never reset its accepted setting when reopening the Activity.
         if (isHomologationBuild()) {
-            prefs.edit().putBoolean(KEY_AUTOSTART, false)
-                    .putBoolean(KEY_KIOSK_RETURN, false).apply();
+            prefs.edit().putBoolean(KEY_AUTOSTART, false).apply();
         }
         assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
@@ -457,7 +458,8 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void setKioskReturn(boolean enabled) {
-            if (isHomologationBuild()) enabled = false;
+            // Respect the explicit per-TV Master setting in QA as in production.
+            // QA still has boot receiver disabled and app update disabled.
             final boolean requestedState = enabled;
             runOnUiThread(() -> {
                 SharedPreferences.Editor editor = prefs.edit().putBoolean(KEY_KIOSK_RETURN, requestedState);
