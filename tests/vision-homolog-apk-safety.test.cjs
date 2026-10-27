@@ -10,12 +10,18 @@ test('QA package is separate and distinctly identified',()=>{
   assert.match(build,/setupScheme: 'visionmidia-homolog'/);
   assert.match(java,/getPackageName\(\)\.endsWith\("\.homolog"\)/);
 });
-test('QA boot start stays disabled, while kiosk return follows the per-TV Master setting',()=>{
-  assert.match(build,/bootReceiverEnabled: 'false'/);
+test('QA boot is Master opt-in and kiosk return remains unchanged',()=>{
+  assert.match(build,/bootReceiverEnabled: 'true'/);
   assert.match(manifest, /android:name="\.BootReceiver"\s+android:enabled="\$\{bootReceiverEnabled\}"/);
-  assert.match(java,/if \(isHomologationBuild\(\)\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, false\)\.apply\(\)/);
-  assert.match(java,/public void setAutostart\(boolean enabled\) \{\s*if \(isHomologationBuild\(\)\) enabled = false;/);
+  assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, false\)\.apply\(\)/);
+  assert.match(java,/public void setAutostart\(boolean enabled\) \{\s*prefs\.edit\(\)\.putBoolean\(KEY_AUTOSTART, enabled\)\.apply\(\)/);
   assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\) enabled = false;\s*final boolean requestedState = enabled;/);
+  const boot=fs.readFileSync('android-player/app/src/main/java/com/visionmidia/player/BootReceiver.java','utf8');
+  assert.match(boot,/Intent\.ACTION_BOOT_COMPLETED/);
+  assert.match(boot,/boolean qa = context\.getPackageName\(\)\.endsWith\("\.homolog"\)/);
+  assert.match(boot,/getBoolean\(MainActivity\.KEY_AUTOSTART, !qa\)/);
+  assert.match(boot,/if \(!enabled\) return;/);
+  assert.match(boot,/context\.startActivity\(launch\)/);
   assert.doesNotMatch(java,/if \(isHomologationBuild\(\)\)[\s\S]{0,150}putBoolean\(KEY_KIOSK_RETURN, false\)/);
   assert.match(java,/public void setKioskReturn\(boolean enabled\) \{[\s\S]{0,250}final boolean requestedState = enabled;/);
   assert.match(java,/prefs\.edit\(\)\.putBoolean\(KEY_KIOSK_RETURN, requestedState\)/);
