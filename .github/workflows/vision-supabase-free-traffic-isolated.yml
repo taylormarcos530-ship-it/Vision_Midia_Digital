@@ -11,6 +11,7 @@ on:
       - scripts/vision-supabase-free-budget.cjs
       - tests/vision-homolog-apk-safety.test.cjs
       - android-player/app/build.gradle
+      - scripts/vision-qa-signing-check.sh
       - android-player/app/src/main/AndroidManifest.xml
       - android-player/app/src/main/java/com/visionmidia/player/MainActivity.java
       - .github/workflows/vision-supabase-free-traffic-isolated.yml
@@ -59,10 +60,9 @@ jobs:
           grep -F "com.visionmidia.player.BootReceiver" qa-android-manifest-check.txt
           grep -F "android:enabled" qa-android-manifest-check.txt
           sha256sum "$QA_APK"
-      - name: Keep separate QA APK for manually authorized one-device test
-        uses: actions/upload-artifact@v4
-        with:
-          name: Vision-TESTE-NAO-INSTALAR-EM-TVS-ATIVAS
-          path: android-player/app/build/outputs/apk/homolog/app-homolog.apk
-          retention-days: 3
-          if-no-files-found: error
+      - name: Verify QA signing certificate only (no APK distribution)
+        run: |
+          set -eu
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs android-player/app/build/outputs/apk/homolog/app-homolog.apk | grep -F 'Signer #1 certificate SHA-256 digest:'
+          echo 'WARNING: This ephemeral debug-signed APK cannot update an installed QA app.'
+          echo 'The APK is deliberately NOT uploaded or published. Stable operator-owned key is required.'
