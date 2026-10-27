@@ -2,6 +2,17 @@ plugins {
     id 'com.android.application'
 }
 
+// QA signing keys are owned by the operator and are NEVER committed to GitHub.
+// A normal CI build still compiles a throwaway debug-signed QA package, but
+// that package is NOT an update for any previously installed QA version.
+def qaSigningPath = System.getenv('VISION_QA_KEYSTORE_FILE')
+def qaSigningStorePass = System.getenv('VISION_QA_KEYSTORE_PASSWORD')
+def qaSigningAlias = System.getenv('VISION_QA_KEY_ALIAS')
+def qaSigningKeyPass = System.getenv('VISION_QA_KEY_PASSWORD')
+def qaStableSigningReady = [qaSigningPath, qaSigningStorePass, qaSigningAlias, qaSigningKeyPass]
+    .every { it != null && !it.isBlank() }
+
+
 android {
     namespace 'com.visionmidia.player'
     compileSdk 35
@@ -13,6 +24,17 @@ android {
         versionCode 24
         versionName '1.5.12'
         manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia', bootReceiverEnabled: 'true']
+    }
+
+    signingConfigs {
+        if (qaStableSigningReady) {
+            qaStable {
+                storeFile file(qaSigningPath)
+                storePassword qaSigningStorePass
+                keyAlias qaSigningAlias
+                keyPassword qaSigningKeyPass
+            }
+        }
     }
 
     buildTypes {
@@ -27,6 +49,11 @@ android {
             versionNameSuffix '-homologacao'
             manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false']
             matchingFallbacks = ['debug']
+            // Only operator-provided stable credentials enable reproducible
+            // signing. Without them, this is a non-distributable smoke build.
+            if (qaStableSigningReady) {
+                signingConfig signingConfigs.qaStable
+            }
         }
         release {
             applicationIdSuffix '.stable'
