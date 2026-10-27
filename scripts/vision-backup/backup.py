@@ -79,7 +79,7 @@ def database_storage_inventory(db_url):
              "ORDER BY bucket_id,name)::text,'[]') "
              "FROM storage.objects WHERE name IS NOT NULL;")
     raw = verify_command(["psql", "-X", "-A", "-t", "-v", "ON_ERROR_STOP=1",
-                          "-d", db_url, "-c", query]).decode("utf-8", "replace")
+                          "-c", query], env_override={"PGDATABASE": db_url}).decode("utf-8", "replace")
     items = json.loads(raw.strip())
     if not isinstance(items, list):
         raise ValueError("Storage database inventory invalid")
@@ -159,10 +159,14 @@ def download_object(api_base, key, bucket, object_path, destination,
             raise ValueError("Media checksum mismatch against source ETag")
     return {"bytes": length, "sha256": sha.hexdigest()}
 
-def verify_command(cmd, stdout=None):
-    # Never print arguments: the database URL can contain a password.
+def verify_command(cmd, stdout=None, env_override=None):
+    # Credentials live only in the child environment, never in command arguments,
+    # process listing or CI logs. Never echo command arguments or error output.
+    environment = os.environ.copy()
+    if env_override:
+        environment.update(env_override)
     result = subprocess.run(cmd, stdout=stdout if stdout is not None else subprocess.PIPE,
-                            stderr=subprocess.PIPE, check=False)
+                            stderr=subprocess.PIPE, check=False, env=environment)
     if result.returncode != 0:
         raise RuntimeError("Backup command failed. Check connection, installed tools and permissions privately.")
     return result.stdout
@@ -182,7 +186,8 @@ def full_backup(destination, settings):
         # Preserve original ownership, ACL and RLS metadata for forensic recovery.
         # A future restore into a different project must handle managed Supabase roles.
         verify_command(["pg_dump", "-Fc",
-                        "-f", str(dump), "-d", settings["VISION_BACKUP_DATABASE_URL"]])
+                        "-f", str(dump)],
+                       env_override={"PGDATABASE": settings["VISION_BACKUP_DATABASE_URL"]})
         listing = verify_command(["pg_restore", "-l", str(dump)]).decode("utf-8", "replace")
         if before != database_storage_inventory(settings["VISION_BACKUP_DATABASE_URL"]):
             raise ValueError("Storage changed during database dump; retry later")
