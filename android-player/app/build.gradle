@@ -55,6 +55,13 @@ android {
                 signingConfig signingConfigs.qaStable
             }
         }
+        // An UNSIGNED artifact is built only for offline signing on the owner's
+        // Android device. It preserves the same com.visionmidia.player.homolog
+        // identifier and QA-only safety controls, but never ships a CI debug key.
+        homologUnsigned {
+            initWith homolog
+            signingConfig = null
+        }
         release {
             applicationIdSuffix '.stable'
             versionNameSuffix '-stable'
