@@ -21,6 +21,9 @@ ROOT = Path(__file__).resolve().parents[1]
 spec = importlib.util.spec_from_file_location("vision_backup", ROOT / "scripts/vision-backup/backup.py")
 backup = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(backup)
+vspec = importlib.util.spec_from_file_location("vision_verify", ROOT / "scripts/vision-backup/verify.py")
+verify = importlib.util.module_from_spec(vspec)
+vspec.loader.exec_module(verify)
 
 HOST = os.environ.get("VISION_TEST_PGHOST", "postgres")
 PORT = int(os.environ.get("VISION_TEST_PGPORT", "5432"))
@@ -172,6 +175,13 @@ class RestoreRealDatabaseTests(unittest.TestCase):
         summary = backup.full_backup(output, self.settings)
         self.assertEqual(summary["storage_objects"], 2)
         self.assertGreater(summary["database_bytes"], 1000)
+        confirmed = verify.verify_archive(output, self.identity)
+        self.assertEqual(confirmed["status"], "PASS")
+        self.assertEqual(confirmed["media_files"], 2)
+        different_key = self.root / "wrong-key.txt"
+        run("age-keygen", "-o", str(different_key))
+        with self.assertRaisesRegex(ValueError, "Could not decrypt"):
+            verify.verify_archive(output, different_key)
 
         decrypted = self.root / "actual-database-test.tar.gz"
         run("age", "-d", "-i", str(self.identity), "-o", str(decrypted), str(output))
