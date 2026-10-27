@@ -67,6 +67,12 @@
     manifest: 120_000,
     commands: 45_000,
   });
+  // A fleet powering up together must not hit the backend at identical moments.
+  // Per-boot, per-channel jitter keeps the average rate unchanged and keeps
+  // command polling within a short bounded range.
+  function staggeredPollInterval(ms) {
+    return Math.round(ms * (0.85 + Math.random() * 0.30));
+  }
   const BACKGROUND_RETRY_BASE_MS = 15_000;
   const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
   // Reject truncated or foreign-device responses before replacing cached authorization.
@@ -1473,9 +1479,9 @@
         await flushPlaybackQueue();
         await flushDeviceEventQueue();
       });
-    }, BACKGROUND_POLL_INTERVALS.heartbeat);
-    state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, BACKGROUND_POLL_INTERVALS.manifest);
-    state.commandTimer = setInterval(() => { void runBackgroundPoll(pollDeviceCommands); }, BACKGROUND_POLL_INTERVALS.commands);
+    }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.heartbeat));
+    state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.manifest));
+    state.commandTimer = setInterval(() => { void runBackgroundPoll(pollDeviceCommands); }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.commands));
     // Payment expiry remains enforced locally every second, independent of network polling.
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
     void runBackgroundPoll(async () => {
