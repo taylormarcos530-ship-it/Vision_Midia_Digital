@@ -27,8 +27,9 @@ keytool -genkeypair -keyalg RSA -keysize 3072 -validity 12000 \
 chmod 600 "${keypath}"
 echo 'Signing key created locally; do NOT lose it, or later APK updates will be blocked.'
 echo "Private file: ${keypath} (DO NOT SHARE)"
-echo 'Public fingerprint (safe to record; no private key printed):'
-keytool -list -v -keystore "${keypath}" -alias vision_qa_homolog | grep -E 'SHA256:'
+echo 'To inspect the PUBLIC fingerprint later, run this command and enter your password locally:'
+echo "keytool -list -v -keystore \"${keypath}\" -alias vision_qa_homolog"
+echo 'Never publish the private .p12 file.'
 echo 'Before using it for APK signing, keep two tested copies OFFLINE (encrypted) on separate media.'
 echo 'Keep the password separately. Never share the private .p12 or password in ChatGPT or GitHub.'
 echo 'NOTE: This new key will NOT match the debug-signed QA APK already installed.'
