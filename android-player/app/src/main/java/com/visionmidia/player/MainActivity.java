@@ -111,9 +111,7 @@ public class MainActivity extends Activity {
         // QA must never auto-start at boot. Kiosk RETURN is a separate,
         // opt-in setting saved by the Master for this specific test device.
         // Never reset its accepted setting when reopening the Activity.
-        if (isHomologationBuild()) {
-            prefs.edit().putBoolean(KEY_AUTOSTART, false).apply();
-        }
+        // Preserve the Master autostart choice across app and device restarts.
         assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
@@ -452,7 +450,6 @@ public class MainActivity extends Activity {
 
         @JavascriptInterface
         public void setAutostart(boolean enabled) {
-            if (isHomologationBuild()) enabled = false;
             prefs.edit().putBoolean(KEY_AUTOSTART, enabled).apply();
         }
 
