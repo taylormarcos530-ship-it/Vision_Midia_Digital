@@ -64,7 +64,7 @@ def require_pg17_tools():
     for tool in ("pg_dump", "pg_restore", "psql"):
         proc = subprocess.run([tool, "--version"], capture_output=True, check=False)
         info = proc.stdout.decode("utf-8", "replace") + proc.stderr.decode("utf-8", "replace")
-        version = re.search(r"PostgreSQL[^0-9]*(\\d+)(?:\\.|\\b)", info)
+        version = re.search(r"PostgreSQL[^0-9]*([0-9]+)", info)
         if proc.returncode or not version or int(version.group(1)) != 17:
             raise RuntimeError(tool + " must be PostgreSQL version 17")
     age_version = subprocess.run(["age", "--version"], capture_output=True, check=False)
