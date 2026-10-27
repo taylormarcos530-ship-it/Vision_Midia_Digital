@@ -149,7 +149,7 @@ class BackupSafetyTests(unittest.TestCase):
     def test_database_inventory_checks_identity_not_only_count(self):
         rows = '[{"bucket":"media","path":"correct.jpg","size":"12","etag":null}]'
         with mock.patch.object(backup, "verify_command", return_value=rows.encode()):
-            self.assertEqual(backup.database_storage_inventory("fake://isolated"),
+            self.assertEqual(backup.database_storage_inventory("postgresql://tester:fake@localhost/testdb"),
                              {("media", "correct.jpg"): {"size": 12, "etag": None}})
 
     def test_full_backup_refuses_wrong_object_at_same_count(self):
