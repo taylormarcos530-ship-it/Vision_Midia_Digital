@@ -185,5 +185,20 @@ class BackupSafetyTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "source size"):
                 list(backup.storage_objects("https://example.invalid", "key", "media"))
 
+
+    def test_postgres_connection_remains_outside_command_arguments(self):
+        secret = "postgresql://postgres:very-secret-password@db.example.test/postgres"
+        called = {}
+        def record_run(cmd, **kwargs):
+            called["cmd"] = cmd
+            called["env"] = kwargs.get("env")
+            return mock.Mock(returncode=0, stdout=b"OK", stderr=b"")
+        with mock.patch.object(backup.subprocess, "run", side_effect=record_run):
+            result = backup.verify_command(["pg_dump", "-Fc", "-f", "fixture.dump"],
+                                          env_override={"PGDATABASE": secret})
+        self.assertEqual(result, b"OK")
+        self.assertEqual(called["env"]["PGDATABASE"], secret)
+        self.assertNotIn(secret, " ".join(called["cmd"]))
+
 if __name__ == "__main__":
     unittest.main()
