@@ -40,8 +40,8 @@ function queueHarness() {
       current.push({client_event_id:id});
       context.writeJson('monitoring',current);
     },
-    playbackIds() {return (context.playbackQueue()||[]).map(x=>x.client_event_id)},
-    monitorIds() {return (context.deviceEventQueue()||[]).map(x=>x.client_event_id)},
+    playbackIds() {return Array.from(context.playbackQueue()||[], x=>String(x.client_event_id))},
+    monitorIds() {return Array.from(context.deviceEventQueue()||[], x=>String(x.client_event_id))},
   };
 }
 
