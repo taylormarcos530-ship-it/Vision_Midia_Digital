@@ -17,6 +17,9 @@ on:
       - news-feed.css
       - news-feed.js
       - tests/vision-qa-unsigned-apk-safety.test.cjs
+      - tests/player-network-backoff.test.cjs
+      - tests/player-supabase-traffic-safety.test.cjs
+      - tests/vision-supabase-free-budget.test.cjs
       - .github/workflows/vision-qa-unsigned-apk.yml
   workflow_dispatch:
 permissions:
@@ -36,7 +39,7 @@ jobs:
       - name: Isolated QA package and unsigned-artifact safeguards
         run: |
           node --check player.js
-          node --test tests/vision-homolog-apk-safety.test.cjs tests/vision-qa-unsigned-apk-safety.test.cjs
+          node --test tests/vision-homolog-apk-safety.test.cjs tests/vision-qa-unsigned-apk-safety.test.cjs tests/player-network-backoff.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs
       - name: Copy current web player into test-only Android package
         shell: bash
         run: |
