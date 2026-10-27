@@ -1,0 +1,53 @@
+name: Vision PostgreSQL 17 isolated disaster-restore test
+on:
+  push:
+    branches:
+      - fix/vision-backup-foundation-isolated-20261026
+    paths:
+      - scripts/vision-backup/backup.py
+      - tests/test_vision_backup_restore_integration.py
+      - .github/workflows/vision-backup-restore-integration-isolated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore-isolated:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    container:
+      image: postgres:17-bookworm
+    services:
+      postgres:
+        image: postgres:17-bookworm
+        env:
+          POSTGRES_USER: vision_tester
+          POSTGRES_PASSWORD: fictitious-only-password
+          POSTGRES_DB: vision_source
+        options: >-
+          --health-cmd "pg_isready -U vision_tester -d vision_source"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 15
+    env:
+      PGHOST: postgres
+      PGPORT: '5432'
+      PGUSER: vision_tester
+      PGPASSWORD: fictitious-only-password
+      PGDATABASE: vision_source
+    steps:
+      - name: Install Python and age, retaining PostgreSQL 17 client
+        run: |
+          apt-get update -qq
+          apt-get install -y -qq python3 age git ca-certificates
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm client version and cryptographic tool
+        run: |
+          pg_dump --version
+          pg_restore --version
+          psql --version
+          age --version
+          python3 scripts/vision-backup/backup.py --check
+      - name: Real fictional PostgreSQL backup and restore verification
+        run: python3 -m unittest discover -s tests -p 'test_vision_backup_restore_integration.py' -v
