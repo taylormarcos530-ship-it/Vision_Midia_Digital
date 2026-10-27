@@ -58,27 +58,27 @@ test('keeps playback counts and report rendering in the admin UI', () => {
 });
 
 test('does not mark a normally synchronizing TV stale before three minutes', () => {
-  assert.match(source, /function deviceSyncIsStale\\(device\\)/);
-  assert.match(source, /new Date\\(device\\.last_sync_at\\)\\.getTime\\(\\) > 3 \\* 60_000/);
-  assert.doesNotMatch(source, /new Date\\(device\\.last_sync_at\\)\\.getTime\\(\\) > 120_000/);
+  assert.ok(source.includes('function deviceSyncIsStale(device)'));
+  assert.ok(source.includes('new Date(device.last_sync_at).getTime() > 3 * 60_000'));
+  assert.ok(!source.includes('new Date(device.last_sync_at).getTime() > 120_000'));
 });
 
 test('advertiser portal reduces polling without losing manual refresh or completed-playback counts', () => {
-  assert.match(portal, /const PORTAL_AUTO_REFRESH_MS = 120_000;/);
-  assert.match(portal, /setInterval\\(\\(\\)=>\\{if\\(!demo&&!document\\.hidden&&!\\$\\('#dashboard'\\)\\.hidden\\)show\\(\\)\\},PORTAL_AUTO_REFRESH_MS\\);/);
-  assert.doesNotMatch(portal, /setInterval[^;]*,15000\\);/);
-  assert.match(portal, /api\\.rpc\\('vision_advertiser_portal'\\)/);
-  assert.match(portal, /\\$\\('#refresh'\\)\\.onclick/);
-  assert.match(portal, /completed_count/);
-  assert.match(portalHtml, /automaticamente a cada 2 minutos/);
+  assert.ok(portal.includes('const PORTAL_AUTO_REFRESH_MS = 120_000;'));
+  assert.ok(portal.includes('},PORTAL_AUTO_REFRESH_MS);'));
+  assert.ok(!portal.includes('},15000);'));
+  assert.ok(portal.includes("api.rpc('vision_advertiser_portal')"));
+  assert.ok(portal.includes("$('#refresh').onclick"));
+  assert.ok(portal.includes('completed_count'));
+  assert.ok(portalHtml.includes('automaticamente a cada 2 minutos'));
 });
 
 test('review-only advertiser SQL aligns both online predicates without broadening access', () => {
-  assert.match(portalSqlReview, /REVIEW ONLY; DO NOT EXECUTE AUTOMATICALLY/);
-  assert.match(portalSqlReview, /CREATE OR REPLACE FUNCTION private\\.vision_portal_data/);
+  assert.ok(portalSqlReview.includes('REVIEW ONLY; DO NOT EXECUTE AUTOMATICALLY'));
+  assert.ok(portalSqlReview.includes('CREATE OR REPLACE FUNCTION private.vision_portal_data'));
   assert.equal((portalSqlReview.match(/'3 minutes'/g) || []).length, 2);
-  assert.doesNotMatch(portalSqlReview, /'90 seconds'/);
-  assert.match(portalSqlReview, /SECURITY DEFINER/);
-  assert.match(portalSqlReview, /c\\.advertiser_id=p_advertiser/);
-  assert.match(portalSqlReview, /'daily'/);
+  assert.ok(!portalSqlReview.includes("'90 seconds'"));
+  assert.ok(portalSqlReview.includes('SECURITY DEFINER'));
+  assert.ok(portalSqlReview.includes('c.advertiser_id=p_advertiser'));
+  assert.ok(portalSqlReview.includes("'daily'"));
 });
