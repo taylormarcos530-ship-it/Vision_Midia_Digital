@@ -6,6 +6,7 @@ on:
     paths:
       - player.js
       - tests/player-supabase-traffic-safety.test.cjs
+      - tests/player-traffic-telemetry.test.cjs
       - tests/vision-supabase-free-budget.test.cjs
       - scripts/vision-supabase-free-budget.cjs
       - tests/vision-homolog-apk-safety.test.cjs
@@ -32,7 +33,7 @@ jobs:
           node --check player.js
           node --check master.js
       - name: Regression and traffic safety tests
-        run: node --test tests/vision-homolog-apk-safety.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
+        run: node --test tests/player-traffic-telemetry.test.cjs tests/vision-homolog-apk-safety.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
       - name: Prepare Android debug-only test assets
         run: |
           mkdir -p android-player/app/src/main/assets
