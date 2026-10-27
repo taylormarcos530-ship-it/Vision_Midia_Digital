@@ -56,3 +56,13 @@ test('one-time signer setup is local, refuses overwriting a private key',()=>{
   assert.match(src,/chmod 600/);
   assert.doesNotMatch(src,/actions\/upload-artifact|github\.com\/.+keystore/);
 });
+
+test('owner key generation supports Termux and preserves existing signing identity',()=>{
+  const src=fs.readFileSync('scripts/vision-qa-generate-signing.sh','utf8');
+  assert.match(src,/pkg install openjdk-17/);
+  assert.match(src,/if \\[\\[ -L "\\$\\{keydir\\}" \\]\\]/);
+  assert.match(src,/-validity 12000/);
+  assert.match(src,/if \\[\\[ -e "\\$\\{keypath\\}" \\]\\]/);
+  const gitignore=fs.readFileSync('.gitignore','utf8');
+  for(const ext of ['*.p12','*.jks','*.keystore']) assert.ok(gitignore.includes(ext));
+});
