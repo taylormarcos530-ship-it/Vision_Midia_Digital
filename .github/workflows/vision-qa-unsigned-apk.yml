@@ -16,6 +16,7 @@ on:
       - news-feed.html
       - news-feed.css
       - news-feed.js
+      - tests/vision-homolog-apk-safety.test.cjs
       - tests/vision-qa-unsigned-apk-safety.test.cjs
       - tests/player-network-backoff.test.cjs
       - tests/player-supabase-traffic-safety.test.cjs
