@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - fix/device-status-heartbeat-alignment-isolated-20261027
+      - integration/vision-traffic-monitoring-qa-20261027
     paths:
       - app.js
       - advertiser-portal.mjs
