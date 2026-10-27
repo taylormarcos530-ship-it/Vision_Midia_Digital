@@ -8,6 +8,10 @@ on:
       - tests/player-supabase-traffic-safety.test.cjs
       - tests/vision-supabase-free-budget.test.cjs
       - scripts/vision-supabase-free-budget.cjs
+      - tests/vision-homolog-apk-safety.test.cjs
+      - android-player/app/build.gradle
+      - android-player/app/src/main/AndroidManifest.xml
+      - android-player/app/src/main/java/com/visionmidia/player/MainActivity.java
       - .github/workflows/vision-supabase-free-traffic-isolated.yml
   workflow_dispatch:
 permissions:
@@ -28,7 +32,7 @@ jobs:
           node --check player.js
           node --check master.js
       - name: Regression and traffic safety tests
-        run: node --test tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
+        run: node --test tests/vision-homolog-apk-safety.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
       - name: Prepare Android debug-only test assets
         run: |
           mkdir -p android-player/app/src/main/assets
@@ -40,7 +44,24 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
-      - name: Compile debug candidate (not uploaded/published)
-        run: gradle -p android-player --no-daemon assembleDebug
-      - name: Verify debug build exists, do not distribute
-        run: test -s android-player/app/build/outputs/apk/debug/app-debug.apk
+      - name: Compile debug baseline and separate QA Android package (not production)
+        run: gradle -p android-player --no-daemon assembleDebug assembleHomolog
+      - name: Verify QA APK package identifier and boot receiver disabled
+        run: |
+          set -eu
+          test -s android-player/app/build/outputs/apk/debug/app-debug.apk
+          QA_APK=android-player/app/build/outputs/apk/homolog/app-homolog.apk
+          test -s "$QA_APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          "$AAPT" dump badging "$QA_APK" | grep -F "package: name='com.visionmidia.player.homolog'"
+          "$AAPT" dump xmltree "$QA_APK" AndroidManifest.xml > qa-android-manifest-check.txt
+          grep -F "com.visionmidia.player.BootReceiver" qa-android-manifest-check.txt
+          grep -F "android:enabled" qa-android-manifest-check.txt
+          sha256sum "$QA_APK"
+      - name: Keep separate QA APK for manually authorized one-device test
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-TESTE-NAO-INSTALAR-EM-TVS-ATIVAS
+          path: android-player/app/build/outputs/apk/homolog/app-homolog.apk
+          retention-days: 3
+          if-no-files-found: error
