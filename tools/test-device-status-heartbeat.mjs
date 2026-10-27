@@ -42,6 +42,7 @@ test('fails closed for malformed heartbeat timestamp', () => {
 test('Master summary and server stale sweep match the 3-minute alert threshold', () => {
   const masterChecks = master.match(/Date\.now\(\)-new Date\(x\.last_seen_at\)\.getTime\(\)<180000/g) || [];
   assert.equal(masterChecks.length, 2);
+  assert.match(master, /sweep_stale_devices',\{p_stale_seconds:180\}/);
   assert.match(monitoring, /const staleBefore = new Date\(Date\.now\(\) - 3 \* 60_000\)\.toISOString\(\)/);
   assert.doesNotMatch(source, /Date\.now\(\) - new Date\(device\.last_seen_at\)\.getTime\(\) > 90_000/);
 });
