@@ -39,6 +39,11 @@ jobs:
           node --check master.js
       - name: Regression and traffic safety tests
         run: node --test tests/player-traffic-telemetry.test.cjs tests/vision-homolog-apk-safety.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
+      - name: Validate integrated monitoring and advertiser portal
+        run: |
+          node --check app.js
+          node --check advertiser-portal.mjs
+          node --test tools/test-device-status-heartbeat.mjs
       - name: Verify one-time operator key generation with disposable identity
         shell: bash
         run: |
