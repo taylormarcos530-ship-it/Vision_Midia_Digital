@@ -5,6 +5,7 @@ on:
       - fix/vision-backup-foundation-isolated-20261026
     paths:
       - scripts/vision-backup/backup.py
+      - scripts/vision-backup/verify.py
       - tests/test_vision_backup_restore_integration.py
       - .github/workflows/vision-backup-restore-integration-isolated.yml
   workflow_dispatch:
