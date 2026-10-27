@@ -1,0 +1,44 @@
+name: Vision Supabase Free traffic safety (isolated)
+on:
+  push:
+    branches:
+      - fix/vision-supabase-free-traffic-isolated-20261027
+    paths:
+      - player.js
+      - tests/player-supabase-traffic-safety.test.cjs
+      - .github/workflows/vision-supabase-free-traffic-isolated.yml
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  traffic-guardrails:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: |
+          node --check player.js
+          node --check master.js
+      - name: Regression and traffic safety tests
+        run: node --test tests/player-supabase-traffic-safety.test.cjs tests/player-network-backoff.test.cjs tests/vision-outage-resilience.test.cjs tests/offline-expiry.test.cjs tests/player-network.test.cjs tests/master-outage-recovery.test.cjs
+      - name: Prepare Android debug-only test assets
+        run: |
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Compile debug candidate (not uploaded/published)
+        run: gradle -p android-player --no-daemon assembleDebug
+      - name: Verify debug build exists, do not distribute
+        run: test -s android-player/app/build/outputs/apk/debug/app-debug.apk
