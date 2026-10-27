@@ -2201,7 +2201,8 @@
   function deviceSyncIsStale(device) {
     if (effectiveDeviceStatus(device) !== 'online') return false;
     if (!device.last_sync_at) return true;
-    return Date.now() - new Date(device.last_sync_at).getTime() > 120_000;
+    // Manifest refresh is also ~120 seconds with jitter; allow normal network variance.
+    return Date.now() - new Date(device.last_sync_at).getTime() > 3 * 60_000;
   }
 
   function formatMonitorDateTime(value) {
