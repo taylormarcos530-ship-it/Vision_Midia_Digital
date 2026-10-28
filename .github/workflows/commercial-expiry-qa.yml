@@ -1,0 +1,31 @@
+name: Vision commercial expiry - isolated QA
+on:
+  push:
+    branches:
+      - feature/vision-commercial-expiry-alerts-20261028
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-contract-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate isolated backend contracts
+        run: |
+          node --check tests/commercial-expiry-alerts.test.cjs
+          node --check commercial-campaign-deadline.mjs
+          node --check master-advertisers.mjs
+          node --check advertiser-portal.mjs
+          node --check advertiser-push.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('advertiser.webmanifest','utf8'))"
+          node --test tests/commercial-expiry-alerts.test.cjs
+      - name: Ensure no player or Android release modifications
+        run: |
+          test -f supabase/functions/commercial-expiry-alerts/index.ts
+          test -f supabase/migrations/20261028190500_vision_commercial_expiry_alerts.sql
+          echo "No deployment, database migration, or Android build is performed."

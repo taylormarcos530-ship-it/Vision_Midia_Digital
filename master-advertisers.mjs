@@ -1,4 +1,5 @@
-import {CommercialAPI,esc,renderCampaigns,loadThumbnails} from './commercial-ui.mjs';
+import {CommercialAPI,esc,date,renderCampaigns,loadThumbnails} from './commercial-ui.mjs';
+import {commercialDeadlineLabel} from './commercial-campaign-deadline.mjs';
 import {createMasterDemoSession} from './commercial-master-demo.mjs';
 import {createCommercialMediaPicker,uploadCommercialSignedFile} from './commercial-master-media-picker.mjs';
 import {isPrivateCommercialDeviceName,commercialLocationErrorMessage} from './commercial-point-privacy.mjs';
@@ -11,6 +12,17 @@ const mediaPicker=createCommercialMediaPicker({api,
  filters:document.querySelectorAll('[data-media-filter]'),
  select:$('#campaign-form [name="media_id"]')});
 function access(result,email){$('#access-result').textContent=`E-mail: ${email}\nSenha: ${result.temporary_password}\nPortal: ${new URL('./anunciante.html',location.href).href}`;$('#access-dialog').showModal();}
+function renderCampaignPeriod(c) {
+  const deadline=commercialDeadlineLabel(c.end_date);
+  const kind=deadline.state==='expired'?'overdue':deadline.state==='today'?'due-today':'normal';
+  return `<div class="commercial-campaign-period" aria-label="Período da campanha">
+    <div class="commercial-period-cell"><span>Início</span><strong>${esc(date(c.start_date))}</strong></div>
+    <div class="commercial-period-cell"><span>Vencimento</span><strong>${esc(date(c.end_date))}</strong></div>
+    <div class="commercial-period-cell commercial-period-count ${kind}">
+      <span>Prazo</span><strong>${esc(deadline.label)}</strong>
+    </div>
+  </div>`;
+}
 function render(){
  const search=$('#search').value.toLocaleLowerCase('pt-BR');
  const showArchived=$('#show-archived').checked;
@@ -24,7 +36,7 @@ function render(){
   <div class="toolbar advertiser-main-actions">${archived
     ? `<button data-report="${esc(a.id)}">Ver histórico</button><button data-restore="${esc(a.id)}">Restaurar anunciante</button>`
     : `<button data-edit="${esc(a.id)}">Editar / ${a.status==='active'?'desativar':'ativar'}</button><button data-campaign="${esc(a.id)}">+ Campanha</button><button data-report="${esc(a.id)}">Ver resultados</button><button data-reset="${esc(a.id)}">Redefinir acesso</button>`}</div>
-  <div class="advertiser-campaigns"><h3>Campanhas do anunciante</h3>${campaigns.map(c=>`<section class="commercial-campaign-entry"><div class="commercial-campaign-entry-header"><strong>Campanha: ${esc(c.name)}</strong>${archived||c.archived_at?'':`<button data-edit-campaign="${esc(c.id)}">Editar campanha</button>`}</div><div class="commercial-campaign-entry-state">${c.archived_at?'Excluída':esc({active:'Ativa',draft:'Rascunho',paused:'Pausada'}[c.status]||c.status)} ${archived?'':c.archived_at?`<button data-restore-campaign="${esc(c.id)}">Restaurar campanha</button>`:`<button class="danger subtle-danger" data-archive-campaign="${esc(c.id)}">Excluir somente esta campanha</button>`}</div></section>`).join('')||'<p class="muted">Nenhuma campanha.</p>'}</div>
+  <div class="advertiser-campaigns"><h3>Campanhas do anunciante</h3>${campaigns.map(c=>`<section class="commercial-campaign-entry"><div class="commercial-campaign-entry-header"><strong>Campanha: ${esc(c.name)}</strong>${archived||c.archived_at?'':`<button data-edit-campaign="${esc(c.id)}">Editar campanha</button>`}</div>${renderCampaignPeriod(c)}<div class="commercial-campaign-entry-state">${c.archived_at?'Excluída':esc({active:'Ativa',draft:'Rascunho',paused:'Pausada'}[c.status]||c.status)} ${archived?'':c.archived_at?`<button data-restore-campaign="${esc(c.id)}">Restaurar campanha</button>`:`<button class="danger subtle-danger" data-archive-campaign="${esc(c.id)}">Excluir somente esta campanha</button>`}</div></section>`).join('')||'<p class="muted">Nenhuma campanha.</p>'}</div>
   ${archived?'':`<details class="advertiser-account-danger"><summary>Ações do cadastro do anunciante</summary><p>Excluir o cadastro bloqueia o acesso deste anunciante e interrompe todas as campanhas. Para excluir apenas uma campanha, utilize a opção dentro dela.</p><button class="danger" data-archive="${esc(a.id)}">Excluir cadastro do anunciante</button></details>`}
   </article>`;
  }).join('')||'<div class="empty">Nenhum anunciante encontrado.</div>';

@@ -14,3 +14,19 @@
 .commercial-watch-dialog::backdrop{background:rgba(0,0,0,.75)}
 .commercial-watch-heading{display:flex;justify-content:space-between;align-items:center;gap:10px}
 .commercial-watch-media{width:100%;max-height:65vh;object-fit:contain;background:#000;border-radius:8px;margin-top:10px}
+
+/* Read-only advertiser notifications: never controls publishing or campaigns. */
+.advertiser-expiry-notices{display:grid;gap:10px;margin:15px 0}
+.advertiser-expiry-notices[hidden]{display:none}
+.advertiser-expiry-message{margin:0;padding:13px 16px;border:1px solid #c58b40;border-radius:12px;background:#342b20;color:#ffe2ae;font-size:14px;line-height:1.55;overflow-wrap:anywhere}
+
+/* Advertiser push consent is opt-in and never controls the Player or uploads. */
+.advertiser-push-panel{display:grid;gap:10px;margin:14px 0;padding:15px;border:1px solid #42627d;border-radius:14px;background:#11243b}
+.advertiser-push-panel strong{font-size:16px}
+.advertiser-push-panel p{font-size:13px;color:#c4d0df;line-height:1.5;margin:7px 0 0}
+.advertiser-push-actions{display:flex;flex-wrap:wrap;gap:9px}
+.advertiser-push-actions button{min-height:44px;padding:10px 14px;white-space:normal}
+.advertiser-push-actions button[hidden]{display:none}
+#advertiser-push-status{margin:0;color:#96e2bb}
+#advertiser-push-status.push-error{color:#ffbdc3}
+@media(max-width:480px){.advertiser-push-actions{display:grid;grid-template-columns:1fr}.advertiser-push-actions button{width:100%}}

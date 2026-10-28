@@ -51,3 +51,20 @@
 .commercial-delete-target strong{display:block;color:#fff;overflow-wrap:anywhere}
 .commercial-confirm-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
 @media(max-width:460px){.commercial-campaign-entry-state{display:grid;grid-template-columns:1fr}.commercial-campaign-entry-state button{width:100%}.commercial-confirm-actions button{flex:1}}
+
+/* Expiry summary: always visible on campaign cards, including mobile. */
+.commercial-campaign-period{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:7px;margin-top:13px}
+.commercial-period-cell{min-width:0;display:flex;flex-direction:column;gap:6px;padding:10px 8px;border:1px solid #344a65;border-radius:9px;background:#13243a}
+.commercial-period-cell span{font-size:11px;color:#aebfd2}
+.commercial-period-cell strong{font-size:13px;color:#f7fafc;overflow-wrap:anywhere;line-height:1.4}
+.commercial-period-count.normal strong{color:#88e7bc}
+.commercial-period-count.due-today{border-color:#e8ac45;background:#332c23}
+.commercial-period-count.due-today strong{color:#ffd27e}
+.commercial-period-count.overdue{border-color:#9f5966;background:#34232c}
+.commercial-period-count.overdue strong{color:#ffabb1}
+@media(max-width:430px){
+  .commercial-campaign-period{gap:6px}
+  .commercial-period-cell{padding:9px 6px}
+  .commercial-period-cell span{font-size:10px}
+  .commercial-period-cell strong{font-size:12px}
+}
