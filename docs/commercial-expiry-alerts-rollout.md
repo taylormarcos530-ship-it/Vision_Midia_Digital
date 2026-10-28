@@ -33,3 +33,14 @@
 
 ## Rollback seguro
 Desabilitar primeiro os destinatários; depois suspender o job `vision-commercial-expiry-alerts` com `cron.unschedule`. Não apagar mídias, campanhas, histórico de exibição, playlists ou mensagens entregues. Restaurar só os arquivos modificados no painel/Edge Function se algum teste falhar.
+
+## Ampliação solicitada — aviso ao anunciante e datas visíveis
+
+- **No Master:** a lista de anunciantes traz agora, *dentro do próprio cartão de cada campanha*, data de início, data de vencimento e texto `Faltam X dias` / `Vence hoje` / `Vencida há X dias`. Cálculo de datas civis em `America/Sao_Paulo`, sem abrir diálogos.
+- **Ao anunciante:** o Portal do Anunciante mostra um aviso próprio, somente com campanhas pertencentes à sessão autenticada, quando vence no dia ou já venceu. Nenhum controle de publicação é adicionado.
+- **Envio externo ao anunciante:** módulo isolado de e-mail via Resend já usado pelo projeto. Usa o e-mail que corresponde **exatamente** ao login verificado do anunciante, apenas se a conta e a campanha não estiverem arquivadas. Uma mensagem por campanha e data de vencimento. Renovação ou arquivamento cancela entregas ainda pendentes da data antiga.
+- **Privacidade:** nenhum e-mail de anunciante vai para outra empresa; o Master permanece recebendo somente na conta Academia Life escolhida pelo usuário. Nunca incluir o cadastro do anunciante nas assinaturas push das empresas.
+- **Ativação segura:** a tabela `private.vision_commercial_client_alert_config` inicia com `enabled=false`. Antes de habilitar, validar domínio de envio, remetente, chave Resend, texto e envio real para endereço de teste autorizado. Configuração da conta Life também permanece desativada até teste real; nenhum disparo foi feito.
+- **Teste de QA:** conferir 0, 1 e vários dias restantes, data no horário local, mensagens apenas ao cliente correto e rejeição de campanha arquivada/rascunho, de e-mail não confirmado e de login divergente.
+
+**Importante:** o aviso por e-mail ao cliente só funcionará após migração, deploy da Edge Function e habilitação controlada. O portal atualmente não tem um canal Web Push próprio para anunciantes; não prometer push ao cliente sem criar e homologar esse fluxo separadamente.
