@@ -1456,15 +1456,16 @@
   // A valid paired device always authenticates and loads durable commands.
   async function registerFcmIfAvailable() {
     if (!state.deviceToken || !navigator.onLine || !state.manifest?.device?.id) return;
-    let fcmToken = '';
-    try { fcmToken = String(window.VisionAndroid?.getFcmToken?.() || ''); } catch {}
-    if (fcmToken.length < 50 || fcmToken.length > 4096) return;
-    const registrationKey = state.manifest.device.id + ':' + fcmToken;
+    // The native bridge never exposes the raw Firebase registration token.
+    let tokenMarker = '';
+    try { tokenMarker = String(window.VisionAndroid?.getFcmTokenMarker?.() || ''); } catch {}
+    if (!tokenMarker) return;
+    const registrationKey = state.manifest.device.id + ':' + tokenMarker;
     if (state.pushRegisteredKey === registrationKey && Date.now() - state.pushRegisteredAt < 24 * 60 * 60_000) return;
     if (Date.now() - state.pushLastAttemptAt < 60_000) return;
     state.pushLastAttemptAt = Date.now();
     try {
-      const response = await gateway({action:'register_push',fcm_token:fcmToken});
+      const response = await gateway({action:'register_push'});
       if (!response?.ok) return;
       state.pushReady = response.push_enabled === true;
       state.pushRegisteredKey = registrationKey;
