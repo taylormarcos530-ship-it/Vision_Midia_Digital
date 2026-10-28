@@ -1,7 +1,9 @@
 import {CommercialAPI,updateCommercialCards,demoData,loadThumbnails,commercialPreviewPath} from './commercial-ui.mjs?v=commercial-r3-20261018';
 import {demoAdvertiserData,demoAdvertiserOptions} from './commercial-advertiser-demo.mjs';
 import {commercialDeadlineLabel} from './commercial-campaign-deadline.mjs';
+import {createAdvertiserPushControls} from './advertiser-push.mjs';
 const api=new CommercialAPI(),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1';let loading=false,requestId=0,latestPortalData=null;
+const pushControls=createAdvertiserPushControls(api);
 function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
 function renderExpiryNotices(data) {
  const area=$('#advertiser-expiry-notices');
@@ -23,7 +25,7 @@ function renderExpiryNotices(data) {
  area.hidden=!affected.length;
 }
 function closeView(){ requestId++;loading=false;latestPortalData=null;$('#advertiser-expiry-notices')?.replaceChildren();if($('#advertiser-expiry-notices'))$('#advertiser-expiry-notices').hidden=true;document.querySelector('#commercial-revision-dialog')?.close(); $('#dashboard').hidden=true;$('#campaigns').innerHTML='';$('#advertiser-name').textContent='';$('#login').hidden=false;$('#logout').hidden=true;if(api.config?.environment==='staging'){const diagnostic=$('#staging-check-output');if(diagnostic)diagnostic.textContent='';}}
-async function show(manual=false){if(loading){if(manual)message('Atualização já em andamento…');return;}loading=true;const previous=latestPortalData?.daily?.reduce((n,x)=>n+(Number(x.completed_count)||0),0);if(manual)message('Consultando exibições…');const ownRequest=++requestId;try{const data=demo?demoAdvertiserData(document.getElementById('demo-advertiser').value):await api.rpc('vision_advertiser_portal');if(ownRequest!==requestId)return;if(demo&&!data){$('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#login').hidden=true;$('#logout').hidden=true;message('Acesso suspenso nesta demonstração.');return;}$('#login').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=demo;$('#advertiser-name').textContent=data.advertiser.name;latestPortalData=data;renderExpiryNotices(data);updateCommercialCards($('#campaigns'),data);
+async function show(manual=false){if(loading){if(manual)message('Atualização já em andamento…');return;}loading=true;const previous=latestPortalData?.daily?.reduce((n,x)=>n+(Number(x.completed_count)||0),0);if(manual)message('Consultando exibições…');const ownRequest=++requestId;try{const data=demo?demoAdvertiserData(document.getElementById('demo-advertiser').value):await api.rpc('vision_advertiser_portal');if(ownRequest!==requestId)return;if(demo&&!data){$('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#login').hidden=true;$('#logout').hidden=true;message('Acesso suspenso nesta demonstração.');return;}$('#login').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=demo;$('#advertiser-name').textContent=data.advertiser.name;latestPortalData=data;renderExpiryNotices(data);updateCommercialCards($('#campaigns'),data);if(!demo)void pushControls.attach(data.advertiser?.id).catch(()=>{});
  const stamp=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}).format(new Date());
  const verified=(data.daily||[]).reduce((sum,item)=>sum+(Number(item.completed_count)||0),0);
  message(demo?'Nenhum dado real conectado. As contagens começam em zero.':
@@ -64,7 +66,7 @@ $('#commercial-revision-close').onclick=()=>$('#commercial-revision-dialog').clo
 $('#commercial-revision-dialog').addEventListener('close',()=>$('#commercial-revision-content').replaceChildren());
 
 $('#login-form').onsubmit=async e=>{e.preventDefault();const button=e.submitter;button.disabled=true;try{const f=new FormData(e.target);await api.login(f.get('email'),f.get('password'));e.target.reset();await show();}catch(error){message(error.message,true)}finally{button.disabled=false}};
-$('#logout').onclick=async()=>{closeView();try{await api.logout()}catch{}message('Você saiu do painel.');};
+$('#logout').onclick=async()=>{await pushControls.onLogout().catch(()=>{});closeView();try{await api.logout()}catch{}message('Você saiu do painel.');};
 $('#refresh').onclick=async()=>{const button=$('#refresh');button.disabled=true;button.textContent='Atualizando…';try{await show(true)}finally{button.disabled=false;button.textContent='Atualizar'}};
 $('#password-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return message('As senhas devem ser iguais.',true);e.submitter.disabled=true;try{await api.request('/auth/v1/user',{method:'PUT',body:{password:f.get('password')}});e.target.reset();message('Senha alterada.');}catch(error){message(error.message,true)}finally{e.submitter.disabled=false}};
 if(demo){$('#demo-banner').hidden=false;$('#password-section').hidden=true;show()}else if(api.session())show();else if(!api.config?.enabled)message('Login real ainda não habilitado neste preview. A homologação será conectada a um ambiente isolado, sem usar a produção.');
