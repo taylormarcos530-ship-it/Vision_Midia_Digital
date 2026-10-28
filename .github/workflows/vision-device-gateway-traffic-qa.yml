@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - fix/device-gateway-media-cache-403-isolated-20261028
+  pull_request:
+    branches:
+      - fix/device-gateway-write-amplification-isolated-20261026
   workflow_dispatch:
 permissions:
   contents: read
