@@ -139,7 +139,13 @@
       return true;
     } catch (error) {
       const status = Number(error?.status || 0);
-      if (status !== 401 && status !== 403 && !isAccessError(error)) {
+      if (status === 403) {
+        // Authorization denial or permission failure: retry only after a
+        // bounded cooldown. The local access gate keeps blocked TVs stopped.
+        // Manual verification still calls syncManifest directly when needed.
+        backgroundPollState.failures = 0;
+        backgroundPollState.retryAt = performance.now() + 5 * 60_000;
+      } else if (status !== 401 && !isAccessError(error)) {
         backgroundPollState.failures = Math.min(7, backgroundPollState.failures + 1);
         const delay = Math.min(
           BACKGROUND_RETRY_MAX_MS,
@@ -887,20 +893,30 @@
     location.reload();
   }
 
-  async function applyDeviceSettings(settings = {}, orientation = 'auto') {
-    state.audioEnabled = settings.audio_enabled !== false;
-    try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
+  // V28: restore the last server-approved orientation before offline playback.
+  // Do not run the whole settings handler here: cache_revision may purge cached
+  // media during boot when the network and RTC have not recovered yet.
+  async function applyStartupPresentation(manifestOrConfig) {
+    const source = manifestOrConfig?.device || manifestOrConfig || {};
+    const settings = source.settings || {};
+    const orientation = source.orientation || 'auto';
     await applyPlayerOrientation(orientation);
-    const angle=[0,90,180,270].includes(Number(settings.screen_rotation_degrees))?Number(settings.screen_rotation_degrees):0;
+    const angle = [0, 90, 180, 270].includes(Number(settings.screen_rotation_degrees))
+      ? Number(settings.screen_rotation_degrees) : 0;
     let nativeRotationApplied = false;
     try {
       if (window.VisionAndroid?.setDisplayRotation) {
         nativeRotationApplied = window.VisionAndroid.setDisplayRotation(angle) === true;
       }
     } catch {}
-    // Native WebView rotation is authoritative. CSS is used only by browsers
-    // and older APKs that do not implement the bridge.
-    document.body.dataset.screenRotationDegrees=String(nativeRotationApplied ? 0 : angle);
+    // Android TV may not support native 90/270 rotation; CSS is the fallback.
+    document.body.dataset.screenRotationDegrees = String(nativeRotationApplied ? 0 : angle);
+  }
+
+  async function applyDeviceSettings(settings = {}, orientation = 'auto') {
+    state.audioEnabled = settings.audio_enabled !== false;
+    try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
+    await applyStartupPresentation({ orientation, settings });
     const currentVideo = $('#media-stage video');
     if (currentVideo) currentVideo.muted = !state.audioEnabled;
     const revision = Number(settings.cache_revision || 0);
@@ -1565,6 +1581,9 @@
 
   async function startPlayer() {
     if (!state.deviceToken) return startPairing();
+    // Apply the cached, device-scoped display configuration before the first
+    // frame, even if the TV Box boots with no internet and an invalid clock.
+    if (state.manifest?.device) await applyStartupPresentation(state.manifest);
     const startupBlocked = enforceLocalAccess();
     if (!startupBlocked) showPlayback();
     setStatus(localAccessState() === 'clock-grace'
