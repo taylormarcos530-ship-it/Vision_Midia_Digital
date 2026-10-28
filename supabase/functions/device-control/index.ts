@@ -66,6 +66,7 @@ async function getFcmAccessToken(credentials: any): Promise<string> {
   return cachedFcmAccessToken.token;
 }
 async function dispatchDeviceCommandPush(admin: any, companyId:string, deviceId:string, commandId:string): Promise<string> {
+  if (Deno.env.get('VISION_FCM_ENABLED') !== 'true') return 'not_configured';
   const raw = Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON');
   if (!raw) return 'not_configured';
   try {
