@@ -1,7 +1,20 @@
 import groovy.json.JsonOutput
+import groovy.json.JsonSlurper
 
 plugins {
     id 'com.android.application'
+}
+
+// Firebase's Android app ID and API key are public client identifiers, not a
+// Firebase service-account credential. Embed them only in the isolated QA APK.
+// The production package stays unconfigured until separately registered.
+def qaFirebaseFile = file('firebase-homolog-public.json')
+def qaFirebase = qaFirebaseFile.exists() ? new JsonSlurper().parseText(qaFirebaseFile.getText('UTF-8')) : null
+if (qaFirebase != null && (
+        qaFirebase.package_name != 'com.visionmidia.player.homolog' ||
+        qaFirebase.project_id != 'vision-midia-digital' ||
+        !qaFirebase.api_key || !qaFirebase.mobilesdk_app_id || !qaFirebase.project_number)) {
+    throw new GradleException('Invalid Firebase homolog config; refusing mismatched Android app')
 }
 
 // QA signing keys are owned by the operator and are NEVER committed to GitHub.
@@ -57,6 +70,12 @@ android {
             versionNameSuffix '-homologacao'
             manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'true']
             matchingFallbacks = ['debug']
+            if (qaFirebase != null) {
+                buildConfigField 'String', 'VISION_FCM_APP_ID', JsonOutput.toJson(qaFirebase.mobilesdk_app_id)
+                buildConfigField 'String', 'VISION_FCM_API_KEY', JsonOutput.toJson(qaFirebase.api_key)
+                buildConfigField 'String', 'VISION_FCM_PROJECT_ID', JsonOutput.toJson(qaFirebase.project_id)
+                buildConfigField 'String', 'VISION_FCM_SENDER_ID', JsonOutput.toJson(qaFirebase.project_number)
+            }
             // Only operator-provided stable credentials enable reproducible
             // signing. Without them, this is a non-distributable smoke build.
             if (qaStableSigningReady) {
