@@ -436,6 +436,19 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
+        public String getFcmToken() {
+            if (prefs == null || !VisionFcmApplication.isConfigured()) return "";
+            return prefs.getString(VisionFcmApplication.FCM_TOKEN_KEY, "");
+        }
+
+        @JavascriptInterface
+        public boolean consumePushSignal() {
+            if (prefs == null || !prefs.getBoolean(VisionFcmApplication.PUSH_SIGNAL_KEY, false)) return false;
+            prefs.edit().remove(VisionFcmApplication.PUSH_SIGNAL_KEY).apply();
+            return true;
+        }
+
+        @JavascriptInterface
         public void setAudioEnabled(boolean enabled) {
             runOnUiThread(() -> {
                 prefs.edit().putBoolean(KEY_AUDIO_ENABLED, enabled).apply();
