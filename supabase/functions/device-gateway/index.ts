@@ -538,7 +538,7 @@ Deno.serve(async (req) => {
       }, { onConflict:'device_id' })
       if (registrationError) throw registrationError
       // Do not turn off the short fallback poll unless push dispatch is enabled.
-      return json({ ok:true, push_enabled:Boolean(Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON')) })
+      return json({ ok:true, push_enabled: Deno.env.get('VISION_FCM_ENABLED') === 'true' && Boolean(Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON')) })
     }
 
     if (action === 'player_settings') {
