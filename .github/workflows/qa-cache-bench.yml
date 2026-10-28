@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - feature/vision-cache-bench-menu-20261028
+      - feature/vision-json-feed-qa-20261028
   workflow_dispatch:
 
 permissions:
