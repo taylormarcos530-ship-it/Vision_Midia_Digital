@@ -47,7 +47,7 @@ android {
             initWith debug
             applicationIdSuffix '.homolog'
             versionNameSuffix '-homologacao'
-            manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'true']
+            manifestPlaceholders = [playerLabel: 'Vision TESTE (nao oficial)', setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false']
             matchingFallbacks = ['debug']
             // Only operator-provided stable credentials enable reproducible
             // signing. Without them, this is a non-distributable smoke build.
