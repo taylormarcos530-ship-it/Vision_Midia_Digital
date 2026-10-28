@@ -144,7 +144,7 @@ test('V28: QA boot receiver exists but starts only after opt-in', () => {
   const boot = fs.readFileSync(path.join(root, 'android-player/app/src/main/java/com/visionmidia/player/BootReceiver.java'), 'utf8');
   assert.match(gradle, /setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'true'/);
   assert.match(gradle, /applicationIdSuffix '\.homolog'/);
-  assert.match(gradle, /versionCode 28/);
+  assert.match(gradle, /versionCode 33/);
   assert.match(boot, /boolean qa = context\.getPackageName\(\)\.endsWith\("\.homolog"\)/);
   assert.match(boot, /getBoolean\(MainActivity\.KEY_AUTOSTART, !qa\)/);
 });
