@@ -15,6 +15,7 @@ function harness() {
     state: { deviceToken: 'test-device-token' },
     navigator: { onLine: true },
     Date: { now: () => now },
+    performance: { now: () => now },
     isAccessError: (error) => error?.accessDenied === true,
   });
   vm.runInContext(source.slice(start, end) +
@@ -35,7 +36,7 @@ test('normal polling intervals lower repeated calls without touching local expir
   assert.equal(policy.BACKGROUND_POLL_INTERVALS.manifest, 120_000);
   assert.equal(policy.BACKGROUND_POLL_INTERVALS.commands, 45_000);
   assert.match(source, /state\.accessTimer = setInterval\(\(\) => enforceLocalAccess\(\), 1000\)/);
-  assert.match(source, /if \(state\.manifest && !localAccessExpired\(\)\) ensurePlaybackLoop\(\)/);
+  assert.match(source, /if \(state\.manifest && !startupBlocked\) ensurePlaybackLoop\(\)/);
 });
 
 test('background polling is single-flight across jobs', async () => {
