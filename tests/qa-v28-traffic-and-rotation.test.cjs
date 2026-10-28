@@ -139,9 +139,12 @@ test('V28: access-denied background requests have a five-minute cooldown', () =>
   assert.match(player, /status !== 401 && !isAccessError\(error\)/);
 });
 
-test('V28: unsigned QA package never autostarts at boot', () => {
+test('V28: QA boot receiver exists but starts only after opt-in', () => {
   const gradle = fs.readFileSync(path.join(root, 'android-player/app/build.gradle'), 'utf8');
-  assert.match(gradle, /setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false'/);
+  const boot = fs.readFileSync(path.join(root, 'android-player/app/src/main/java/com/visionmidia/player/BootReceiver.java'), 'utf8');
+  assert.match(gradle, /setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'true'/);
   assert.match(gradle, /applicationIdSuffix '\.homolog'/);
   assert.match(gradle, /versionCode 28/);
+  assert.match(boot, /boolean qa = context\.getPackageName\(\)\.endsWith\("\.homolog"\)/);
+  assert.match(boot, /getBoolean\(MainActivity\.KEY_AUTOSTART, !qa\)/);
 });
