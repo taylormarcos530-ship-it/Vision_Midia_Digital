@@ -1070,8 +1070,10 @@ Deno.serve(async (req) => {
     const device = await authenticateDevice(admin, req);
     if (!device) return json({error:'invalid_device_token'},401);
     if (device.id !== QA_DEVICE_ID) return json({error:'wrong_qa_device'},403);
-    if (device.account_block || device.access_block)
-      return json({error:'device_access_denied'},403);
+    if (device.account_block) return json({error:'account_suspended',...device.account_block},403);
+    if (device.access_block === 'pending') return json({error:'device_access_pending'},403);
+    if (device.access_block === 'blocked') return json({error:'device_access_blocked'},403);
+    if (device.access_block === 'expired') return json({error:'device_access_expired',access_expires_at:device.access_expires_at},403);
 
     const gatewayAction = (action,extra={}) => runExistingGatewayAction(req,{
       admin,device,body:{action,...extra}
