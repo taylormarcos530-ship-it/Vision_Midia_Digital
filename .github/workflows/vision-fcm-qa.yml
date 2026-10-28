@@ -30,11 +30,6 @@ jobs:
     needs: test
     runs-on: ubuntu-latest
     timeout-minutes: 40
-    env:
-      VISION_FCM_APP_ID: ${{ secrets.VISION_FCM_APP_ID }}
-      VISION_FCM_API_KEY: ${{ secrets.VISION_FCM_API_KEY }}
-      VISION_FCM_PROJECT_ID: ${{ secrets.VISION_FCM_PROJECT_ID }}
-      VISION_FCM_SENDER_ID: ${{ secrets.VISION_FCM_SENDER_ID }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
@@ -60,7 +55,7 @@ jobs:
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
           cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
-      - name: Compile unconfigured QA APK for SDK/syntax validation
+      - name: Compile Firebase-configured QA APK without installing or signing
         run: gradle -p android-player --no-daemon assembleHomologUnsigned
       - name: Inspect package, version, and Firebase readiness
         shell: bash
@@ -75,13 +70,19 @@ jobs:
             echo "Unexpected pre-signed package"; exit 1
           fi
           mkdir -p dist
-          cp "$APK" dist/Vision-FCM-QA-V34-sem-assinatura.apk
-          sha256sum dist/Vision-FCM-QA-V34-sem-assinatura.apk > dist/Vision-FCM-QA-V34.sha256
-          if [ -n "$VISION_FCM_APP_ID" ] && [ -n "$VISION_FCM_API_KEY" ] && [ -n "$VISION_FCM_PROJECT_ID" ] && [ -n "$VISION_FCM_SENDER_ID" ]; then
-            echo "FCM app configuration: provisioned" > dist/readiness.txt
-          else
-            echo "FCM app configuration: MISSING - APK builds but push is disabled until configured and rebuilt." > dist/readiness.txt
-          fi
+          cp "$APK" dist/Vision-FCM-QA-V34-configurado-sem-assinatura.apk
+          sha256sum dist/Vision-FCM-QA-V34-sem-assinatura.apk > dist/Vision-FCM-QA-V34-configurado.sha256
+          python3 - <<'PY' > dist/readiness.txt
+          import json
+          cfg=json.load(open('android-player/app/firebase-homolog-public.json'))
+          assert cfg['project_id']=='vision-midia-digital'
+          assert cfg['package_name']=='com.visionmidia.player.homolog'
+          assert cfg['mobilesdk_app_id'].startswith('1:'+cfg['project_number']+':android:')
+          assert cfg['api_key']
+          print('FCM Android client configuration: provisioned and package verified')
+          print('FCM server sender: NOT YET CONFIGURED OR TESTED')
+          print('Push E2E: NOT TESTED; do not update official TVs')
+          PY
           {
             echo "branch=$GITHUB_REF_NAME"
             echo "commit=$GITHUB_SHA"
