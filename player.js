@@ -229,6 +229,7 @@
     'device-gateway.manifest', 'device-gateway.commands',
     'device-gateway.playback_batch', 'device-gateway.heartbeat',
     'device-monitoring.heartbeat', 'device-monitoring.event_batch',
+    'device-bundle-qa.cycle',
   ]);
   function requestMetricsSnapshot() {
     const stored = readJson(REQUEST_METRICS_KEY);
@@ -250,7 +251,7 @@
     if (!state.deviceToken) return;
     const key = route + '.' + String(action || 'other');
     const normalized = TRAFFIC_ACTIONS.has(key) ? key : route + '.other';
-    if (route !== 'device-gateway' && route !== 'device-monitoring') return;
+    if (route !== 'device-gateway' && route !== 'device-monitoring' && route !== 'device-bundle-qa') return;
     try {
       const snapshot = requestMetricsSnapshot();
       snapshot.counts[normalized] = Math.min(1000000000, (snapshot.counts[normalized] || 0) + 1);
@@ -1574,6 +1575,7 @@
       performance.now() - state.qaLastManifestAt >= QA_BUNDLE_MANIFEST_INTERVAL_MS;
     let response;
     try {
+      countRequestAttempt('device-bundle-qa', 'cycle');
       response = await functionRequest('device-bundle-qa', {
         action: 'cycle',
         heartbeat: await heartbeat(true),
@@ -1583,9 +1585,16 @@
     } catch (error) {
       // If this opt-in endpoint has not yet been deployed, fall back to V35
       // polling automatically, without touching any offline media or pairing.
-      if ([404, 403].includes(Number(error?.status)) &&
-          ['qa_only','wrong_qa_device'].includes(String(error?.data?.error || '')) ||
-          Number(error?.status) === 404) {
+      if (Number(error?.status) === 401) {
+        resetPairing(false);
+        void startPairing(true);
+      } else if (Number(error?.status) === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
+        showAccessBlocked(error);
+      }
+      if (Number(error?.status) === 404 ||
+          (Number(error?.status) === 403 &&
+            ['qa_only','wrong_qa_device'].includes(String(error?.data?.error || '')))) {
         state.qaBundleSupported = false;
         if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
         startLegacyPollingTimers();
