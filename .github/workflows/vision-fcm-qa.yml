@@ -3,9 +3,11 @@ on:
   push:
     branches:
       - feature/vision-fcm-player-qa-20261028
+      - fix/vision-kiosk-return-qa-v35-20261028
   pull_request:
     branches:
       - release/vision-player-stable-1521-rc-20261028
+      - feature/vision-fcm-player-qa-20261028
   workflow_dispatch:
 
 permissions:
@@ -24,7 +26,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check player.js
-          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs
+          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs tests/qa-kiosk-return-v35.test.cjs
 
   build:
     needs: test
@@ -55,7 +57,7 @@ jobs:
           set -euo pipefail
           mkdir -p android-player/app/src/main/assets
           cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
-      - name: Compile Firebase-configured QA APK without installing or signing
+      - name: Compile kiosk-retry QA V35 with Firebase client (unsigned)
         run: gradle -p android-player --no-daemon assembleHomologUnsigned
       - name: Inspect package, version, and Firebase readiness
         shell: bash
@@ -65,13 +67,13 @@ jobs:
           test -s "$APK"
           "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > /tmp/vision-fcm-badging.txt
           grep -q "name='com.visionmidia.player.homolog'" /tmp/vision-fcm-badging.txt
-          grep -q "versionCode='34'" /tmp/vision-fcm-badging.txt
+          grep -q "versionCode='35'" /tmp/vision-fcm-badging.txt
           if "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$APK"; then
             echo "Unexpected pre-signed package"; exit 1
           fi
           mkdir -p dist
-          cp "$APK" dist/Vision-FCM-QA-V34-configurado-sem-assinatura.apk
-          (cd dist && sha256sum Vision-FCM-QA-V34-configurado-sem-assinatura.apk > Vision-FCM-QA-V34-configurado.sha256)
+          cp "$APK" dist/Vision-KIOSK-QA-V35-configurado-sem-assinatura.apk
+          (cd dist && sha256sum Vision-KIOSK-QA-V35-configurado-sem-assinatura.apk > Vision-KIOSK-QA-V35-configurado.sha256)
           python3 - <<'PY' > dist/readiness.txt
           import json
           cfg=json.load(open('android-player/app/firebase-homolog-public.json'))
@@ -87,14 +89,14 @@ jobs:
             echo "branch=$GITHUB_REF_NAME"
             echo "commit=$GITHUB_SHA"
             echo "package=com.visionmidia.player.homolog"
-            echo "versionCode=34"
+            echo "versionCode=35"
             echo "signed=false"
             echo "server_relay_deployed=false"
             echo "DO NOT install on production TVs; do not assume FCM works until provisioned."
           } > dist/provenance.txt
       - uses: actions/upload-artifact@v4
         with:
-          name: Vision-FCM-QA-v34-UNSIGNED-NOT-FOR-PRODUCTION
+          name: Vision-KIOSK-QA-v35-UNSIGNED-NOT-FOR-PRODUCTION
           path: dist/
           if-no-files-found: error
           retention-days: 30

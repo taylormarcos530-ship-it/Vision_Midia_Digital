@@ -71,8 +71,12 @@ public class MainActivity extends Activity {
     private boolean isHomologationBuild() {
         return getPackageName().endsWith(".homolog");
     }
-    private static final long KIOSK_RETURN_RETRY_MS = 200L;
-    private static final long KIOSK_RETURN_GUARD_MS = 1500L;
+    // Retry only while this explicitly opted-in kiosk is hidden. First two
+    // deadlines preserve the working quick Home return; later retries handle
+    // another Android app staying in the foreground. At most one retry/minute
+    // after the first minute, with all callbacks cancelled on resume/destroy.
+    private static final long[] KIOSK_RETURN_DELAYS_MS = {200L, 1500L, 4000L, 10000L, 30000L, 60000L};
+    private static final long KIOSK_RETURN_BACKGROUND_INTERVAL_MS = 60_000L;
     private static final long KIOSK_MAINTENANCE_DURATION_MS = 10L * 60L * 1000L;
 
     private final ExecutorService networkExecutor = new ThreadPoolExecutor(3, 3, 0L, TimeUnit.MILLISECONDS, new ArrayBlockingQueue<>(12));
@@ -85,6 +89,8 @@ public class MainActivity extends Activity {
     private volatile long lastPlayerPulseAt = 0L;
     private boolean watchdogActive = false;
     private boolean kioskReturnInProgress = false;
+    private long kioskReturnStartedAt = 0L;
+    private int kioskReturnAttempts = 0;
     private boolean playerVisible = false;
     private final Runnable playerWatchdog = new Runnable() {
         @Override
@@ -360,24 +366,46 @@ public class MainActivity extends Activity {
         }
     }
 
-    private void tryReturnToPlayer() {
-        if (playerVisible || !isKioskReturnEnabled() || isKioskMaintenanceActive() || kioskReturnInProgress || isFinishing()) return;
-        kioskReturnInProgress = true;
-        // Defer until onPause has returned: launching before Home finishes can
-        // target the already-visible task and cancel its own pending retry.
+    private boolean mustStopKioskReturn() {
+        // Never steal foreground while the player is visible, the Master
+        // disabled kiosk, the 10-minute maintenance window is active, or this
+        // Activity is closing. Prevents a retry loop in normal app usage.
+        return playerVisible || !isKioskReturnEnabled()
+                || isKioskMaintenanceActive() || isFinishing() || destroyed;
+    }
+
+    private void scheduleKioskReturnAttempt() {
+        if (mustStopKioskReturn()) {
+            kioskReturnInProgress = false;
+            return;
+        }
+        // Delays are measured from onPause, not added cumulatively. Later
+        // attempts are deliberately limited to one per minute.
+        final int next = kioskReturnAttempts++;
+        final long due = next < KIOSK_RETURN_DELAYS_MS.length
+                ? KIOSK_RETURN_DELAYS_MS[next]
+                : KIOSK_RETURN_DELAYS_MS[KIOSK_RETURN_DELAYS_MS.length - 1]
+                        + (next - KIOSK_RETURN_DELAYS_MS.length + 1L) * KIOSK_RETURN_BACKGROUND_INTERVAL_MS;
+        final long elapsed = SystemClock.elapsedRealtime() - kioskReturnStartedAt;
         kioskHandler.postDelayed(() -> {
-            if (playerVisible || !isKioskReturnEnabled() || isKioskMaintenanceActive() || isFinishing()) {
+            if (mustStopKioskReturn()) {
                 kioskReturnInProgress = false;
                 return;
             }
             launchPlayerToFront();
-            kioskHandler.postDelayed(() -> {
-                if (!playerVisible && isKioskReturnEnabled() && !isKioskMaintenanceActive() && !isFinishing()) {
-                    launchPlayerToFront();
-                }
-                kioskReturnInProgress = false;
-            }, KIOSK_RETURN_GUARD_MS);
-        }, KIOSK_RETURN_RETRY_MS);
+            // Android 10+ and some TV Boxes may reject background Activity
+            // launches even with overlay permission. Retrying is best effort;
+            // do not restart the Activity, WebView, or cached playback.
+            scheduleKioskReturnAttempt();
+        }, Math.max(0L, due - elapsed));
+    }
+
+    private void tryReturnToPlayer() {
+        if (kioskReturnInProgress || mustStopKioskReturn()) return;
+        kioskReturnInProgress = true;
+        kioskReturnStartedAt = SystemClock.elapsedRealtime();
+        kioskReturnAttempts = 0;
+        scheduleKioskReturnAttempt();
     }
 
     private void openAndroidSettingsForMaintenance() {

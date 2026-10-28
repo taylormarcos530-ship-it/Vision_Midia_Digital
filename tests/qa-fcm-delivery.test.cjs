@@ -74,7 +74,7 @@ test('Master creates durable command BEFORE sending best effort push',()=>{
 });
 
 test('FCM build is opt-in and does not embed server private keys',()=>{
-  assert.match(gradle,/versionCode 34/);
+  assert.match(gradle,/versionCode 35/);
   assert.match(gradle,/applicationIdSuffix '\.homolog'/);
   assert.doesNotMatch(gradle,/SERVICE_ACCOUNT_JSON/);
   assert.doesNotMatch(application,/private_key/);
