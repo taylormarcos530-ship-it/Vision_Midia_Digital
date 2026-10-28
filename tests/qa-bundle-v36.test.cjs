@@ -43,7 +43,7 @@ test('proofs and events remain individually idempotent; only acknowledged IDs ca
   assert.match(client,/const pending = latest\.filter\(event => !confirmed\.has\(event\.client_event_id\)\)/);
   assert.match(server,/ignoreDuplicates: true/);
   assert.match(server,/onConflict: 'device_id,client_event_id'/);
-  assert.match(server,/action:'playback_batch'/);
+  assert.match(server,/gatewayAction\('playback_batch'/);
   assert.match(server,/action:'event_batch'/);
   assert.match(server,/body\.proofs\.length > 50/);
   assert.match(server,/body\.events\.length > 25/);
