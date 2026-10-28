@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#07172e">
+<title>Vision | Painel informativo JSON</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}body{min-height:100vh;color:#fff;font-family:Arial,sans-serif;background:radial-gradient(ellipse at 80% -15%,#2255a3 0,transparent 45%),linear-gradient(135deg,#030c1b,#0f2c57)}
+main{width:min(98%,1800px);min-height:100vh;margin:0 auto;padding:clamp(20px,4vw,60px);display:flex;flex-direction:column;text-align:center}
+header{font-size:clamp(19px,2.3vw,40px);color:#ffce2a;font-weight:900;letter-spacing:.09em}
+h1{font-size:clamp(32px,5vw,82px);margin:clamp(16px,3vw,40px) 0}
+#items{flex:1;display:flex;flex-direction:column;justify-content:center;gap:clamp(14px,2vh,35px)}
+.entry{border:1px solid #336ab3;border-radius:18px;background:#0b2c586e;padding:clamp(10px,2vw,25px);font-weight:700;font-size:clamp(24px,3vw,55px);overflow-wrap:anywhere}
+footer{color:#bfd2eb;font-size:clamp(13px,1.2vw,22px);margin-top:25px}
+#status{color:#ffd24e;font-weight:700}#diagnostic{display:block;margin-top:10px;opacity:.8}
+</style><script type="module" src="./json-feed.js"></script>
+</head><body><main><header>VISION MÍDIA DIGITAL • INFORMATIVO</header>
+<h1 id="heading">Painel informativo</h1>
+<section id="items" aria-live="polite"><div class="entry">Carregando informações…</div></section>
+<footer><div id="status" role="status">Aguardando conexão</div><small id="diagnostic">Fonte JSON pública • conteúdo sujeito a atualização</small></footer>
+</main></body></html>
