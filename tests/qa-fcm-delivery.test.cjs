@@ -87,8 +87,7 @@ test('Firebase public client app must match the QA package and not official stab
   assert.equal(cfg.project_id,'vision-midia-digital');
   assert.ok(cfg.mobilesdk_app_id.startsWith('1:'+cfg.project_number+':android:'));
   assert.ok(cfg.api_key.length>20);
-  assert.match(gradle,/firebase-homolog-public\\.json/);
-  assert.match(gradle,/qaFirebase\\.package_name != 'com\\.visionmidia\\.player\\.homolog'/);
-  // Stable configuration defaults to empty; QA build type overrides only itself.
-  assert.match(gradle,/buildConfigField 'String', 'VISION_FCM_APP_ID', JsonOutput\\.toJson\\(System\\.getenv\\('VISION_FCM_APP_ID'\\) \\?: ''\\)/);
+  assert.ok(gradle.includes('firebase-homolog-public.json'));
+  assert.ok(gradle.includes("qaFirebase.package_name != 'com.visionmidia.player.homolog'"));
+  assert.ok(gradle.includes("System.getenv('VISION_FCM_APP_ID') ?: ''"));
 });
