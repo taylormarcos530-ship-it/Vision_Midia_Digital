@@ -67,9 +67,13 @@ Deno.serve(async (req: Request) => {
       const { data: vapid, error: vapidError } = await admin.from('web_push_config')
         .select('vapid_public_key').eq('id',1).maybeSingle()
       if(vapidError) throw vapidError
-      const { count, error: countError } = await admin.from('vision_advertiser_push_subscriptions')
+      let deviceQuery = admin.from('vision_advertiser_push_subscriptions')
         .select('id',{count:'exact',head:true})
         .eq('advertiser_id',advertiser.id).eq('user_id',user.id).is('disabled_at',null)
+      const requestEndpoint=clean(body?.endpoint,2001)
+      if(requestEndpoint && validPushEndpoint(requestEndpoint))
+        deviceQuery = deviceQuery.eq('endpoint',requestEndpoint)
+      const { count, error: countError } = await deviceQuery
       if(countError) throw countError
       return J({ok:true, public_key:clean(vapid?.vapid_public_key,400),
         subscribed:Number(count||0)>0})
