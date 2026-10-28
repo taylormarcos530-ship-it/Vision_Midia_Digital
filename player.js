@@ -97,12 +97,16 @@
   // command fallback is safely bounded by one cycle, not pushed via FCM.
   const QA_BUNDLE_DEVICE_ID = '45b27442-e0ee-4b79-87fc-c753a52f060c';
   const QA_BUNDLE_VERSION = '1.5.24-homologacao';
+  const STABLE_BUNDLE_VERSION = '1.5.24-stable';
   const QA_BUNDLE_INTERVAL_MS = 58_000;
   const QA_BUNDLE_MANIFEST_INTERVAL_MS = 120_000;
   function useQaBundle() {
-    return state.qaBundleSupported &&
-      nativeAppVersion() === QA_BUNDLE_VERSION &&
-      state.manifest?.device?.id === QA_BUNDLE_DEVICE_ID;
+    return state.qaBundleSupported && (
+      (nativeAppVersion() === QA_BUNDLE_VERSION &&
+       state.manifest?.device?.id === QA_BUNDLE_DEVICE_ID) ||
+      (nativeAppVersion() === STABLE_BUNDLE_VERSION &&
+       Boolean(state.manifest?.device?.id))
+    );
   }
   const BACKGROUND_RETRY_BASE_MS = 15_000;
   const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
@@ -229,7 +233,7 @@
     'device-gateway.manifest', 'device-gateway.commands',
     'device-gateway.playback_batch', 'device-gateway.heartbeat',
     'device-monitoring.heartbeat', 'device-monitoring.event_batch',
-    'device-bundle-qa.cycle',
+    'device-bundle-qa.cycle', 'device-bundle-stable.cycle',
   ]);
   function requestMetricsSnapshot() {
     const stored = readJson(REQUEST_METRICS_KEY);
@@ -251,7 +255,7 @@
     if (!state.deviceToken) return;
     const key = route + '.' + String(action || 'other');
     const normalized = TRAFFIC_ACTIONS.has(key) ? key : route + '.other';
-    if (route !== 'device-gateway' && route !== 'device-monitoring' && route !== 'device-bundle-qa') return;
+    if (route !== 'device-gateway' && route !== 'device-monitoring' && route !== 'device-bundle-qa' && route !== 'device-bundle-stable') return;
     try {
       const snapshot = requestMetricsSnapshot();
       snapshot.counts[normalized] = Math.min(1000000000, (snapshot.counts[normalized] || 0) + 1);
@@ -1574,9 +1578,12 @@
     const manifestDue = !state.qaLastManifestAt ||
       performance.now() - state.qaLastManifestAt >= QA_BUNDLE_MANIFEST_INTERVAL_MS;
     let response;
+    const isStable = nativeAppVersion() === STABLE_BUNDLE_VERSION;
+    const bundleRoute = isStable ? 'device-bundle-stable' : 'device-bundle-qa';
     try {
-      countRequestAttempt('device-bundle-qa', 'cycle');
-      response = await functionRequest('device-bundle-qa', {
+      if (isStable) countRequestAttempt('device-bundle-stable', 'cycle');
+      else countRequestAttempt('device-bundle-qa', 'cycle');
+      response = await functionRequest(bundleRoute, {
         action: 'cycle',
         heartbeat: await heartbeat(true),
         proofs, events,
@@ -1594,7 +1601,7 @@
       }
       if (Number(error?.status) === 404 ||
           (Number(error?.status) === 403 &&
-            ['qa_only','wrong_qa_device'].includes(String(error?.data?.error || '')))) {
+            ['qa_only','wrong_qa_device','stable_only'].includes(String(error?.data?.error || '')))) {
         state.qaBundleSupported = false;
         if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
         if (state.accessTimer) clearInterval(state.accessTimer);
@@ -1602,7 +1609,7 @@
       }
       throw error;
     }
-    if (response?.device_id !== QA_BUNDLE_DEVICE_ID || response?.ok !== true)
+    if (response?.device_id !== state.manifest?.device?.id || response?.ok !== true)
       throw new Error('Resposta inválida do servidor QA: preservando filas locais.');
     // Acknowledgements are independent; never lose cached proofs on a partial
     // failure or a response interrupted after the database write.

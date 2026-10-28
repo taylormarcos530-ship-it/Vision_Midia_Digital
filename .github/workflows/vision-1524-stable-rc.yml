@@ -1,0 +1,103 @@
+name: Vision 1.5.24 stable candidate - signed artifact only
+on:
+  push:
+    branches:
+      - release/vision-player-1524-stable-bundle-candidate-20261028
+    paths:
+      - 'android-player/**'
+      - 'player.js'
+      - 'supabase/functions/device-bundle-stable/**'
+      - 'tests/**'
+      - '.github/workflows/vision-1524-stable-rc.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-and-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Validate JS and regression suite
+        run: |
+          set -euo pipefail
+          node --check player.js
+          node --check --input-type=module < supabase/functions/device-bundle-stable/index.ts
+          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs tests/qa-kiosk-return-v35.test.cjs tests/qa-bundle-v36.test.cjs tests/stable-bundle-v37.test.cjs
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK 35
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; fi
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Include offline web assets
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - name: Build official-package unsigned candidate
+        run: gradle -p android-player --no-daemon assembleRelease
+      - name: Inspect package and preserve unsigned candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          INPUT=android-player/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$INPUT"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$INPUT" > dist/badging.txt
+          grep -q "name='com.visionmidia.player.stable'" dist/badging.txt
+          grep -q "versionCode='37'" dist/badging.txt
+          grep -q "versionName='1.5.24-stable'" dist/badging.txt
+          if grep -q application-debuggable dist/badging.txt; then echo 'Forbidden debuggable official package'; exit 1; fi
+          cp "$INPUT" dist/Vision-Player-1.5.24-stable-UNSIGNED.apk
+          sha256sum dist/Vision-Player-1.5.24-stable-UNSIGNED.apk > dist/unsigned.sha256
+      - name: Sign only if official GitHub credentials are configured
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$KEYSTORE_B64" ] || [ -z "$KEYSTORE_PASSWORD" ] || [ -z "$KEY_ALIAS" ] || [ -z "$KEY_PASSWORD" ]; then
+            echo "official_signing=UNAVAILABLE" > dist/signing-status.txt
+            echo "Official credentials missing: no signed candidate; site unchanged"
+            exit 0
+          fi
+          KEY_FILE="$RUNNER_TEMP/official-keystore.jks"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          python3 scripts/verify-android-signing-key.py "$KEY_FILE" android-player/signing-certificate.sha256
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign \
+            --ks "$KEY_FILE" --ks-pass env:KEYSTORE_PASSWORD \
+            --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD \
+            --out dist/Vision-Player-1.5.24-stable-SIGNED.apk \
+            dist/Vision-Player-1.5.24-stable-UNSIGNED.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Vision-Player-1.5.24-stable-SIGNED.apk
+          ACTUAL=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs dist/Vision-Player-1.5.24-stable-SIGNED.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          EXPECTED=$(tr -d '[:space:]' < android-player/signing-certificate.sha256)
+          test "$ACTUAL" = "$EXPECTED"
+          sha256sum dist/Vision-Player-1.5.24-stable-SIGNED.apk > dist/signed.sha256
+          echo "official_signing=VERIFIED" > dist/signing-status.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-1.5.24-Stable-Candidate-NOT-PUBLISHED
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+# Important: artifacts only. Never overwrite downloads/Vision-Player.apk or deploy site automatically.

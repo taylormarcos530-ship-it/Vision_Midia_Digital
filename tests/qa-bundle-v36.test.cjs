@@ -10,7 +10,7 @@ const gradle = fs.readFileSync(path.join(root,'android-player/app/build.gradle')
 const gateway = fs.readFileSync(path.join(root,'supabase/functions/device-gateway/index.ts'),'utf8');
 
 test('V36 remains isolated; QA bundle is Casa-only and never serves official TVs',()=>{
-  assert.match(gradle,/versionCode 36/);
+  assert.match(gradle,/versionCode (?:36|37)/); // Production RC preserves QA gate on homolog package.
   assert.match(gradle,/versionName '1\.5\.24'/);
   assert.match(gradle,/applicationIdSuffix '\.homolog'/);
   assert.match(client,/QA_BUNDLE_DEVICE_ID = '45b27442-e0ee-4b79-87fc-c753a52f060c'/);

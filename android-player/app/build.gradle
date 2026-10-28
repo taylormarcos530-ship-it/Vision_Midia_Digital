@@ -37,7 +37,7 @@ android {
         applicationId 'com.visionmidia.player'
         minSdk 24
         targetSdk 35
-        versionCode 36
+        versionCode 37
         versionName '1.5.24'
         manifestPlaceholders = [playerLabel: 'Vision Player', setupScheme: 'visionmidia', bootReceiverEnabled: 'true']
         // Public Firebase app identifiers are supplied at build time. No service-account key in APK.
