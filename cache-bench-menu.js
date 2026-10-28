@@ -17,7 +17,7 @@
       },
       {
         key:'json', title:'Configurar fonte JSON pública (bancada)',
-        description:'Cole a URL da fonte e gere a página visual para a TV.',
+        description:'Configure uma ou três fontes JSON para a página visual de testes.',
         name:'Vision QA — Fonte JSON', file:'configurar-fonte-json.html'
       }
     ];
