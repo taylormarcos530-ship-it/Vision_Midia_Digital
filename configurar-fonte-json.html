@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#07172e">
+<title>Vision QA | Configurar fonte informativa</title>
+<style>
+*{box-sizing:border-box}body{margin:0;min-height:100vh;font-family:Arial,sans-serif;color:#eaf2ff;background:radial-gradient(circle at 100% 0%,#1d4a91 0,transparent 45%),#071327}main{max-width:800px;margin:auto;padding:30px 18px 60px}
+h1{font-size:clamp(28px,5vw,44px);margin:.5em 0}h2{font-size:20px}p,li{line-height:1.55;color:#c3d3e8}
+small{color:#a6bfdd}header{color:#ffce35;font-weight:900;letter-spacing:.11em}
+.panel{background:#102747;border:1px solid #41679d;border-radius:18px;padding:22px;margin:20px 0;box-shadow:0 6px 22px #0005}
+label{display:block;margin-top:14px;font-weight:700}input{width:100%;background:#06182e;color:#fff;border:1px solid #628dbf;border-radius:9px;padding:13px;font:inherit;margin-top:7px}
+.buttons{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.button{background:#ffbe25;color:#09162d;padding:12px 19px;border:0;border-radius:9px;font-weight:800;font-size:15px;cursor:pointer;text-decoration:none}.button.secondary{background:#1d528b;color:#fff}
+.button:disabled{opacity:.45;cursor:not-allowed}a{color:#7ec9ff}code{font:14px ui-monospace,monospace;color:#f4dd9d}
+pre{white-space:pre-wrap;word-wrap:break-word;background:#06182e;padding:12px;border-radius:9px}
+.notice{font-size:14px;border-left:3px solid #ffce35;padding-left:12px}
+#error{color:#ffa5a5;min-height:22px}#output{display:none}
+</style>
+<script src="./configurar-fonte-json.js" defer></script>
+</head>
+<body><main>
+<header>VISION MÍDIA DIGITAL • BANCADA</header>
+<h1>Configurar fonte JSON pública</h1>
+<p>Informe o endereço que fornece os dados. A Vision gera outra URL para a <strong>página visual</strong> que você poderá cadastrar como conteúdo online na TV.</p>
+<div class="panel">
+<form id="source-form">
+<label for="api-url">1. URL da fonte pública (JSON)</label>
+<input type="url" id="api-url" autocomplete="off" spellcheck="false" required placeholder="https://exemplo.com/avisos.json">
+<p><small>Somente fontes HTTPS públicas, sem usuário, senha ou chave privada. O servidor precisa permitir consulta pelo navegador (CORS).</small></p>
+<div class="buttons"><button class="button" type="submit">Gerar URL da página</button></div>
+</form><p id="error" role="alert"></p>
+<section id="output" aria-label="URL pronta">
+<label for="viewer-url">2. URL da página para adicionar à Vision</label>
+<input type="text" id="viewer-url" readonly>
+<div class="buttons">
+<button class="button" id="copy-url" type="button">Copiar URL</button>
+<a class="button secondary" id="preview-url" target="_blank" rel="noopener noreferrer">Abrir prévia da TV</a>
+</div><p id="copy-status" role="status"></p>
+</section></div>
+<div class="panel"><h2>Formato de dados aceito</h2>
+<pre><code>{
+  "titulo": "Avisos da comunidade",
+  "itens": ["Atendimento das 08h às 18h", "Evento de sábado"]
+}</code></pre>
+<p>O painel rejeita dados fora desse formato e conserva o último conteúdo válido armazenado quando a rede falha.</p></div>
+<p class="notice"><strong>Somente homologação.</strong> A prévia não salva configurações no Master nem altera playlists. Para testes, use uma conta/TV de bancada. Não coloque senhas na URL: a URL gerada é pública e contém a URL de origem.</p>
+<p><a href="./index.html">Voltar ao painel Vision</a></p>
+</main></body></html>
