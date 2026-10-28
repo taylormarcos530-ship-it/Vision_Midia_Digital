@@ -1,0 +1,22 @@
+{
+  "source_sha256": "0b8f7fa0c7aa6b890da6744d759217817684208b91a9a57cb1fd689360bdb8c1",
+  "git_sha": "b682c43a5958b783a99ee7c2cd9b744e2d2b33e6",
+  "apk_version": "1.5.20-stable",
+  "version_code": 32,
+  "application_id": "com.visionmidia.player.stable",
+  "signer_sha256": "21642106e5a7add7537db0b87b4a6e4ff4609862beff3087aa8a76144febf8cb",
+  "apk_sha256": "8f0fef5c60d58d50f856cdd2dc34dbd7c6e32ce8e1bf1853fd87aaef79c08493",
+  "files": [
+    "player.html",
+    "player.css",
+    "player.js",
+    "config.js",
+    "icon.svg",
+    "player.webmanifest",
+    "sw.js",
+    "clock.html",
+    "news-feed.html",
+    "news-feed.css",
+    "news-feed.js"
+  ]
+}
