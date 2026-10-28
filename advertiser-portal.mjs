@@ -1,9 +1,29 @@
 import {CommercialAPI,updateCommercialCards,demoData,loadThumbnails,commercialPreviewPath} from './commercial-ui.mjs?v=commercial-r3-20261018';
 import {demoAdvertiserData,demoAdvertiserOptions} from './commercial-advertiser-demo.mjs';
+import {commercialDeadlineLabel} from './commercial-campaign-deadline.mjs';
 const api=new CommercialAPI(),$=s=>document.querySelector(s),demo=new URLSearchParams(location.search).get('demo')==='1';let loading=false,requestId=0,latestPortalData=null;
 function message(text,error=false){$('#status').textContent=text;$('#status').className=text?(error?'notice error':'notice'):'';}
-function closeView(){ requestId++;loading=false;latestPortalData=null;document.querySelector('#commercial-revision-dialog')?.close(); $('#dashboard').hidden=true;$('#campaigns').innerHTML='';$('#advertiser-name').textContent='';$('#login').hidden=false;$('#logout').hidden=true;if(api.config?.environment==='staging'){const diagnostic=$('#staging-check-output');if(diagnostic)diagnostic.textContent='';}}
-async function show(manual=false){if(loading){if(manual)message('Atualização já em andamento…');return;}loading=true;const previous=latestPortalData?.daily?.reduce((n,x)=>n+(Number(x.completed_count)||0),0);if(manual)message('Consultando exibições…');const ownRequest=++requestId;try{const data=demo?demoAdvertiserData(document.getElementById('demo-advertiser').value):await api.rpc('vision_advertiser_portal');if(ownRequest!==requestId)return;if(demo&&!data){$('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#login').hidden=true;$('#logout').hidden=true;message('Acesso suspenso nesta demonstração.');return;}$('#login').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=demo;$('#advertiser-name').textContent=data.advertiser.name;latestPortalData=data;updateCommercialCards($('#campaigns'),data);
+function renderExpiryNotices(data) {
+ const area=$('#advertiser-expiry-notices');
+ if(!area)return;
+ area.replaceChildren();
+ const affected=(data?.campaigns||[]).filter(c=>
+   !c.archived_at && ['active','paused'].includes(c.status) &&
+   ['today','expired'].includes(commercialDeadlineLabel(c.end_date).state)
+ );
+ for(const campaign of affected){
+   const deadline=commercialDeadlineLabel(campaign.end_date);
+   const item=document.createElement('p');
+   item.className='advertiser-expiry-message';
+   item.textContent=deadline.state==='today'
+     ? `Seu anúncio "${campaign.name}" vence hoje (${campaign.end_date.split('-').reverse().join('/')}). Fale com a Vision Mídia Digital para renovar.`
+     : `O período do anúncio "${campaign.name}" terminou em ${campaign.end_date.split('-').reverse().join('/')}. Consulte a Vision Mídia Digital para renovar.`;
+   area.append(item);
+ }
+ area.hidden=!affected.length;
+}
+function closeView(){ requestId++;loading=false;latestPortalData=null;$('#advertiser-expiry-notices')?.replaceChildren();if($('#advertiser-expiry-notices'))$('#advertiser-expiry-notices').hidden=true;document.querySelector('#commercial-revision-dialog')?.close(); $('#dashboard').hidden=true;$('#campaigns').innerHTML='';$('#advertiser-name').textContent='';$('#login').hidden=false;$('#logout').hidden=true;if(api.config?.environment==='staging'){const diagnostic=$('#staging-check-output');if(diagnostic)diagnostic.textContent='';}}
+async function show(manual=false){if(loading){if(manual)message('Atualização já em andamento…');return;}loading=true;const previous=latestPortalData?.daily?.reduce((n,x)=>n+(Number(x.completed_count)||0),0);if(manual)message('Consultando exibições…');const ownRequest=++requestId;try{const data=demo?demoAdvertiserData(document.getElementById('demo-advertiser').value):await api.rpc('vision_advertiser_portal');if(ownRequest!==requestId)return;if(demo&&!data){$('#dashboard').hidden=true;$('#campaigns').replaceChildren();$('#login').hidden=true;$('#logout').hidden=true;message('Acesso suspenso nesta demonstração.');return;}$('#login').hidden=true;$('#dashboard').hidden=false;$('#logout').hidden=demo;$('#advertiser-name').textContent=data.advertiser.name;latestPortalData=data;renderExpiryNotices(data);updateCommercialCards($('#campaigns'),data);
  const stamp=new Intl.DateTimeFormat('pt-BR',{timeZone:'America/Sao_Paulo',hour:'2-digit',minute:'2-digit'}).format(new Date());
  const verified=(data.daily||[]).reduce((sum,item)=>sum+(Number(item.completed_count)||0),0);
  message(demo?'Nenhum dado real conectado. As contagens começam em zero.':
