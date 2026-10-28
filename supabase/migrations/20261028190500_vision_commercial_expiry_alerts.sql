@@ -31,6 +31,19 @@ create table if not exists private.vision_commercial_alert_deliveries (
 create index if not exists vision_commercial_alert_queue_idx
   on private.vision_commercial_alert_deliveries (status, next_attempt_at);
 
+-- Recipient explicitly selected: the Vision Master account operated through Academia Life.
+-- Seed disabled for QA safety; enabling after a real-device test is a separate, reviewed action.
+-- Requires matching slug/name AND verified active platform-admin identity.
+insert into private.vision_commercial_alert_recipients(company_id, user_id, enabled)
+select c.id, c.owner_user_id, false
+from public.companies c
+join public.platform_admins pa on pa.user_id = c.owner_user_id
+where c.slug = 'visiontek-group-9c77be'
+  and c.name = 'Academia Life'
+  and pa.status = 'active'
+  and pa.role in ('admin','super_admin')
+on conflict (company_id) do nothing;
+
 alter table private.vision_commercial_alert_recipients enable row level security;
 alter table private.vision_commercial_alert_deliveries enable row level security;
 revoke all on private.vision_commercial_alert_recipients,
@@ -73,7 +86,9 @@ begin
       select r.company_id, r.user_id
       from private.vision_commercial_alert_recipients r
       join public.companies co on co.id = r.company_id
+      join public.platform_admins pa on pa.user_id = r.user_id
       where r.enabled = true and co.owner_user_id = r.user_id
+        and pa.status = 'active' and pa.role in ('admin','super_admin')
     loop
       inserted_id := null;
       insert into private.vision_commercial_alert_deliveries
