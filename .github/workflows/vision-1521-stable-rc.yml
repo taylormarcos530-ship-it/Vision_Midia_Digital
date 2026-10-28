@@ -14,6 +14,9 @@ on:
       - 'sw.js'
       - 'tests/**'
       - '.github/workflows/vision-1521-stable-rc.yml'
+  pull_request:
+    branches:
+      - fix/vision-v28-qa-20261028
   workflow_dispatch:
 
 permissions:
@@ -69,6 +72,7 @@ jobs:
       - name: Build unsigned stable release candidate
         run: gradle -p android-player --no-daemon assembleRelease
       - name: Validate and sign only with existing OFFICIAL signing identity
+        if: github.event_name != 'pull_request'
         shell: bash
         env:
           KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
@@ -112,6 +116,7 @@ jobs:
             echo "requires=test TV, offline boot, rotation, pairing, server rollout validation"
           } > dist/provenance.txt
       - uses: actions/upload-artifact@v4
+        if: github.event_name != 'pull_request'
         with:
           name: Vision-1.5.21-Stable-Release-Candidate-NOT-PUBLISHED
           path: dist/
