@@ -12,11 +12,12 @@ small{color:#a6bfdd}header{color:#ffce35;font-weight:900;letter-spacing:.11em}
 label{display:block;margin-top:14px;font-weight:700}input{width:100%;background:#06182e;color:#fff;border:1px solid #628dbf;border-radius:9px;padding:13px;font:inherit;margin-top:7px}
 .buttons{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.button{background:#ffbe25;color:#09162d;padding:12px 19px;border:0;border-radius:9px;font-weight:800;font-size:15px;cursor:pointer;text-decoration:none}.button.secondary{background:#1d528b;color:#fff}
 .button:disabled{opacity:.45;cursor:not-allowed}a{color:#7ec9ff}code{font:14px ui-monospace,monospace;color:#f4dd9d}
-pre{white-space:pre-wrap;word-wrap:break-word;background:#06182e;padding:12px;border-radius:9px}
+[hidden]{display:none!important}pre{white-space:pre-wrap;word-wrap:break-word;background:#06182e;padding:12px;border-radius:9px}
 .notice{font-size:14px;border-left:3px solid #ffce35;padding-left:12px}
 #error{color:#ffa5a5;min-height:22px}#output{display:none}
 </style>
 <script src="./configurar-fonte-json.js" defer></script>
+<script src="./configurar-tres-fontes.js" defer></script>
 </head>
 <body><main>
 <header>VISION MÍDIA DIGITAL • BANCADA</header>
@@ -37,6 +38,24 @@ pre{white-space:pre-wrap;word-wrap:break-word;background:#06182e;padding:12px;bo
 <a class="button secondary" id="preview-url" target="_blank" rel="noopener noreferrer">Abrir prévia da TV</a>
 </div><p id="copy-status" role="status"></p>
 </section></div>
+<div class="panel" id="three-sources">
+<h2>Três cartões informativos independentes</h2>
+<p>Configure três fontes JSON para comunicações gerais. Cada cartão usa seu próprio título e avisos. Nenhum conteúdo é enviado ao Master até você cadastrar a URL gerada.</p>
+<form id="three-source-form">
+<label for="three-api-1">Fonte do cartão 1<input id="three-api-1" type="url" required spellcheck="false" autocomplete="off" placeholder="https://exemplo.org/canal1.json"></label>
+<label for="three-api-2">Fonte do cartão 2<input id="three-api-2" type="url" required spellcheck="false" autocomplete="off" placeholder="https://exemplo.org/canal2.json"></label>
+<label for="three-api-3">Fonte do cartão 3<input id="three-api-3" type="url" required spellcheck="false" autocomplete="off" placeholder="https://exemplo.org/canal3.json"></label>
+<div class="buttons"><button class="button" type="submit">Gerar URL dos três cartões</button></div>
+</form>
+<p id="three-error" role="alert" style="color:#ffa5a5"></p>
+<div id="three-output" hidden>
+<label for="three-viewer-url">URL do painel de três cartões<input id="three-viewer-url" type="text" readonly></label>
+<div class="buttons"><button class="button" type="button" id="three-copy">Copiar URL</button>
+<a class="button secondary" id="three-preview" rel="noopener noreferrer" target="_blank">Abrir painel em tela cheia</a></div>
+<p id="three-copy-status" role="status"></p>
+</div>
+<p><small>As fontes precisam permitir CORS e seguir o formato de exemplo abaixo. Use somente fontes públicas sem tokens ou dados sigilosos.</small></p>
+</div>
 <div class="panel"><h2>Formato de dados aceito</h2>
 <pre><code>{
   "titulo": "Avisos da comunidade",
