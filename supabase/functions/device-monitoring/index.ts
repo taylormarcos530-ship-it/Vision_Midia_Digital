@@ -87,7 +87,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -116,9 +116,18 @@ async function authenticateDevice(admin, req) {
   const accountBlock = accountSubscriptionBlock(company, subscription)
   if (accountBlock) return { ...device, account_block: accountBlock }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
+  // Keep fresh per-request authorization, but touch audit activity at most once/minute.
+  const lastUsedAtMs = credential.last_used_at ? Date.parse(credential.last_used_at) : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(lastUsedAtMs) || nowMs - lastUsedAtMs >= 60_000) {
+    const nowIso = new Date(nowMs).toISOString()
+    const cutoffIso = new Date(nowMs - 60_000).toISOString()
+    const { error: touchError } = await admin.from('device_credentials')
+      .update({ last_used_at: nowIso })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
+    if (touchError) throw touchError
+  }
 
   return device
 }
