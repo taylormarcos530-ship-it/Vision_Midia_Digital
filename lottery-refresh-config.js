@@ -1,0 +1,1 @@
+window.VISION_LOTTERY_REFRESH_MS = 3 * 60 * 60 * 1000;
