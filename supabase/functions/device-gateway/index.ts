@@ -260,6 +260,43 @@ async function resolveProgram(admin, device) {
   }
 }
 
+// QA V28: reuse still-valid signed links inside one isolated Edge instance.
+// Fresh device authorization is always checked before a link is returned.
+// The process-local cache neither stores permission decisions nor survives restarts.
+const MEDIA_SIGNED_URL_TTL_SECONDS = 6 * 60 * 60
+const MEDIA_SIGNED_URL_REUSE_MS = 5 * 60 * 60_000
+const MEDIA_SIGNED_URL_CACHE_MAX = 256
+const mediaSignedUrlCache = new Map()
+const mediaSignedUrlInFlight = new Map()
+
+async function cachedSignedMediaUrl(admin, asset) {
+  const path = String(asset.storage_path || '')
+  if (!path) return null
+  const key = JSON.stringify([path, asset.updated_at || '', asset.checksum_sha256 || ''])
+  const now = Date.now()
+  const cached = mediaSignedUrlCache.get(key)
+  if (cached && cached.reuseUntilMs > now) return cached.url
+  if (cached) mediaSignedUrlCache.delete(key)
+  if (mediaSignedUrlInFlight.has(key)) return await mediaSignedUrlInFlight.get(key)
+  const work = (async () => {
+    const { data, error } = await admin.storage.from('vision-media')
+      .createSignedUrl(path, MEDIA_SIGNED_URL_TTL_SECONDS)
+    if (error) throw error
+    const url = data?.signedUrl || null
+    if (url) {
+      if (mediaSignedUrlCache.size >= MEDIA_SIGNED_URL_CACHE_MAX) {
+        const oldest = mediaSignedUrlCache.keys().next().value
+        if (oldest !== undefined) mediaSignedUrlCache.delete(oldest)
+      }
+      mediaSignedUrlCache.set(key, { url, reuseUntilMs: Date.now() + MEDIA_SIGNED_URL_REUSE_MS })
+    }
+    return url
+  })()
+  mediaSignedUrlInFlight.set(key, work)
+  try { return await work }
+  finally { mediaSignedUrlInFlight.delete(key) }
+}
+
 async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSchedules, timeZone, deviceId) {
   if (!playlistId) return null
   const { data: playlist, error: playlistError } = await admin
@@ -314,15 +351,13 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
     }
     let url = asset.source_url || null
     if (asset.storage_path) {
-      const { data: signed, error: signedError } = await admin.storage
-        .from('vision-media')
-        .createSignedUrl(asset.storage_path, 6 * 60 * 60)
-      if (signedError) {
+      try {
+        url = await cachedSignedMediaUrl(admin, asset)
+      } catch (signedError) {
         console.error('signed url failed', asset.id, signedError)
         if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
         continue
       }
-      url = signed?.signedUrl || null
     }
     if (!url) {
       if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
@@ -571,9 +606,15 @@ Deno.serve(async (req) => {
         .order('requested_at', { ascending: true })
         .limit(3)
       if (commandsError) throw commandsError
-      if (commands?.length) {
-        const ids = commands.map(row => row.id)
-        await admin.from('device_commands').update({ status:'sent', delivered_at:new Date().toISOString() }).in('id', ids)
+      // Keep retrying unacknowledged 'sent' commands, but do not rewrite them
+      // on every poll. Only first delivery changes pending -> sent.
+      const pendingIds = (commands || []).filter(row => row.status === 'pending').map(row => row.id)
+      if (pendingIds.length) {
+        const { error: markError } = await admin.from('device_commands')
+          .update({ status:'sent', delivered_at:new Date().toISOString() })
+          .eq('company_id', device.company_id).eq('device_id', device.id)
+          .eq('status', 'pending').in('id', pendingIds)
+        if (markError) throw markError
       }
       return json({ ok:true, commands: commands || [] })
     }
