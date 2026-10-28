@@ -125,6 +125,10 @@ function itemScheduleIsActive(item, clock) {
   if (!item?.schedule_enabled) return true
   return campaignIsActive(item, clock)
 }
+// Negative capability cache only: a denied optional group lookup is retried after 5 minutes.
+// This reduces repeated 403 traffic without caching any authorization decision or playlist.
+let groupMembershipPermissionRetryAtMs = 0
+
 async function resolveProgram(admin, device) {
   const [
     { data: company, error: companyError },
@@ -142,7 +146,9 @@ async function resolveProgram(admin, device) {
       .order('created_at', { ascending: false }),
     admin.from('campaign_devices').select('campaign_id').eq('company_id', device.company_id).eq('device_id', device.id),
     admin.from('device_playlist_assignments').select('playlist_id,updated_at').eq('device_id', device.id).maybeSingle(),
-    admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle(),
+    (Date.now() >= groupMembershipPermissionRetryAtMs
+      ? admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle()
+      : Promise.resolve({ data: null, error: null })),
   ])
   if (companyError) throw companyError
   if (campaignsError) throw campaignsError
@@ -155,7 +161,8 @@ async function resolveProgram(admin, device) {
   const membershipUnavailable = membershipError && String(membershipError.code || '') === '42501'
   if (membershipError && !membershipUnavailable) throw membershipError
   if (membershipUnavailable) {
-    console.warn('device-gateway group membership unavailable; continuing without group assignment', membershipError.message || membershipError)
+    groupMembershipPermissionRetryAtMs = Date.now() + 5 * 60_000
+    console.warn('device-gateway group membership unavailable; retrying access after cooldown', membershipError.message || membershipError)
   }
   const effectiveMembership = membershipUnavailable ? null : membership
 
@@ -415,7 +422,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -444,13 +451,25 @@ async function authenticateDevice(admin, req) {
   const accountBlock = accountSubscriptionBlock(company, subscription)
   if (accountBlock) return { ...device, account_block: accountBlock }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
+  // Avoid one credential UPDATE for each playback/command/manifest call.
+  // The SQL predicate protects concurrent requests from duplicate writes.
+  const lastUsedAtMs = credential.last_used_at ? Date.parse(credential.last_used_at) : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(lastUsedAtMs) || nowMs - lastUsedAtMs >= 60_000) {
+    const nowIso = new Date(nowMs).toISOString()
+    const cutoffIso = new Date(nowMs - 60_000).toISOString()
+    const { error: touchError } = await admin.from('device_credentials')
+      .update({ last_used_at: nowIso })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
+    if (touchError) throw touchError
+  }
+  // Token cleanup remains idempotent and does not change pairing semantics.
   await admin.from('device_pairing_requests')
     .update({ issued_token: null })
     .eq('device_id', device.id)
     .eq('status', 'issued')
+    .not('issued_token', 'is', 'null')
 
   return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
