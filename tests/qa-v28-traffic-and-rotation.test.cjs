@@ -94,7 +94,8 @@ test('V28: offline startup applies device-scoped cached rotation before playback
   const display=player.indexOf('await applyStartupPresentation(state.manifest)',start);
   const playback=player.indexOf('ensurePlaybackLoop()',start);
   assert.ok(start>0 && display>start && playback>display);
-  const helper=extractFunction(player,'async function applyStartupPresentation(');
+  const helper=player.slice(player.indexOf('async function applyStartupPresentation('), player.indexOf('async function applyDeviceSettings(',start));
+  assert.ok(helper.length > 100, 'Expected startup display handler');
   assert.match(helper,/screen_rotation_degrees/);
   assert.match(helper,/setDisplayRotation/);
   assert.match(helper,/dataset\.screenRotationDegrees/);
