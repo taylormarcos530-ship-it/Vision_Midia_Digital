@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#06152d">
+<title>Vision | Três painéis informativos — QA</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;min-height:100%}
+body{min-height:100vh;background:radial-gradient(ellipse at 60% -5%,#194583 0,transparent 57%),linear-gradient(130deg,#031226,#071e43);color:#fff;font-family:Arial,sans-serif}
+main{min-height:100vh;max-width:1800px;margin:auto;padding:clamp(18px,3vw,54px);display:flex;flex-direction:column;gap:clamp(20px,3vw,46px)}
+header{display:flex;align-items:center;justify-content:space-between;gap:24px;flex-wrap:wrap}
+.brand{font-weight:900;font-size:clamp(21px,2.3vw,40px);letter-spacing:.1em;color:#ffcc35}
+h1{font-size:clamp(26px,3.6vw,62px);margin:0;line-height:1.1}
+.panels{flex:1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:clamp(13px,2vw,31px);align-items:stretch}
+.panel{min-width:0;border:1px solid #2a6595;background:#092347;border-radius:22px;overflow:hidden;display:flex;flex-direction:column;box-shadow:0 12px 36px #0006}
+.panel:nth-child(2){border-color:#465fbb}.panel:nth-child(3){border-color:#6d519e}
+.panel-header{min-height:110px;padding:24px;display:flex;align-items:center;justify-content:center;text-align:center;background:linear-gradient(145deg,#176b91,#103859)}
+.panel:nth-child(2) .panel-header{background:linear-gradient(145deg,#4959aa,#263b77)}
+.panel:nth-child(3) .panel-header{background:linear-gradient(145deg,#7954a7,#43366a)}
+h2{font-size:clamp(24px,3vw,45px);margin:0;line-height:1.14;overflow-wrap:anywhere}
+.items{padding:clamp(20px,3vw,35px);flex:1;display:flex;justify-content:center;flex-direction:column;gap:17px;min-height:230px}
+.item{font-size:clamp(18px,2.1vw,30px);text-align:center;font-weight:650;line-height:1.35;overflow-wrap:anywhere;border-radius:13px;padding:18px 12px;background:#ffffff0e}
+.panel-footer{padding:18px;text-align:center;font-size:clamp(13px,1vw,17px);color:#d4e4ff;border-top:1px solid #ffffff1c}
+.panel-footer.stale{color:#ffdf7d}
+footer{font-size:clamp(13px,1.1vw,17px);color:#b9cde4;text-align:center}
+@media(max-width:900px){.panels{grid-template-columns:1fr}.panel-header{min-height:70px}.items{min-height:140px}header{display:block}h1{margin-top:12px}}
+</style>
+<script type="module" src="./json-trio.js"></script>
+</head><body>
+<main><header><div class="brand">VISION MÍDIA DIGITAL</div><h1>Painel informativo</h1></header>
+<section class="panels" aria-label="Três canais independentes">
+<article class="panel" data-panel="1"><div class="panel-header"><h2 data-title>Canal 1</h2></div><div class="items" data-items><div class="item">Aguardando informações</div></div><div class="panel-footer" data-status role="status">Sem consulta</div></article>
+<article class="panel" data-panel="2"><div class="panel-header"><h2 data-title>Canal 2</h2></div><div class="items" data-items><div class="item">Aguardando informações</div></div><div class="panel-footer" data-status role="status">Sem consulta</div></article>
+<article class="panel" data-panel="3"><div class="panel-header"><h2 data-title>Canal 3</h2></div><div class="items" data-items><div class="item">Aguardando informações</div></div><div class="panel-footer" data-status role="status">Sem consulta</div></article>
+</section>
+<footer>CONTEÚDO INFORMATIVO • HOMOLOGAÇÃO • FONTES INDEPENDENTES</footer>
+</main></body></html>
