@@ -49,6 +49,7 @@ async function context(req: Request) {
     .eq('user_id',user.id).maybeSingle()
   if (advertiserError) throw advertiserError
   if (!advertiser || advertiser.archived_at || advertiser.status !== 'active' ||
+      !user.email_confirmed_at ||
       String(advertiser.email||'').trim().toLowerCase() !== String(user.email||'').trim().toLowerCase()) {
     throw Object.assign(new Error('advertiser_unavailable'),{status:403})
   }
@@ -71,8 +72,8 @@ Deno.serve(async (req: Request) => {
         .select('id',{count:'exact',head:true})
         .eq('advertiser_id',advertiser.id).eq('user_id',user.id).is('disabled_at',null)
       const requestEndpoint=clean(body?.endpoint,2001)
-      if(requestEndpoint && validPushEndpoint(requestEndpoint))
-        deviceQuery = deviceQuery.eq('endpoint',requestEndpoint)
+      if(requestEndpoint && !validPushEndpoint(requestEndpoint)) return J({error:'invalid_push_endpoint'},400)
+      if(requestEndpoint) deviceQuery = deviceQuery.eq('endpoint',requestEndpoint)
       const { count, error: countError } = await deviceQuery
       if(countError) throw countError
       return J({ok:true, public_key:clean(vapid?.vapid_public_key,400),
