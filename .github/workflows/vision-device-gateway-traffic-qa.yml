@@ -1,0 +1,39 @@
+name: Vision Device Gateway traffic reduction QA (isolated)
+on:
+  push:
+    branches:
+      - fix/device-gateway-media-cache-403-isolated-20261028
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  backend-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Prevent player, APK, site and unrelated production changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin fix/device-gateway-write-amplification-isolated-20261026
+          git diff --name-only FETCH_HEAD HEAD > /tmp/vision-changed-files.txt
+          cat /tmp/vision-changed-files.txt
+          bad="$(grep -Ev '^(supabase/functions/device-gateway/(index\.ts|media-url-cache\.mjs)|tests/device-gateway-traffic-isolated\.test\.mjs|docs/vision-server-traffic-20261028\.md|\.github/workflows/vision-device-gateway-traffic-qa\.yml)$' /tmp/vision-changed-files.txt || true)"
+          if [[ -n "$bad" ]]; then
+            echo "Unexpected changed files; refusing release: $bad" >&2
+            exit 1
+          fi
+      - name: Backend cache module syntax
+        run: node --check supabase/functions/device-gateway/media-url-cache.mjs
+      - name: Cache, concurrency, isolation and authentication regression tests
+        run: node --test tests/device-gateway-traffic-isolated.test.mjs
+      - name: Confirm no production target or Android code changed
+        run: |
+          test -z "$(git diff --name-only FETCH_HEAD HEAD | grep -E '^(downloads/|android-player/|player\.|config\.js|app\.|master\.|supabase/functions/device-gateway/.*\.apk)' || true)"
