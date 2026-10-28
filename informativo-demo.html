@@ -1,1 +1,26 @@
-<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vision | Painel informativo</title><style>body{margin:0;min-height:100vh;background:linear-gradient(130deg,#061426,#17375e);color:#fff;display:grid;place-items:center;font-family:Arial,sans-serif;text-align:center}main{padding:5vw}header{color:#ffd33d;font-size:clamp(20px,3vw,40px);font-weight:700;letter-spacing:.1em}h1{font-size:clamp(36px,6vw,90px)}#items{font-size:clamp(24px,3vw,55px);line-height:1.5}footer{opacity:.8;margin-top:3em;font-size:clamp(14px,1.5vw,22px)}</style></head><body><main><header>VISION MÍDIA DIGITAL</header><h1>Painel informativo</h1><section id="items">Carregando...</section><footer id="status">Aguardando dados</footer></main><script type="module" src="./informativo-demo.js"></script></body></html>
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Vision QA | Cache offline</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;background:radial-gradient(ellipse at 70% 0,#1759a7 0,transparent 55%),linear-gradient(130deg,#061426,#0a2144);color:#fff;display:grid;place-items:center;font-family:Arial,sans-serif;text-align:center}
+main{padding:5vw;width:min(100%,1500px)}
+header{color:#ffd33d;font-size:clamp(20px,3vw,40px);font-weight:700;letter-spacing:.1em}
+h1{font-size:clamp(36px,6vw,86px);margin:.6em 0}
+#items{font-size:clamp(23px,3vw,48px);line-height:1.55;min-height:5em}
+footer{margin:2em auto 0;line-height:1.6}
+#status{font-size:clamp(18px,1.6vw,27px);color:#ffd33d}
+#diagnostics{display:block;margin:20px auto 0;color:#b9cee7;font-size:clamp(12px,1.1vw,18px);max-width:1000px}
+</style>
+</head>
+<body><main>
+<header>VISION MÍDIA DIGITAL • BANCADA</header>
+<h1>Teste de cache offline</h1>
+<section id="items" aria-live="polite">Carregando dados de demonstração...</section>
+<footer><div id="status" role="status">Aguardando primeira consulta</div>
+<small id="diagnostics">Modo de homologação • Sem acesso ao player oficial</small></footer>
+</main><script type="module" src="./informativo-demo.js"></script></body>
+</html>
