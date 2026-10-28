@@ -129,3 +129,16 @@ test('V28: nominal scheduled request reduction stays in 84%-87% target vs legacy
   assert.equal(hourlyNominal, 170);
 });
 
+
+test('V28: access-denied background requests have a five-minute cooldown', () => {
+  assert.match(player, /if \(status === 403\) \{/);
+  assert.match(player, /backgroundPollState\.retryAt = performance\.now\(\) \+ 5 \* 60_000/);
+  assert.match(player, /status !== 401 && !isAccessError\(error\)/);
+});
+
+test('V28: unsigned QA package never autostarts at boot', () => {
+  const gradle = fs.readFileSync(path.join(root, 'android-player/app/build.gradle'), 'utf8');
+  assert.match(gradle, /setupScheme: 'visionmidia-homolog', bootReceiverEnabled: 'false'/);
+  assert.match(gradle, /applicationIdSuffix '\.homolog'/);
+  assert.match(gradle, /versionCode 28/);
+});
