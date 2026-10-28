@@ -70,6 +70,8 @@ test('if dedicated QA endpoint is absent, old V35 polling is retained',()=>{
   assert.match(client,/state\.serverAccessDenied = true/);
   assert.match(client,/await syncManifest\(response\.manifest\.data\)/);
   assert.match(client,/await pollDeviceCommands\(response\.commands\.data\.commands\)/);
+  assert.ok(client.indexOf('await pollDeviceCommands(response.commands.data.commands)') < client.indexOf('await syncManifest(response.manifest.data)'));
+  assert.match(client,/if \(state\.accessTimer\) clearInterval\(state\.accessTimer\)/);
   assert.match(client,/countRequestAttempt\('device-bundle-qa', 'cycle'\)/);
   assert.match(client,/'device-bundle-qa.cycle'/);
 });
