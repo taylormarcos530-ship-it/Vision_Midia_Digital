@@ -6,6 +6,7 @@ on:
   pull_request:
     branches:
       - release/vision-player-stable-1521-rc-20261028
+      - feature/vision-fcm-player-qa-20261028
   workflow_dispatch:
 
 permissions:
@@ -24,7 +25,7 @@ jobs:
         run: |
           set -euo pipefail
           node --check player.js
-          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs
+          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs tests/qa-fcm-compat-backend.test.cjs
 
   build:
     needs: test
