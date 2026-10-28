@@ -26,7 +26,7 @@
 
   function validDate(raw) {
     if (typeof raw !== 'string') return false;
-    const match = /^(\\d{2})\/(\\d{2})\/(\\d{4})$/.exec(raw);
+    const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(raw);
     if (!match) return false;
     const day = +match[1], month = +match[2], year = +match[3];
     if (year < 2000 || year > 2100) return false;
@@ -42,7 +42,7 @@
     if (!Array.isArray(value.dezenas) || value.dezenas.length !== rule.count) return false;
     const nums = value.dezenas.map(n => {
       if (typeof n === 'number' && Number.isSafeInteger(n)) return n;
-      if (typeof n === 'string' && /^\\d{1,2}$/.test(n)) return Number(n);
+      if (typeof n === 'string' && /^\d{1,2}$/.test(n)) return Number(n);
       return NaN;
     });
     return nums.every(n => Number.isInteger(n) && n >= 1 && n <= rule.max)
