@@ -108,3 +108,24 @@ test('V28: safety barriers on background polling and proof batches remain', () =
   assert.match(player,/manifest: 120_000/);
   assert.match(player,/commands: 45_000/);
 });
+
+test('V28: nominal scheduled request reduction stays in 84%-87% target vs legacy', () => {
+  // 1080/h is the documented old polling baseline, not a measured cost.
+  // This test deliberately does NOT claim an 84%-87% reduction in actual
+  // Supabase REST, Storage, function invocations or billing.
+  const intervalBlock = player.match(/BACKGROUND_POLL_INTERVALS = Object\\.freeze\\(\\{([\\s\\S]*?)\\}\\)/);
+  assert.ok(intervalBlock, 'Missing periodic polling configuration');
+  function interval(label) {
+    const m = intervalBlock[1].match(new RegExp(label + ':\\\\s*([\\\\d_]+)'));
+    assert.ok(m, 'Missing interval: ' + label);
+    return Number(m[1].replaceAll('_', ''));
+  }
+  const hourlyNominal = ['heartbeat','manifest','commands']
+    .reduce((sum, action) => sum + 3_600_000 / interval(action), 0);
+  const legacyNominal = 1080;
+  const reductionPercent = 100 * (1 - hourlyNominal / legacyNominal);
+  assert.ok(reductionPercent >= 84 && reductionPercent <= 87,
+    'Nominal polling reduction is ' + reductionPercent.toFixed(2) + '%');
+  assert.equal(hourlyNominal, 170);
+});
+
