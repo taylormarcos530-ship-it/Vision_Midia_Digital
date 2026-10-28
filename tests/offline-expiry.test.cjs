@@ -10,9 +10,10 @@ function fn(name) {
   return src.slice(start, src.indexOf('\n  }', start) + 4);
 }
 
-const bootClockGrace = /const BOOT_CLOCK_GRACE_MS = ([\d_]+);/.exec(src);
+const bootClockGrace = /const BOOT_CLOCK_GRACE_MS = ([\d_ *]+);/.exec(src);
 assert.ok(bootClockGrace, 'boot grace missing');
-const fixedClock = Number(bootClockGrace[1].replaceAll('_', ''));
+const fixedClock = 10 * 60_000;
+assert.equal(bootClockGrace[1].replaceAll(' ', ''), '10*60_000');
 const issued = Date.parse('2026-10-28T11:40:00.000Z');
 const deadline = issued + 24 * 60 * 60 * 1000;
 const manifest = {
