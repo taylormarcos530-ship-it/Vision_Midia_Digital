@@ -139,7 +139,13 @@
       return true;
     } catch (error) {
       const status = Number(error?.status || 0);
-      if (status !== 401 && status !== 403 && !isAccessError(error)) {
+      if (status === 403) {
+        // Authorization denial or permission failure: retry only after a
+        // bounded cooldown. The local access gate keeps blocked TVs stopped.
+        // Manual verification still calls syncManifest directly when needed.
+        backgroundPollState.failures = 0;
+        backgroundPollState.retryAt = performance.now() + 5 * 60_000;
+      } else if (status !== 401 && !isAccessError(error)) {
         backgroundPollState.failures = Math.min(7, backgroundPollState.failures + 1);
         const delay = Math.min(
           BACKGROUND_RETRY_MAX_MS,
