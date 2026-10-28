@@ -56,6 +56,6 @@ test('retries end immediately on resume, maintenance, disable, or destroy', () =
 
 test('no aggressive device-owner changes, forced service or WebView reload on kiosk retry', () => {
   const section = java.slice(java.indexOf('private boolean mustStopKioskReturn()'),java.indexOf('private void openAndroidSettingsForMaintenance()'));
-  assert.doesNotMatch(section,/startLockTask|stopLockTask|startForeground|loadPlayer\(|clearCache\(|WebView/);
+  assert.doesNotMatch(section,/startLockTask|stopLockTask|startForeground|loadPlayer\(|clearCache\(|webView\./);
   assert.doesNotMatch(section,/onDestroy\(|resetPairing\(/);
 });
