@@ -40,6 +40,11 @@
     syncTimer: null,
     commandTimer: null,
     accessTimer: null,
+    clockRecoveryTimer: null,
+    startupClockStartedAt: performance.now(),
+    clockAnchor: null,
+    clockVerificationPaused: false,
+    serverAccessDenied: false,
     processingCommands: new Set(),
     lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
     currentMediaId: null,
@@ -80,6 +85,26 @@
   }
   const BACKGROUND_RETRY_BASE_MS = 15_000;
   const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
+  const BOOT_CLOCK_GRACE_MS = 10 * 60_000;
+  // A TV Box may wake with a date OLDER than the server timestamp in its
+  // last accepted manifest. This alone is not proof that access expired.
+  // Allow only a bounded boot grace while revalidating; never extend a truly
+  // expired lease, and never override a 403 returned by the gateway.
+  function evaluateCachedAuthorization(manifest, wallClockMs, monotonicMs, serverClock = null, bootStartedMs = 0) {
+    if (!manifest) return 'missing';
+    const issuedAt = Date.parse(manifest?.generated_at || '');
+    const expiresAt = Date.parse(manifest?.device?.access_expires_at || '');
+    if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || expiresAt <= issuedAt)
+      return 'expired';
+
+    const trustedNow = serverClock
+      ? serverClock.serverTimeMs + Math.max(0, monotonicMs - serverClock.monotonicMs)
+      : wallClockMs;
+    if (!serverClock && wallClockMs < issuedAt - 60_000) {
+      return monotonicMs - bootStartedMs < BOOT_CLOCK_GRACE_MS ? 'clock-grace' : 'clock-unverified';
+    }
+    return trustedNow >= expiresAt ? 'expired' : 'valid';
+  }
   // Reject truncated or foreign-device responses before replacing cached authorization.
   function validateManifestPayload(manifest, previous = state.manifest) {
     const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -104,7 +129,7 @@
   // accumulate requests or cause a retry storm while cached media is playing.
   async function runBackgroundPoll(task) {
     if (!state.deviceToken || !navigator.onLine || backgroundPollState.inFlight ||
-        Date.now() < backgroundPollState.retryAt) return false;
+        performance.now() < backgroundPollState.retryAt) return false;
     backgroundPollState.inFlight = true;
     try {
       await task();
@@ -119,7 +144,7 @@
           BACKGROUND_RETRY_MAX_MS,
           BACKGROUND_RETRY_BASE_MS * 2 ** (backgroundPollState.failures - 1)
         );
-        backgroundPollState.retryAt = Date.now() + delay + Math.floor(Math.random() * 3_000);
+        backgroundPollState.retryAt = performance.now() + delay + Math.floor(Math.random() * 3_000);
       }
       return false;
     } finally {
@@ -457,20 +482,45 @@
     $('#access-status').textContent = 'A TV verificará a autorização automaticamente.';
   }
 
-  function localAccessExpired() {
-    const expiresAt = state.manifest?.device?.access_expires_at;
-    const deadline = new Date(expiresAt || '').getTime();
-    const issuedAt = new Date(state.manifest?.generated_at || '').getTime();
-    return !Number.isFinite(deadline) || deadline <= Date.now()
-      || (Number.isFinite(issuedAt) && Date.now() < issuedAt - 60_000);
+  function localAccessState() {
+    return evaluateCachedAuthorization(
+      state.manifest, Date.now(), performance.now(), state.clockAnchor, state.startupClockStartedAt
+    );
   }
 
   function enforceLocalAccess() {
-    if (!localAccessExpired()) return false;
-    showAccessBlocked({
-      error: 'device_access_expired',
-      access_expires_at: state.manifest?.device?.access_expires_at || null,
-    });
+    // A genuine 403 from Supabase always wins over an offline cache.
+    if (state.serverAccessDenied) return true;
+    const access = localAccessState();
+    if (access === 'valid' || access === 'clock-grace' || access === 'missing') {
+      if (state.clockVerificationPaused) {
+        state.clockVerificationPaused = false;
+        hideIdle();
+        showPlayback();
+      }
+      return false;
+    }
+    if (access === 'clock-unverified') {
+      // Never present a false "expired" label just because the RTC is wrong.
+      // Stop after a bounded grace until a trustworthy time is available.
+      if (!state.clockVerificationPaused) {
+        state.clockVerificationPaused = true;
+        state.playlistNonce++;
+        clearCurrentObjectUrl();
+        replaceNodeChildren($('#media-stage'));
+        showPlayback();
+        showIdle('Aguardando sincronização de horário',
+          'O relógio está incorreto. A Vision verificará a autorização automaticamente quando houver conexão.');
+      }
+      return true;
+    }
+    if ($('#access-screen').classList.contains('hidden') ||
+        $('#access-heading').textContent !== 'Autorização expirada') {
+      showAccessBlocked({
+        error: 'device_access_expired',
+        access_expires_at: state.manifest?.device?.access_expires_at || null,
+      });
+    }
     return true;
   }
 
@@ -654,6 +704,7 @@
       return await functionRequest('device-gateway', body, state.deviceToken);
     } catch (error) {
       if (error.status === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
         showAccessBlocked(error);
       } else if (error.status === 401) {
         resetPairing(false);
@@ -670,6 +721,7 @@
       return await functionRequest('device-monitoring', body, state.deviceToken);
     } catch (error) {
       if (error.status === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
         showAccessBlocked(error);
       } else if (error.status === 401) {
         resetPairing(false);
@@ -1011,6 +1063,11 @@
         state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
       }
       state.manifest = manifest;
+      // Timestamp supplied by an authorized response is the anchor for a
+      // monotonic lease clock, regardless of Android's incorrect wall clock.
+      state.clockAnchor = { serverTimeMs: Date.parse(manifest.generated_at), monotonicMs: performance.now() };
+      state.serverAccessDenied = false;
+      state.clockVerificationPaused = false;
       if (changed || state.cachePrefetchVersion !== manifest.version)
         void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
@@ -1502,9 +1559,12 @@
 
   async function startPlayer() {
     if (!state.deviceToken) return startPairing();
-    if (!enforceLocalAccess()) showPlayback();
-    setStatus('Conectando…');
-    if (state.manifest && !localAccessExpired()) ensurePlaybackLoop();
+    const startupBlocked = enforceLocalAccess();
+    if (!startupBlocked) showPlayback();
+    setStatus(localAccessState() === 'clock-grace'
+      ? 'Relógio ainda não sincronizado • usando cache local'
+      : 'Conectando…');
+    if (state.manifest && !startupBlocked) ensurePlaybackLoop();
 
     const watchdogRecovery = consumeNativeWatchdogRecovery();
     if (watchdogRecovery) {
@@ -1516,6 +1576,19 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
+    // Only while the RTC is known to be behind: retry a few times during boot
+    // instead of relying on the 2-minute periodic sync or a manual button.
+    // Shared request/backoff gate prevents retry storms across TV Boxes.
+    state.clockRecoveryTimer = setInterval(() => {
+      if (state.clockAnchor || state.serverAccessDenied ||
+          performance.now() - state.startupClockStartedAt > 5 * 60_000) {
+        clearInterval(state.clockRecoveryTimer);
+        state.clockRecoveryTimer = null;
+        return;
+      }
+      if (localAccessState().startsWith('clock-')) void runBackgroundPoll(syncManifest);
+    }, 15_000);
     state.heartbeatTimer = setInterval(() => {
       void runBackgroundPoll(async () => {
         await heartbeat();
@@ -1548,6 +1621,11 @@
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
+    state.clockRecoveryTimer = null;
+    state.clockAnchor = null;
+    state.clockVerificationPaused = false;
+    state.serverAccessDenied = false;
     backgroundPollState.failures = 0;
     backgroundPollState.retryAt = 0;
     state.heartbeatTimer = null;
