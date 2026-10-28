@@ -126,7 +126,7 @@ Deno.serve(async (req) => {
         .select('id,company_id,title,message,created_at')
         .eq('company_id', companyId)
         .order('created_at', { ascending: false })
-        .limit(3)
+        .limit(100)
       if (notificationsError) throw notificationsError
 
       const ids = (notifications || []).map((item: any) => item.id)
@@ -146,7 +146,7 @@ Deno.serve(async (req) => {
           const local = stateById.get(item.id) || {}
           return { ...item, read_at: local.read_at || null, is_read: Boolean(local.read_at), deleted_at: local.deleted_at || null }
         })
-        .filter((item: any) => !item.deleted_at)
+        .filter((item: any) => !item.deleted_at).slice(0, 30)
 
       return J({ ok: true, items, unread_count: items.filter((item: any) => !item.is_read).length })
     }
