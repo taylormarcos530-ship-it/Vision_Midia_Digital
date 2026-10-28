@@ -53,3 +53,47 @@ test('commercial expiry: Academia Life master is the only preselected account, d
   assert.match(sql, /select c\.id, c\.owner_user_id, false/);
   assert.match(sql, /on conflict \(company_id\) do nothing/);
 });
+
+test('client delivery: only verified owner email with active advertiser, and disabled by default', () => {
+  assert.match(sql, /vision_commercial_client_alert_config/);
+  assert.match(sql, /insert into private\.vision_commercial_client_alert_config\(id,enabled\)[\s\S]*?values \(1,false\)/);
+  assert.match(sql, /a\.status = 'active'/);
+  assert.match(sql, /u\.email_confirmed_at is not null/);
+  assert.match(sql, /lower\(trim\(a\.email\)\) = lower\(trim\(u\.email\)\)/);
+  assert.match(sql, /unique \(campaign_id, advertiser_id, end_date\)/);
+  assert.match(sql, /c\.end_date=d\.end_date/);
+  assert.match(worker, /claim_vision_commercial_client_alerts/);
+  assert.match(worker, /finish_vision_commercial_client_alert/);
+  assert.match(worker, /'Idempotency-Key':/);
+  assert.match(worker, /recipient_email/);
+  assert.doesNotMatch(worker, /password:.*recipient_email/);
+});
+
+test('Master card displays period and countdown without opening editor', () => {
+  const code = read('master-advertisers.mjs');
+  const css = read('master-advertisers-safe.css');
+  const page = read('master-advertisers.html');
+  assert.match(code, /renderCampaignPeriod\(c\)/);
+  assert.match(code, /commercialDeadlineLabel\(c\.end_date\)/);
+  assert.match(code, /commercial-campaign-period/);
+  assert.match(css, /commercial-campaign-period\{display:grid/);
+  assert.match(page, /master-advertisers\.mjs\?v=commercial-expiry-20261028/);
+});
+
+test('advertiser portal has a read-only expiry notice, not publishing controls', () => {
+  const portal = read('advertiser-portal.mjs');
+  const page = read('anunciante.html');
+  assert.match(portal, /function renderExpiryNotices/);
+  assert.match(portal, /renderExpiryNotices\(data\)/);
+  assert.match(page, /id="advertiser-expiry-notices"/);
+  assert.doesNotMatch(portal, /publishCommercialCampaign/);
+});
+
+test('calendar countdown is correct for today, future and expired dates', async () => {
+  const { commercialDeadlineLabel, commercialDaysUntil } = await import('../commercial-campaign-deadline.mjs');
+  assert.equal(commercialDaysUntil('2026-10-30','2026-10-28'),2);
+  assert.equal(commercialDeadlineLabel('2026-10-30','2026-10-28').label,'Faltam 2 dias');
+  assert.equal(commercialDeadlineLabel('2026-10-28','2026-10-28').label,'Vence hoje');
+  assert.equal(commercialDeadlineLabel('2026-10-27','2026-10-28').label,'Vencida há 1 dia');
+  assert.equal(commercialDeadlineLabel('2026-10-26','2026-10-28').label,'Vencida há 2 dias');
+});
