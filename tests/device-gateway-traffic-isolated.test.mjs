@@ -112,6 +112,6 @@ test('gateway still authenticates device and checks subscription before fetching
   assert.match(source, /const resolved = await resolveProgram\(admin, device\)/);
   assert.match(source, /await signedUrlForAsset\(admin, companyId, asset\)/);
   assert.match(source, /membershipPermissionDeniedUntilMs = Date\.now\(\) \+ 15 \* 60_000/);
-  assert.match(source, /membershipUnavailable && !membershipError/);
+  assert.match(source, /membershipError && !membershipUnavailable/);
   assert.doesNotMatch(source, /const \{ data: signed, error: signedError \} = await admin\.storage/);
 });
