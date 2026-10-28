@@ -1,0 +1,23 @@
+name: Vision QA - offline cache only
+
+on:
+  push:
+    branches:
+      - feature/vision-cache-bench-menu-20261028
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    name: Node cache regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout isolated branch
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - name: Run offline cache tests
+        run: node --test tests/fetch-cached-json.test.mjs
