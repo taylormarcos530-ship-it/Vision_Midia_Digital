@@ -44,3 +44,19 @@ Desabilitar primeiro os destinatários; depois suspender o job `vision-commercia
 - **Teste de QA:** conferir 0, 1 e vários dias restantes, data no horário local, mensagens apenas ao cliente correto e rejeição de campanha arquivada/rascunho, de e-mail não confirmado e de login divergente.
 
 **Importante:** o aviso por e-mail ao cliente só funcionará após migração, deploy da Edge Function e habilitação controlada. O portal atualmente não tem um canal Web Push próprio para anunciantes; não prometer push ao cliente sem criar e homologar esse fluxo separadamente.
+
+## Push para os anunciantes — canal principal
+
+Pedido adicional: **não depender do e-mail**. Preparado um fluxo de Web Push autenticado para cada anunciante.
+
+- No Portal do Anunciante, após login, o próprio cliente clica **Ativar notificações push** e autoriza as notificações no navegador. O botão **Enviar teste** verifica o push no próprio aparelho; **Desativar neste celular** remove a inscrição do backend. Não existe prompt automático.
+- No Android, um navegador compatível pode receber push com o portal fechado. No iPhone/iPad, é necessário adicionar o Portal do Anunciante à Tela de Início como aplicativo e autorizar as notificações; criado `advertiser.webmanifest` específico para isso.
+- Inscrições ficam na tabela `public.vision_advertiser_push_subscriptions` com RLS e acesso somente via Edge Function autenticada; a função valida `auth.getUser`, usuário vinculado, anunciante ativo e e-mail de login confirmado. **Não** usa `web_push_subscriptions` dos estabelecimentos e não envia dados comerciais a outros usuários.
+- A nova fila `private.vision_commercial_advertiser_push_deliveries` tem unicidade por campanha/anunciante/data de vencimento, cancelamento se a campanha for renovada/arquivada e envio apenas a aparelhos previamente inscritos daquele usuário. Fila e configuração em tabelas privadas; configuração começa **enabled=false**. Sem inscrição, o portal continua exibindo o vencimento sem push.
+- O agendador existente `commercial-expiry-alerts` passará a chamar a fila de push separadamente do e-mail; falha do e-mail **não** bloqueia push. O aviso ao Master segue restrito à conta Academia Life.
+- Os cliques em notificações abrem a página do Portal do Anunciante no site oficial; a página exige login para mostrar dados. A prévia não concede permissão para publicar mídia ou alterar campanhas.
+- Ao sair explicitamente da conta no mesmo aparelho, o portal tenta remover a inscrição do anunciante sem cancelar a inscrição do navegador compartilhada com a Vision Master. Se estiver offline e falhar, apresenta aviso para repetir a desativação após reconectar.
+- Não foi enviado nenhum push real. Homologar abertura, permissão, cadastro, teste, renovação de data, revogação, Android e iPhone compatível antes de produção. A Edge Function do cliente usa JWT válido e não libera endpoints anônimos; o worker do agendador usa o token interno já existente.
+- O e-mail permanece recurso secundário, opcional e desligado por padrão. Não confundir configuração Resend com comprovação de entrega.
+
+**Para ligar depois da homologação:** fazer backup; revisar migration e permissões; implantar `advertiser-push` (JWT habilitado) e nova versão de `commercial-expiry-alerts` (token interno); garantir VAPID e origem de Service Worker corretos; instalar UI atualizada; testar inscrição de um anunciante real com autorização; ativar `private.vision_commercial_advertiser_push_config.enabled` apenas após validação e monitorar registros.
