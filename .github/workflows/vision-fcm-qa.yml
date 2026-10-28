@@ -71,7 +71,7 @@ jobs:
           fi
           mkdir -p dist
           cp "$APK" dist/Vision-FCM-QA-V34-configurado-sem-assinatura.apk
-          sha256sum dist/Vision-FCM-QA-V34-sem-assinatura.apk > dist/Vision-FCM-QA-V34-configurado.sha256
+          (cd dist && sha256sum Vision-FCM-QA-V34-configurado-sem-assinatura.apk > Vision-FCM-QA-V34-configurado.sha256)
           python3 - <<'PY' > dist/readiness.txt
           import json
           cfg=json.load(open('android-player/app/firebase-homolog-public.json'))
