@@ -26,6 +26,80 @@ function clients() {
   }
 }
 
+
+// Firebase Admin credentials remain in the server's encrypted environment,
+// NEVER in the APK, Master JavaScript, database row, or git.
+let cachedFcmAccessToken: { token:string; expiresAt:number } | null = null;
+function base64url(bytes: Uint8Array): string {
+  let binary = '';
+  for (const value of bytes) binary += String.fromCharCode(value);
+  return btoa(binary).replace(/\\+/g, '-').replace(/\\//g, '_').replace(/=+$/g, '');
+}
+async function getFcmAccessToken(credentials: any): Promise<string> {
+  if (cachedFcmAccessToken && Date.now() < cachedFcmAccessToken.expiresAt) {
+    return cachedFcmAccessToken.token;
+  }
+  const issued = Math.floor(Date.now() / 1000);
+  const claim = { iss: credentials.client_email,
+    scope:'https://www.googleapis.com/auth/firebase.messaging',
+    aud:'https://oauth2.googleapis.com/token', iat:issued, exp:issued + 3600 };
+  const header = base64url(new TextEncoder().encode(JSON.stringify({alg:'RS256',typ:'JWT'})));
+  const payload = base64url(new TextEncoder().encode(JSON.stringify(claim)));
+  const signingInput = header + '.' + payload;
+  const pem = String(credentials.private_key || '');
+  const raw = pem.replace(/-----BEGIN PRIVATE KEY-----|-----END PRIVATE KEY-----|\\s/g,'');
+  const key = await crypto.subtle.importKey('pkcs8',
+    Uint8Array.from(atob(raw), x => x.charCodeAt(0)),
+    {name:'RSASSA-PKCS1-v1_5',hash:'SHA-256'}, false, ['sign']);
+  const signature = await crypto.subtle.sign('RSASSA-PKCS1-v1_5',key,new TextEncoder().encode(signingInput));
+  const assertion = signingInput + '.' + base64url(new Uint8Array(signature));
+  const oauth = await fetch('https://oauth2.googleapis.com/token', {
+    method:'POST', signal:AbortSignal.timeout(5000),
+    headers:{'Content-Type':'application/x-www-form-urlencoded'},
+    body:new URLSearchParams({grant_type:'urn:ietf:params:oauth:grant-type:jwt-bearer',assertion}),
+  });
+  if (!oauth.ok) throw new Error('fcm_auth_failed_' + oauth.status);
+  const data = await oauth.json();
+  if (!data.access_token) throw new Error('fcm_auth_token_missing');
+  cachedFcmAccessToken = {token:String(data.access_token),
+    expiresAt: Date.now() + Math.max(60,Math.min(3300, Number(data.expires_in || 3600)-120))*1000};
+  return cachedFcmAccessToken.token;
+}
+async function dispatchDeviceCommandPush(admin: any, companyId:string, deviceId:string, commandId:string): Promise<string> {
+  if (Deno.env.get('VISION_FCM_ENABLED') !== 'true') return 'not_configured';
+  const raw = Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON');
+  if (!raw) return 'not_configured';
+  try {
+    const service = JSON.parse(raw);
+    if (!service.project_id || !service.client_email || !service.private_key) return 'invalid_configuration';
+    const {data:reg,error} = await admin.from('device_push_tokens').select('fcm_token')
+      .eq('company_id',companyId).eq('device_id',deviceId).maybeSingle();
+    if (error) throw error;
+    if (!reg?.fcm_token) return 'not_registered';
+    const bearer = await getFcmAccessToken(service);
+    const result = await fetch('https://fcm.googleapis.com/v1/projects/' +
+      encodeURIComponent(service.project_id) + '/messages:send', {
+      method:'POST',signal:AbortSignal.timeout(5000),
+      headers:{Authorization:'Bearer '+bearer,'Content-Type':'application/json'},
+      body:JSON.stringify({message:{
+        token:reg.fcm_token,
+        data:{kind:'vision_command',command_id:commandId},
+        android:{priority:'high',ttl:'3600s'},
+      }}),
+    });
+    if (!result.ok) {
+      console.warn('Vision push delivery HTTP status',result.status);
+      return 'failed';
+    }
+    return 'sent';
+  } catch (_error) {
+    // The already-stored command is durable; offline devices pick it up on
+    // their next authenticated reconnect/fallback reconciliation.
+    console.warn('Vision push unavailable; queued command preserved');
+    return 'failed';
+  }
+}
+
 Deno.serve(async req => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: C })
   if (req.method !== 'POST') return J({ error: 'method_not_allowed' }, 405)
@@ -89,7 +163,10 @@ Deno.serve(async req => {
       .limit(1)
       .maybeSingle()
     if (pendingError) throw pendingError
-    if (pending) return J({ ok: true, duplicate: true, command: pending })
+    if (pending) {
+      const push = await dispatchDeviceCommandPush(admin, companyId, deviceId, pending.id);
+      return J({ ok: true, duplicate: true, command: pending, push });
+    }
 
     const { data: command, error: commandError } = await admin
       .from('device_commands')
@@ -115,7 +192,10 @@ Deno.serve(async req => {
           .limit(1)
           .maybeSingle()
         if (duplicateError) throw duplicateError
-        if (duplicate) return J({ ok: true, duplicate: true, command: duplicate })
+        if (duplicate) {
+          const push = await dispatchDeviceCommandPush(admin, companyId, deviceId, duplicate.id);
+          return J({ ok: true, duplicate: true, command: duplicate, push });
+        }
       }
       throw commandError
     }
@@ -132,7 +212,8 @@ Deno.serve(async req => {
       console.warn('device-control audit', auditError)
     }
 
-    return J({ ok: true, command })
+    const push = await dispatchDeviceCommandPush(admin, companyId, deviceId, command.id);
+    return J({ ok: true, command, push })
   } catch (error: any) {
     console.error('device-control', error)
     return J({ error: error?.message || 'internal_error' }, Number(error?.status || 500))

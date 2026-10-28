@@ -525,6 +525,22 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const action = body?.action
 
+    if (action === 'register_push') {
+      // Only a fully authenticated/authorized TV can register its own token.
+      // Never return the raw registration token to the dashboard or logs.
+      const token = String(body?.fcm_token || '').trim()
+      if (token.length < 50 || token.length > 4096 || !/^[A-Za-z0-9_:\\-=.]+$/.test(token)) {
+        return json({ error:'invalid_push_token' }, 400)
+      }
+      const { error: registrationError } = await admin.from('device_push_tokens').upsert({
+        device_id:device.id, company_id:device.company_id,
+        fcm_token:token, updated_at:new Date().toISOString(),
+      }, { onConflict:'device_id' })
+      if (registrationError) throw registrationError
+      // Do not turn off the short fallback poll unless push dispatch is enabled.
+      return json({ ok:true, push_enabled: Deno.env.get('VISION_FCM_ENABLED') === 'true' && Boolean(Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON')) })
+    }
+
     if (action === 'player_settings') {
       if (typeof body?.kiosk_return_enabled !== 'boolean') return json({ error:'invalid_setting' }, 400)
       const settings = { ...(device.settings || {}), kiosk_return_enabled:body.kiosk_return_enabled }

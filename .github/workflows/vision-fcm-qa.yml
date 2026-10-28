@@ -1,0 +1,100 @@
+name: Vision FCM QA - Android push and offline player
+on:
+  push:
+    branches:
+      - feature/vision-fcm-player-qa-20261028
+  pull_request:
+    branches:
+      - release/vision-player-stable-1521-rc-20261028
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: JavaScript syntax and FCM regression
+        run: |
+          set -euo pipefail
+          node --check player.js
+          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Embed local player assets
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - name: Compile Firebase-configured QA APK without installing or signing
+        run: gradle -p android-player --no-daemon assembleHomologUnsigned
+      - name: Inspect package, version, and Firebase readiness
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find android-player/app/build/outputs/apk -type f -name '*.apk' -path '*homologUnsigned*' | head -n 1)"
+          test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > /tmp/vision-fcm-badging.txt
+          grep -q "name='com.visionmidia.player.homolog'" /tmp/vision-fcm-badging.txt
+          grep -q "versionCode='34'" /tmp/vision-fcm-badging.txt
+          if "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$APK"; then
+            echo "Unexpected pre-signed package"; exit 1
+          fi
+          mkdir -p dist
+          cp "$APK" dist/Vision-FCM-QA-V34-configurado-sem-assinatura.apk
+          (cd dist && sha256sum Vision-FCM-QA-V34-configurado-sem-assinatura.apk > Vision-FCM-QA-V34-configurado.sha256)
+          python3 - <<'PY' > dist/readiness.txt
+          import json
+          cfg=json.load(open('android-player/app/firebase-homolog-public.json'))
+          assert cfg['project_id']=='vision-midia-digital'
+          assert cfg['package_name']=='com.visionmidia.player.homolog'
+          assert cfg['mobilesdk_app_id'].startswith('1:'+cfg['project_number']+':android:')
+          assert cfg['api_key']
+          print('FCM Android client configuration: provisioned and package verified')
+          print('FCM server sender: NOT YET CONFIGURED OR TESTED')
+          print('Push E2E: NOT TESTED; do not update official TVs')
+          PY
+          {
+            echo "branch=$GITHUB_REF_NAME"
+            echo "commit=$GITHUB_SHA"
+            echo "package=com.visionmidia.player.homolog"
+            echo "versionCode=34"
+            echo "signed=false"
+            echo "server_relay_deployed=false"
+            echo "DO NOT install on production TVs; do not assume FCM works until provisioned."
+          } > dist/provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-FCM-QA-v34-UNSIGNED-NOT-FOR-PRODUCTION
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
