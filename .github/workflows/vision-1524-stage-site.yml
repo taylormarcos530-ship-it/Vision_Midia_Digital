@@ -1,0 +1,95 @@
+name: Stage signed Vision 1.5.24 APK on isolated site branch
+on:
+  push:
+    branches:
+      - release/vision-site-apk-only-1524-20261028
+    paths:
+      - '.github/workflows/vision-1524-stage-site.yml'
+permissions:
+  contents: write
+  actions: read
+jobs:
+  stage-verified-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - uses: actions/download-artifact@v4
+        with:
+          name: Vision-1.5.24-Stable-Candidate-NOT-PUBLISHED
+          run-id: 40755203559
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          path: dist
+      - name: Confirm official package, identity and artifact integrity
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -qx 'official_signing=VERIFIED' dist/signing-status.txt
+          test -s dist/Vision-Player-1.5.24-stable-SIGNED.apk
+          sha256sum -c dist/signed.sha256
+          test -x "$ANDROID_HOME/build-tools/35.0.0/apksigner"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs dist/Vision-Player-1.5.24-stable-SIGNED.apk
+          CERT=$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs dist/Vision-Player-1.5.24-stable-SIGNED.apk | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')
+          test "$CERT" = "$(tr -d '[:space:]' < android-player/signing-certificate.sha256)"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging dist/Vision-Player-1.5.24-stable-SIGNED.apk > dist/signed-badging.txt
+          grep -q "name='com.visionmidia.player.stable'" dist/signed-badging.txt
+          grep -q "versionCode='37'" dist/signed-badging.txt
+          grep -q "versionName='1.5.24-stable'" dist/signed-badging.txt
+          if grep -q application-debuggable dist/signed-badging.txt; then exit 1; fi
+      - name: Preserve current stable APK before replacement
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s downloads/Vision-Player.apk
+          test "$(sha256sum downloads/Vision-Player.apk | cut -d' ' -f1)" = '8f0fef5c60d58d50f856cdd2dc34dbd7c6e32ce8e1bf1853fd87aaef79c08493'
+          cp downloads/Vision-Player.apk downloads/Vision-Player-1.5.20-before-1524.apk
+          cp downloads/Vision-Player.source.json downloads/Vision-Player-1.5.20-before-1524.source.json
+          sha256sum downloads/Vision-Player-1.5.20-before-1524.apk > downloads/Vision-Player-1.5.20-before-1524.sha256
+          cp dist/Vision-Player-1.5.24-stable-SIGNED.apk downloads/Vision-Player.apk
+          sha256sum downloads/Vision-Player.apk > downloads/Vision-Player.sha256
+      - name: Verify signed artifact belongs to exact tested source commit
+        shell: bash
+        env:
+          SIGNED_SOURCE_COMMIT: 7d4087e230cd84f5ae5006701572e70d06d8c2d5
+        run: |
+          set -euo pipefail
+          git fetch --no-tags origin "$SIGNED_SOURCE_COMMIT"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, json, os, subprocess
+          previous=json.loads(Path('downloads/Vision-Player-1.5.20-before-1524.source.json').read_text())
+          sha=os.environ['SIGNED_SOURCE_COMMIT']
+          files=previous['files']
+          payload=''
+          for name in files:
+              source=subprocess.check_output(['git','show',f'{sha}:{name}']).decode('utf-8')
+              payload+=f'{name}\n{source}\n'
+          apk=Path('downloads/Vision-Player.apk')
+          signed=hashlib.sha256(apk.read_bytes()).hexdigest()
+          data={
+              'source_sha256':hashlib.sha256(payload.encode()).hexdigest(),
+              'git_sha':sha,
+              'apk_version':'1.5.24-stable',
+              'version_code':37,
+              'application_id':'com.visionmidia.player.stable',
+              'signer_sha256':previous['signer_sha256'],
+              'apk_sha256':signed,
+              'files':files,
+          }
+          assert data['signer_sha256']==Path('android-player/signing-certificate.sha256').read_text().strip()
+          Path('downloads/Vision-Player.source.json').write_text(json.dumps(data,indent=2)+'\n')
+          PY
+      - name: Commit only the APK, hashes, metadata and rollback backup
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -f downloads/Vision-Player.apk downloads/Vision-Player.sha256 downloads/Vision-Player.source.json
+          git add -f downloads/Vision-Player-1.5.20-before-1524.apk downloads/Vision-Player-1.5.20-before-1524.sha256 downloads/Vision-Player-1.5.20-before-1524.source.json
+          git diff --cached --name-status
+          git commit -m 'release(site): stage signed 1.5.24 APK and preserve 1.5.20 rollback'
+          git push origin "HEAD:$GITHUB_REF_NAME"
+# Never deploy to production in this workflow. Production alias is changed only after preview validation.
