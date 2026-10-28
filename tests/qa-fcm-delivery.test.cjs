@@ -56,7 +56,8 @@ test('FCM tokens are registered only with authenticated device',()=>{
   const registration = gateway.indexOf("if (action === 'register_push')");
   assert.ok(auth > 0 && registration > auth);
   assert.match(gateway,/device_id:device\.id, company_id:device\.company_id/);
-  assert.match(gateway,/push_enabled:Boolean\(Deno\.env\.get\('VISION_FCM_SERVICE_ACCOUNT_JSON'\)\)/);
+  assert.match(gateway,/VISION_FCM_ENABLED/);
+  assert.match(gateway,/VISION_FCM_SERVICE_ACCOUNT_JSON/);
   assert.match(db,/ON DELETE CASCADE/);
   assert.match(db,/ENABLE ROW LEVEL SECURITY/);
   assert.match(db,/REVOKE ALL ON TABLE public\.device_push_tokens FROM PUBLIC, anon, authenticated/);
