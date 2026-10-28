@@ -31,7 +31,11 @@ test('FCM push messages are never executed directly',()=>{
   assert.match(messaging,/PUSH_SIGNAL_KEY/);
   assert.doesNotMatch(messaging,/startActivity\(/);
   assert.doesNotMatch(messaging,/evaluateJavascript/);
-  assert.match(activity,/getFcmToken\(/);
+  assert.match(activity,/getFcmTokenMarker\(/);
+  assert.doesNotMatch(activity,/public String getFcmToken\(/);
+  assert.match(activity,/fpadgedrgcxrrqflzhjt\.supabase\.co/);
+  assert.match(player,/await gateway\(\{action:'register_push'\}\)/);
+  assert.doesNotMatch(player,/fcm_token:fcmToken/);
   assert.match(activity,/consumePushSignal\(/);
   assert.match(player,/await gateway\(\{action:'commands'\}\)/);
   assert.match(player,/consumePushSignal/);
