@@ -5,6 +5,7 @@ on:
     branches:
       - feature/vision-cache-bench-menu-20261028
       - feature/vision-json-feed-qa-20261028
+      - feature/vision-json-trio-qa-20261028
   workflow_dispatch:
 
 permissions:
@@ -21,4 +22,4 @@ jobs:
         with:
           persist-credentials: false
       - name: Run offline cache tests
-        run: node --test tests/fetch-cached-json.test.mjs tests/json-feed-qa.test.mjs
+        run: node --test tests/fetch-cached-json.test.mjs tests/json-feed-qa.test.mjs tests/json-trio-qa.test.mjs
