@@ -39,6 +39,13 @@
     heartbeatTimer: null,
     syncTimer: null,
     commandTimer: null,
+    pushTimer: null,
+    pushReady: false,
+    pushPending: false,
+    pushRegisteredKey: '',
+    pushRegisteredAt: 0,
+    pushLastAttemptAt: 0,
+    lastCommandReconcileAt: 0,
     accessTimer: null,
     clockRecoveryTimer: null,
     startupClockStartedAt: performance.now(),
@@ -1445,6 +1452,29 @@
     return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
   }
 
+  // The FCM payload is only a hint. Never trust a command from push data.
+  // A valid paired device always authenticates and loads durable commands.
+  async function registerFcmIfAvailable() {
+    if (!state.deviceToken || !navigator.onLine || !state.manifest?.device?.id) return;
+    let fcmToken = '';
+    try { fcmToken = String(window.VisionAndroid?.getFcmToken?.() || ''); } catch {}
+    if (fcmToken.length < 50 || fcmToken.length > 4096) return;
+    const registrationKey = state.manifest.device.id + ':' + fcmToken;
+    if (state.pushRegisteredKey === registrationKey && Date.now() - state.pushRegisteredAt < 24 * 60 * 60_000) return;
+    if (Date.now() - state.pushLastAttemptAt < 60_000) return;
+    state.pushLastAttemptAt = Date.now();
+    try {
+      const response = await gateway({action:'register_push',fcm_token:fcmToken});
+      if (!response?.ok) return;
+      state.pushReady = response.push_enabled === true;
+      state.pushRegisteredKey = registrationKey;
+      state.pushRegisteredAt = Date.now();
+    } catch (error) {
+      // The server or TV may lack FCM configuration. Legacy polling remains.
+      state.pushReady = false;
+    }
+  }
+
   async function pollDeviceCommands() {
     if(!state.deviceToken||!navigator.onLine)return;
     const result=await gateway({action:'commands'});
@@ -1600,6 +1630,7 @@
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.pushTimer) clearInterval(state.pushTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
     if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
     // Only while the RTC is known to be behind: retry a few times during boot
@@ -1617,17 +1648,39 @@
     state.heartbeatTimer = setInterval(() => {
       void runBackgroundPoll(async () => {
         await heartbeat();
+        await registerFcmIfAvailable();
         await flushPlaybackQueue();
         await flushDeviceEventQueue();
       });
     }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.heartbeat));
     state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.manifest));
-    state.commandTimer = setInterval(() => { void runBackgroundPoll(pollDeviceCommands); }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.commands));
+    state.commandTimer = setInterval(() => {
+      // With verified push delivery: reconcile at most once per 15 minutes.
+      // Without FCM, preserve the existing 45-second commands fallback.
+      if (state.pushReady && performance.now() - state.lastCommandReconcileAt < 15 * 60_000) return;
+      void runBackgroundPoll(async () => {
+        await pollDeviceCommands();
+        state.lastCommandReconcileAt = performance.now();
+      });
+    }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.commands));
+    // Local SharedPreferences check only: NO network call until a push arrives.
+    state.pushTimer = setInterval(() => {
+      try { if (window.VisionAndroid?.consumePushSignal?.() === true) state.pushPending = true; }
+      catch {}
+      if (!state.pushPending || !state.deviceToken || !navigator.onLine) return;
+      void runBackgroundPoll(async () => {
+        await pollDeviceCommands();
+        state.lastCommandReconcileAt = performance.now();
+      }).then(ok => { if (ok) state.pushPending = false; });
+    }, 2000);
     // Payment expiry remains enforced locally every second, independent of network polling.
     state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
     void runBackgroundPoll(async () => {
       await syncManifest();
+      await registerFcmIfAvailable();
       await heartbeat();
+      await pollDeviceCommands();
+      state.lastCommandReconcileAt = performance.now();
       await flushPlaybackQueue();
       await flushDeviceEventQueue();
     });
@@ -1645,6 +1698,7 @@
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
     if (state.syncTimer) clearInterval(state.syncTimer);
     if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.pushTimer) clearInterval(state.pushTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
     if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
     state.clockRecoveryTimer = null;
@@ -1657,6 +1711,12 @@
     state.heartbeatTimer = null;
     state.syncTimer = null;
     state.commandTimer = null;
+    state.pushTimer = null;
+    state.pushReady = false;
+    state.pushPending = false;
+    state.pushRegisteredKey = '';
+    state.pushRegisteredAt = 0;
+    state.lastCommandReconcileAt = 0;
     state.accessTimer = null;
     state.processingCommands.clear();
     backgroundPollState.failures = 0;
