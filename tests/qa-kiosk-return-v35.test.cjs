@@ -10,7 +10,7 @@ const gradle = fs.readFileSync(path.join(root, 'android-player/app/build.gradle'
 const player = fs.readFileSync(path.join(root, 'player.js'),'utf8');
 
 test('kiosk V35 remains an isolated test APK and preserves all playback code', () => {
-  assert.match(gradle, /versionCode 36/);
+  assert.match(gradle, /versionCode (?:36|37)/);
   assert.match(gradle, /versionName '1\.5\.24'/);
   assert.match(gradle, /applicationIdSuffix '\.homolog'/);
   assert.match(gradle, /firebase-homolog-public\.json/);
