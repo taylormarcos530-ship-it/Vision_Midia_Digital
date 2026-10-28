@@ -7,6 +7,7 @@ on:
   pull_request:
     branches:
       - release/vision-player-stable-1521-rc-20261028
+      - feature/vision-fcm-player-qa-20261028
   workflow_dispatch:
 
 permissions:
