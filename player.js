@@ -1597,6 +1597,7 @@
             ['qa_only','wrong_qa_device'].includes(String(error?.data?.error || '')))) {
         state.qaBundleSupported = false;
         if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+        if (state.accessTimer) clearInterval(state.accessTimer);
         startLegacyPollingTimers();
       }
       throw error;
@@ -1610,15 +1611,17 @@
     if (response.events?.ok && response.events.data?.accepted === events.length)
       acknowledgeQaBatch(DEVICE_EVENT_QUEUE_KEY, events);
 
+    // Process authenticated Master commands before potentially slow cache
+    // work from a changed manifest; normal command latency stays near 58s.
+    if (response.commands?.ok && Array.isArray(response.commands.data?.commands))
+      await pollDeviceCommands(response.commands.data.commands);
+    else throw new Error('Comandos QA não confirmados; preservando comandos no servidor.');
     if (response.heartbeat?.ok !== true)
       throw new Error('Heartbeat QA não confirmado; retorno automático com backoff.');
     if (manifestDue && response.manifest?.ok) {
       await syncManifest(response.manifest.data);
       state.qaLastManifestAt = performance.now();
     }
-    if (response.commands?.ok && Array.isArray(response.commands.data?.commands))
-      await pollDeviceCommands(response.commands.data.commands);
-    else throw new Error('Comandos QA não confirmados; preservando comandos no servidor.');
   }
 
   function shuffled(items) {
