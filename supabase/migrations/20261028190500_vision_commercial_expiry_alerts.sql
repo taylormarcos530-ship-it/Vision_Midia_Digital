@@ -328,3 +328,165 @@ revoke all on function public.finish_vision_commercial_client_alert(uuid,jsonb,b
   from public,anon,authenticated;
 grant execute on function public.finish_vision_commercial_client_alert(uuid,jsonb,boolean)
   to service_role;
+
+
+-- Advertiser Web Push: independent of the company/TV push channel.
+-- All fields are service-role only. Never reuse web_push_subscriptions.company_id
+-- for a customer (it belongs to TV/establishment tenants).
+create table if not exists public.vision_advertiser_push_subscriptions (
+  id uuid primary key default gen_random_uuid(),
+  advertiser_id uuid not null references public.vision_advertisers(id) on delete cascade,
+  user_id uuid not null references auth.users(id) on delete cascade,
+  endpoint text not null unique check (char_length(endpoint) between 30 and 2000),
+  p256dh text not null,
+  auth_key text not null,
+  user_agent text,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  last_seen_at timestamptz,
+  last_test_at timestamptz,
+  disabled_at timestamptz
+);
+create index if not exists vision_advertiser_push_user_idx
+  on public.vision_advertiser_push_subscriptions(advertiser_id,user_id)
+  where disabled_at is null;
+alter table public.vision_advertiser_push_subscriptions enable row level security;
+revoke all on public.vision_advertiser_push_subscriptions from public,anon,authenticated;
+grant select,insert,update,delete on public.vision_advertiser_push_subscriptions to service_role;
+
+create table if not exists private.vision_commercial_advertiser_push_config (
+  id integer primary key check (id=1),
+  enabled boolean not null default false
+);
+insert into private.vision_commercial_advertiser_push_config(id,enabled)
+values (1,false) on conflict (id) do nothing;
+
+create table if not exists private.vision_commercial_advertiser_push_deliveries (
+  id uuid primary key default gen_random_uuid(),
+  campaign_id uuid not null references public.vision_commercial_campaigns(id) on delete cascade,
+  advertiser_id uuid not null references public.vision_advertisers(id) on delete cascade,
+  recipient_user_id uuid not null references auth.users(id) on delete cascade,
+  end_date date not null,
+  title text not null,
+  message text not null,
+  status text not null default 'pending'
+    check(status in ('pending','processing','completed','cancelled','failed')),
+  attempts integer not null default 0,
+  claimed_at timestamptz,
+  next_attempt_at timestamptz not null default now(),
+  result jsonb,
+  created_at timestamptz not null default now(),
+  unique (campaign_id,advertiser_id,end_date)
+);
+create index if not exists vision_advertiser_push_queue_idx
+  on private.vision_commercial_advertiser_push_deliveries(status,next_attempt_at);
+alter table private.vision_commercial_advertiser_push_config enable row level security;
+alter table private.vision_commercial_advertiser_push_deliveries enable row level security;
+revoke all on private.vision_commercial_advertiser_push_config,
+              private.vision_commercial_advertiser_push_deliveries
+  from public,anon,authenticated;
+
+create or replace function private.enqueue_vision_commercial_advertiser_push_alerts()
+returns integer language plpgsql security definer set search_path = '' as $$
+declare total integer := 0;
+today_sp date := (now() at time zone 'America/Sao_Paulo')::date;
+begin
+  if not exists (
+    select 1 from private.vision_commercial_advertiser_push_config
+    where id=1 and enabled=true
+  ) then return 0; end if;
+
+  with eligible as (
+    select c.id campaign_id, c.name campaign_name, c.end_date,
+           a.id advertiser_id, a.user_id, a.name advertiser_name
+    from public.vision_commercial_campaigns c
+    join public.vision_advertisers a on a.id=c.advertiser_id
+    join auth.users u on u.id=a.user_id
+    where c.archived_at is null and a.archived_at is null
+      and c.status in ('active','paused') and a.status='active'
+      and c.end_date between today_sp-7 and today_sp
+      and exists (
+        select 1 from public.vision_advertiser_push_subscriptions sub
+        where sub.advertiser_id=a.id and sub.user_id=a.user_id
+          and sub.disabled_at is null
+      )
+  ), queued as (
+    insert into private.vision_commercial_advertiser_push_deliveries
+      (campaign_id,advertiser_id,recipient_user_id,end_date,title,message)
+    select campaign_id,advertiser_id,user_id,end_date,
+      left('Vision Mídia Digital • aviso de vencimento',120),
+      left('O anúncio ' || campaign_name ||
+        case when end_date=today_sp then ' vence hoje, ' else ' venceu em ' end ||
+        to_char(end_date,'DD/MM/YYYY') ||
+        '. Entre em contato com a Vision para renovar sua divulgação.',500)
+    from eligible
+    on conflict(campaign_id,advertiser_id,end_date) do nothing
+    returning id
+  ) select count(*) into total from queued;
+  return total;
+end;
+$$;
+revoke all on function private.enqueue_vision_commercial_advertiser_push_alerts()
+  from public,anon,authenticated;
+
+create or replace function public.claim_vision_commercial_advertiser_push_alerts()
+returns table(id uuid,advertiser_id uuid,user_id uuid,title text,message text)
+language plpgsql security definer set search_path = '' as $$
+begin
+  perform private.enqueue_vision_commercial_advertiser_push_alerts();
+
+  -- Revalidate the current advertiser and the date on every dispatch attempt.
+  update private.vision_commercial_advertiser_push_deliveries d
+  set status='cancelled'
+  where d.status in ('pending','processing') and
+    (not exists (
+      select 1 from private.vision_commercial_advertiser_push_config
+      where id=1 and enabled=true
+    ) or not exists (
+      select 1 from public.vision_commercial_campaigns c
+      join public.vision_advertisers a on a.id=c.advertiser_id
+      where c.id=d.campaign_id and c.advertiser_id=d.advertiser_id
+        and c.end_date=d.end_date and c.archived_at is null
+        and c.status in ('active','paused')
+        and a.archived_at is null and a.status='active'
+        and a.user_id=d.recipient_user_id
+        and exists (
+          select 1 from public.vision_advertiser_push_subscriptions sub
+          where sub.advertiser_id=a.id and sub.user_id=a.user_id
+            and sub.disabled_at is null
+        )
+    ));
+
+  return query with candidates as (
+    select d.id from private.vision_commercial_advertiser_push_deliveries d
+    where d.attempts<3 and d.next_attempt_at<=now()
+      and (d.status='pending'
+        or (d.status='processing' and d.claimed_at<now()-interval '10 minutes'))
+    order by d.next_attempt_at,d.id for update skip locked limit 25
+  ), claimed as (
+    update private.vision_commercial_advertiser_push_deliveries d
+    set status='processing',claimed_at=now(),attempts=d.attempts+1
+    from candidates q where d.id=q.id returning d.*
+  )
+  select c.id,c.advertiser_id,c.recipient_user_id,c.title,c.message
+  from claimed c;
+end;
+$$;
+revoke all on function public.claim_vision_commercial_advertiser_push_alerts()
+  from public,anon,authenticated;
+grant execute on function public.claim_vision_commercial_advertiser_push_alerts() to service_role;
+
+create or replace function public.finish_vision_commercial_advertiser_push_alert(
+  p_id uuid,p_result jsonb,p_retry boolean default false
+) returns void language sql security definer set search_path = '' as $$
+ update private.vision_commercial_advertiser_push_deliveries
+ set result=p_result,
+   status=case when p_retry and attempts<3 then 'pending'
+               when p_retry then 'failed' else 'completed' end,
+   next_attempt_at=now()+interval '1 hour'
+ where id=p_id and status='processing';
+$$;
+revoke all on function public.finish_vision_commercial_advertiser_push_alert(uuid,jsonb,boolean)
+ from public,anon,authenticated;
+grant execute on function public.finish_vision_commercial_advertiser_push_alert(uuid,jsonb,boolean)
+ to service_role;
