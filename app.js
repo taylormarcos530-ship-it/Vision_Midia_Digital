@@ -905,7 +905,7 @@
         authenticated: true,
         body: { action: 'list', company_id: state.company.id },
       });
-      state.notifications = Array.isArray(result?.items) ? result.items.slice(0, 3) : [];
+      state.notifications = Array.isArray(result?.items) ? result.items.slice(0, 30) : [];
       state.notificationUnreadCount = Number(result?.unread_count || 0);
       renderNotificationInbox();
       return state.notifications;
