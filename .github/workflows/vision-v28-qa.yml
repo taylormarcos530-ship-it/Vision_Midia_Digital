@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - fix/vision-v28-qa-20261028
+  pull_request:
+    branches:
+      - fix/vision-qa-server-request-cost-20261028
   workflow_dispatch:
 
 permissions:
