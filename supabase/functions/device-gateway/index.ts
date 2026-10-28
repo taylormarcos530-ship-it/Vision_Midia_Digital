@@ -1,4 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { createMediaSignedUrlResolver } from './media-url-cache.mjs'
+
+// Every manifest still checks device authorization. Only already-authorized media URLs are reused.
+const signedUrlForAsset = createMediaSignedUrlResolver()
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -125,6 +129,10 @@ function itemScheduleIsActive(item, clock) {
   if (!item?.schedule_enabled) return true
   return campaignIsActive(item, clock)
 }
+// The membership table currently rejects service_role reads in production.
+// When it rejects access, avoid repeating the same optional lookup on every manifest.
+// Retry after 15 minutes so a future database permission repair takes effect.
+let membershipPermissionDeniedUntilMs = 0
 async function resolveProgram(admin, device) {
   const [
     { data: company, error: companyError },
@@ -142,7 +150,9 @@ async function resolveProgram(admin, device) {
       .order('created_at', { ascending: false }),
     admin.from('campaign_devices').select('campaign_id').eq('company_id', device.company_id).eq('device_id', device.id),
     admin.from('device_playlist_assignments').select('playlist_id,updated_at').eq('device_id', device.id).maybeSingle(),
-    admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle(),
+    Date.now() < membershipPermissionDeniedUntilMs
+      ? Promise.resolve({ data: null, error: null })
+      : admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle(),
   ])
   if (companyError) throw companyError
   if (campaignsError) throw campaignsError
@@ -155,6 +165,7 @@ async function resolveProgram(admin, device) {
   const membershipUnavailable = membershipError && String(membershipError.code || '') === '42501'
   if (membershipError && !membershipUnavailable) throw membershipError
   if (membershipUnavailable) {
+    membershipPermissionDeniedUntilMs = Date.now() + 15 * 60_000
     console.warn('device-gateway group membership unavailable; continuing without group assignment', membershipError.message || membershipError)
   }
   const effectiveMembership = membershipUnavailable ? null : membership
@@ -307,9 +318,7 @@ async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSch
     }
     let url = asset.source_url || null
     if (asset.storage_path) {
-      const { data: signed, error: signedError } = await admin.storage
-        .from('vision-media')
-        .createSignedUrl(asset.storage_path, 6 * 60 * 60)
+      const { data: signed, error: signedError } = await signedUrlForAsset(admin, companyId, asset)
       if (signedError) {
         console.error('signed url failed', asset.id, signedError)
         if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
