@@ -113,10 +113,10 @@ test('V28: nominal scheduled request reduction stays in 84%-87% target vs legacy
   // 1080/h is the documented old polling baseline, not a measured cost.
   // This test deliberately does NOT claim an 84%-87% reduction in actual
   // Supabase REST, Storage, function invocations or billing.
-  const intervalBlock = player.match(/BACKGROUND_POLL_INTERVALS = Object\\.freeze\\(\\{([\\s\\S]*?)\\}\\)/);
+  const intervalBlock = player.match(/BACKGROUND_POLL_INTERVALS = Object\.freeze\(\{([\s\S]*?)\}\)/);
   assert.ok(intervalBlock, 'Missing periodic polling configuration');
   function interval(label) {
-    const m = intervalBlock[1].match(new RegExp(label + ':\\\\s*([\\\\d_]+)'));
+    const m = intervalBlock[1].match(new RegExp(label + ':\\s*([\\d_]+)'));
     assert.ok(m, 'Missing interval: ' + label);
     return Number(m[1].replaceAll('_', ''));
   }
