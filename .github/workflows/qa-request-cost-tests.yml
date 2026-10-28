@@ -1,0 +1,22 @@
+name: QA Supabase request cost tests
+on:
+  push:
+    branches:
+      - fix/vision-qa-server-request-cost-20261028
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify-request-cost:
+    name: Safe backend query tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Run isolated server tests
+        run: node --test tests/qa-server-request-cost.test.cjs
