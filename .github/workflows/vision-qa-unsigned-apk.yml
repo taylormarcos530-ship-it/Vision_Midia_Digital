@@ -4,6 +4,7 @@ on:
     branches:
       - fix/vision-supabase-free-traffic-isolated-20261027
       - fix/vision-qa-known-good-autostart-20261027
+      - fix/vision-qa-clock-cache-boot-20261028
     paths:
       - android-player/**
       - player.html
@@ -19,6 +20,7 @@ on:
       - news-feed.js
       - tests/vision-homolog-apk-safety.test.cjs
       - tests/vision-qa-unsigned-apk-safety.test.cjs
+      - tests/offline-expiry.test.cjs
       - tests/player-network-backoff.test.cjs
       - tests/player-supabase-traffic-safety.test.cjs
       - tests/vision-supabase-free-budget.test.cjs
@@ -28,7 +30,7 @@ permissions:
   contents: read
 jobs:
   make-unsigned-qa:
-    if: github.ref == 'refs/heads/fix/vision-supabase-free-traffic-isolated-20261027' || github.ref == 'refs/heads/fix/vision-qa-known-good-autostart-20261027'
+    if: github.ref == 'refs/heads/fix/vision-supabase-free-traffic-isolated-20261027' || github.ref == 'refs/heads/fix/vision-qa-known-good-autostart-20261027' || github.ref == 'refs/heads/fix/vision-qa-clock-cache-boot-20261028'
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -41,7 +43,7 @@ jobs:
       - name: Isolated QA package and unsigned-artifact safeguards
         run: |
           node --check player.js
-          node --test tests/vision-homolog-apk-safety.test.cjs tests/vision-qa-unsigned-apk-safety.test.cjs tests/player-network-backoff.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs
+          node --test tests/vision-homolog-apk-safety.test.cjs tests/vision-qa-unsigned-apk-safety.test.cjs tests/offline-expiry.test.cjs tests/player-network-backoff.test.cjs tests/player-supabase-traffic-safety.test.cjs tests/vision-supabase-free-budget.test.cjs
       - name: Copy current web player into test-only Android package
         shell: bash
         run: |
@@ -75,7 +77,7 @@ jobs:
           "$ALIGN" -f -p 4 "$INPUT" "$OUT"
           "$ALIGN" -c -p 4 "$OUT"
           "$AAPT" dump badging "$OUT" | grep -F "package: name='com.visionmidia.player.homolog'"
-          "$AAPT" dump badging "$OUT" | grep -F "versionCode='26'"
+          "$AAPT" dump badging "$OUT" | grep -F "versionCode='27'"
           "$AAPT" dump badging "$OUT" | grep -F "sdkVersion:'24'"
           if "$APKSIGNER" verify "$OUT" > /dev/null 2>&1; then
             echo 'Refusing artifact: an unsigned QA APK must have NO signing identity.' >&2
