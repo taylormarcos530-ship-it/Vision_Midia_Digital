@@ -44,6 +44,7 @@
     startupClockStartedAt: performance.now(),
     clockAnchor: null,
     clockVerificationPaused: false,
+    localExpiryBlocked: false,
     serverAccessDenied: false,
     processingCommands: new Set(),
     lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
@@ -493,10 +494,12 @@
     if (state.serverAccessDenied) return true;
     const access = localAccessState();
     if (access === 'valid' || access === 'clock-grace' || access === 'missing') {
-      if (state.clockVerificationPaused) {
+      if (state.clockVerificationPaused || state.localExpiryBlocked) {
         state.clockVerificationPaused = false;
+        state.localExpiryBlocked = false;
         hideIdle();
         showPlayback();
+        if (state.manifest) ensurePlaybackLoop();
       }
       return false;
     }
@@ -514,6 +517,7 @@
       }
       return true;
     }
+    state.localExpiryBlocked = true;
     if ($('#access-screen').classList.contains('hidden') ||
         $('#access-heading').textContent !== 'Autorização expirada') {
       showAccessBlocked({
@@ -1067,7 +1071,9 @@
       // monotonic lease clock, regardless of Android's incorrect wall clock.
       state.clockAnchor = { serverTimeMs: Date.parse(manifest.generated_at), monotonicMs: performance.now() };
       state.serverAccessDenied = false;
+      if (state.clockVerificationPaused || state.localExpiryBlocked) hideIdle();
       state.clockVerificationPaused = false;
+      state.localExpiryBlocked = false;
       if (changed || state.cachePrefetchVersion !== manifest.version)
         void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
       state.lastSyncAt = new Date().toISOString();
@@ -1625,6 +1631,7 @@
     state.clockRecoveryTimer = null;
     state.clockAnchor = null;
     state.clockVerificationPaused = false;
+    state.localExpiryBlocked = false;
     state.serverAccessDenied = false;
     backgroundPollState.failures = 0;
     backgroundPollState.retryAt = 0;
