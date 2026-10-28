@@ -21,6 +21,8 @@ jobs:
           node --check commercial-campaign-deadline.mjs
           node --check master-advertisers.mjs
           node --check advertiser-portal.mjs
+          node --check advertiser-push.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('advertiser.webmanifest','utf8'))"
           node --test tests/commercial-expiry-alerts.test.cjs
       - name: Ensure no player or Android release modifications
         run: |
