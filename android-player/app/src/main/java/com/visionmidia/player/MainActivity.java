@@ -594,6 +594,18 @@ public class MainActivity extends Activity {
                 if (apiKey != null && !apiKey.isEmpty()) connection.setRequestProperty("apikey", apiKey);
                 if (deviceToken != null && !deviceToken.isEmpty()) connection.setRequestProperty("x-device-token", deviceToken);
 
+                if ("fpadgedrgcxrrqflzhjt.supabase.co".equals(target.getHost())
+                        && "/functions/v1/device-gateway".equals(target.getPath())
+                        && jsonBody != null) {
+                    JSONObject request = new JSONObject(jsonBody);
+                    if ("register_push".equals(request.optString("action"))) {
+                        String token = prefs == null ? "" : prefs.getString(VisionFcmApplication.FCM_TOKEN_KEY, "");
+                        if (!VisionFcmApplication.isConfigured() || token.length() < 50)
+                            throw new IllegalStateException("FCM ainda indisponivel");
+                        request.put("fcm_token", token);
+                        jsonBody = request.toString();
+                    }
+                }
                 byte[] payload = (jsonBody == null ? "{}" : jsonBody).getBytes(StandardCharsets.UTF_8);
                 connection.setFixedLengthStreamingMode(payload.length);
                 try (OutputStream output = connection.getOutputStream()) {
