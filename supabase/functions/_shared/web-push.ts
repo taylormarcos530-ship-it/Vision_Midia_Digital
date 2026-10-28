@@ -99,6 +99,7 @@ export async function sendCompanyPush(admin: any, companyId: string, payload: Vi
 // Never persist these messages in company_notifications or use company_id.
 export async function sendAdvertiserPush(
   admin: any, advertiserId: string, recipientUserId: string, payload: VisionPushPayload,
+  onlyEndpoint?: string,
 ) {
   if (!advertiserId || !recipientUserId) return { sent: 0, failed: 0, skipped: 'recipient_required' }
 
@@ -119,12 +120,14 @@ export async function sendAdvertiserPush(
   if (!cfg?.vapid_public_key || !cfg?.vapid_private_key || !cfg?.subject)
     return { sent: 0, failed: 0, skipped: 'vapid_not_configured' }
 
-  const { data: subs, error: subError } = await admin
+  let subscriptionsQuery = admin
     .from('vision_advertiser_push_subscriptions')
     .select('id,endpoint,p256dh,auth_key')
     .eq('advertiser_id', advertiserId)
     .eq('user_id', recipientUserId)
     .is('disabled_at', null)
+  if (onlyEndpoint) subscriptionsQuery = subscriptionsQuery.eq('endpoint', onlyEndpoint)
+  const { data: subs, error: subError } = await subscriptionsQuery
   if (subError) throw subError
   if (!subs?.length) return { sent: 0, failed: 0, skipped: 'no_subscriptions' }
 
