@@ -14,6 +14,11 @@
         key:'visual', title:'Resultados das Loterias — layout de teste',
         description:'Visual de três cartões. Sem resultados reais até validar uma fonte.',
         name:'Vision QA — Layout de resultados', file:'resultados-vision.html'
+      },
+      {
+        key:'json', title:'Configurar fonte JSON pública (bancada)',
+        description:'Cole a URL da fonte e gere a página visual para a TV.',
+        name:'Vision QA — Fonte JSON', file:'configurar-fonte-json.html'
       }
     ];
     for (const preset of presets) {
@@ -29,6 +34,10 @@
       button.append(title, description);
       grid.append(button);
       button.addEventListener('click', () => {
+        if (preset.key === 'json') {
+          window.open(new URL('./configurar-fonte-json.html', location.href).href, '_blank', 'noopener');
+          return;
+        }
         // Preserve the original media creation flow, permissions and playlist logic.
         const existing = grid.querySelector('[data-online-preset="news_br"]');
         if (!existing) return;
