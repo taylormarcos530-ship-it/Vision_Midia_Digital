@@ -44,3 +44,12 @@ test('commercial expiry: inbox remains paginated to show more than three alerts'
   assert.match(inbox, /\.filter\(\(item: any\) => !item\.deleted_at\)\.slice\(0, 30\)/);
   assert.match(app, /result\.items\.slice\(0, 30\)/);
 });
+
+test('commercial expiry: Academia Life master is the only preselected account, disabled until QA', () => {
+  assert.match(sql, /c\.slug = 'visiontek-group-9c77be'/);
+  assert.match(sql, /c\.name = 'Academia Life'/);
+  assert.match(sql, /pa\.status = 'active'/);
+  assert.match(sql, /pa\.role in \('admin','super_admin'\)/);
+  assert.match(sql, /select c\.id, c\.owner_user_id, false/);
+  assert.match(sql, /on conflict \(company_id\) do nothing/);
+});
