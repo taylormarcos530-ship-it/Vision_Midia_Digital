@@ -18,7 +18,7 @@ function viewerSetup(search=''){
  const find=nodes();
  const js=read('json-feed.js').replace(/^import .*;\s*/m,'const fetchCachedJson=async()=>({value:null,source:"unavailable",stale:true,_meta:{}});\n');
  const ctx=vm.createContext({
-   document:{getElementById:find,createElement:()=>({textContent:'',className:''})},
+   document:{getElementById:find,createElement:()=>({textContent:'',className:''}),addEventListener(){}},
    location:{href:'https://preview.example/json-feed.html'+search,origin:'https://preview.example',search},
    URL,URLSearchParams,window:{addEventListener(){}},setInterval(){},console
  });
