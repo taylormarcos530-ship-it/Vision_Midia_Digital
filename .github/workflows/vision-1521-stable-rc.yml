@@ -44,7 +44,7 @@ jobs:
           if(previous.version_code!==32 || previous.application_id!=='com.visionmidia.player.stable') throw Error('Unexpected installed production baseline');
           if(previous.signer_sha256!==officialCert) throw Error('Official signing certificate changed');
           if(!/versionCode 33/.test(build)||!/versionName '1.5.21'/.test(build)) throw Error('Incorrect upgrade version');
-          if(!/applicationIdSuffix '\\.stable'/.test(build)) throw Error('Stable package not preserved');
+          if(!build.includes("applicationIdSuffix '.stable'")) throw Error('Stable package not preserved');
           NODE
       - uses: actions/setup-java@v4
         with:
