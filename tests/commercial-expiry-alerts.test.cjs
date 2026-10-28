@@ -36,3 +36,11 @@ test('commercial expiry: does not alter the video player and requires server tok
   assert.match(worker, /finish_vision_commercial_alert/);
   assert.doesNotMatch(worker, /(?:device_commands|player_cache|playlist_items)/);
 });
+
+test('commercial expiry: inbox remains paginated to show more than three alerts', () => {
+  const inbox = read('supabase/functions/notification-inbox/index.ts');
+  const app = read('app.js');
+  assert.match(inbox, /\.limit\(100\)/);
+  assert.match(inbox, /\.filter\(\(item: any\) => !item\.deleted_at\)\.slice\(0, 30\)/);
+  assert.match(app, /result\.items\.slice\(0, 30\)/);
+});
