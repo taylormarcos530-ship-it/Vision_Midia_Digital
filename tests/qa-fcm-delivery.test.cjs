@@ -80,3 +80,15 @@ test('FCM build is opt-in and does not embed server private keys',()=>{
   assert.doesNotMatch(application,/private_key/);
   assert.doesNotMatch(messaging,/private_key/);
 });
+
+test('Firebase public client app must match the QA package and not official stable',()=>{
+  const cfg=JSON.parse(fs.readFileSync(path.join(root,'android-player/app/firebase-homolog-public.json'),'utf8'));
+  assert.equal(cfg.package_name,'com.visionmidia.player.homolog');
+  assert.equal(cfg.project_id,'vision-midia-digital');
+  assert.ok(cfg.mobilesdk_app_id.startsWith('1:'+cfg.project_number+':android:'));
+  assert.ok(cfg.api_key.length>20);
+  assert.match(gradle,/firebase-homolog-public\\.json/);
+  assert.match(gradle,/qaFirebase\\.package_name != 'com\\.visionmidia\\.player\\.homolog'/);
+  // Stable configuration defaults to empty; QA build type overrides only itself.
+  assert.match(gradle,/buildConfigField 'String', 'VISION_FCM_APP_ID', JsonOutput\\.toJson\\(System\\.getenv\\('VISION_FCM_APP_ID'\\) \\?: ''\\)/);
+});
