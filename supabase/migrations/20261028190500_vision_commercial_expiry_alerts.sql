@@ -56,11 +56,15 @@ begin
       and c.status in ('active','paused')
       and c.end_date between today_sp - 7 and today_sp
   loop
-    title_text := left('Campanha comercial vencida • ' || campaign_row.advertiser_name, 120);
+    title_text := left(
+      (case when campaign_row.end_date = today_sp then 'Campanha vence hoje • '
+            else 'Campanha vencida • ' end) || campaign_row.advertiser_name, 120);
     body_text := left(
       'Anunciante: ' || campaign_row.advertiser_name ||
       '. Campanha: ' || campaign_row.name ||
-      '. Vencimento: ' || to_char(campaign_row.end_date, 'DD/MM/YYYY') ||
+      (case when campaign_row.end_date = today_sp then '. Vence hoje, '
+            else '. Venceu em ' end) ||
+      to_char(campaign_row.end_date, 'DD/MM/YYYY') ||
       '. Verifique a renovação.',
       500
     );
