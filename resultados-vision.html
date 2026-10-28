@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#06132c">
+  <title>Vision | Painel visual de resultados — homologação</title>
+  <link rel="stylesheet" href="./resultados-vision.css">
+  <script src="./resultados-vision.js" defer></script>
+</head>
+<body>
+  <main class="stage" aria-label="Painel visual de resultados — homologação">
+    <header class="masthead">
+      <div class="vision-brand" aria-label="Vision Mídia Digital">
+        <div class="vision-word">VISI<span class="play-mark" aria-hidden="true"><span></span></span>N</div>
+        <div class="vision-subtitle">MÍDIA DIGITAL</div>
+      </div>
+      <div class="headline">
+        <div class="headline-first">RESULTADOS DAS</div>
+        <h1>LOTERIAS</h1>
+      </div>
+      <div class="brand-tagline">INFORMAÇÃO<br>QUE SEMPRE<br>COM VOCÊ<div class="yellow-line" aria-hidden="true"></div></div>
+    </header>
+
+    <section class="panels" aria-label="Três modalidades de resultados">
+      <article class="panel mega" data-game="mega-sena">
+        <div class="panel-heading">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M30 29H17C6 29 5 12 15 8c8-3 15 3 15 11v10ZM34 29V16C34 5 51 4 55 14c3 8-3 15-11 15H34ZM30 35v13c0 11-17 12-21 2-3-8 3-15 11-15h10ZM34 35h13c11 0 12 17 2 21-8 3-15-3-15-11V35Z" fill="currentColor"/></svg>
+          <h2>MEGA-SENA</h2>
+        </div>
+        <div class="details"><div><span>CONCURSO</span><strong data-field="contest">—</strong></div><div><span>DATA DO SORTEIO</span><strong data-field="date">—</strong></div></div>
+        <div class="body-panel">
+          <div class="numbers" data-numbers aria-label="Seis dezenas não disponíveis"></div>
+          <div class="waiting" data-waiting>Aguardando dados verificados</div>
+          <div class="accumulation"><span>ACUMULOU:</span><strong data-field="accumulated">—</strong></div>
+        </div>
+      </article>
+      <article class="panel quina" data-game="quina">
+        <div class="panel-heading">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M30 29H17C6 29 5 12 15 8c8-3 15 3 15 11v10ZM34 29V16C34 5 51 4 55 14c3 8-3 15-11 15H34ZM30 35v13c0 11-17 12-21 2-3-8 3-15 11-15h10ZM34 35h13c11 0 12 17 2 21-8 3-15-3-15-11V35Z" fill="currentColor"/></svg>
+          <h2>QUINA</h2>
+        </div>
+        <div class="details"><div><span>CONCURSO</span><strong data-field="contest">—</strong></div><div><span>DATA DO SORTEIO</span><strong data-field="date">—</strong></div></div>
+        <div class="body-panel">
+          <div class="numbers" data-numbers aria-label="Cinco dezenas não disponíveis"></div>
+          <div class="waiting" data-waiting>Aguardando dados verificados</div>
+          <div class="accumulation"><span>ACUMULOU:</span><strong data-field="accumulated">—</strong></div>
+        </div>
+      </article>
+      <article class="panel lotofacil" data-game="lotofacil">
+        <div class="panel-heading">
+          <svg class="mark" viewBox="0 0 64 64" aria-hidden="true"><path d="M30 29H17C6 29 5 12 15 8c8-3 15 3 15 11v10ZM34 29V16C34 5 51 4 55 14c3 8-3 15-11 15H34ZM30 35v13c0 11-17 12-21 2-3-8 3-15 11-15h10ZM34 35h13c11 0 12 17 2 21-8 3-15-3-15-11V35Z" fill="currentColor"/></svg>
+          <h2>LOTOFÁCIL</h2>
+        </div>
+        <div class="details"><div><span>CONCURSO</span><strong data-field="contest">—</strong></div><div><span>DATA DO SORTEIO</span><strong data-field="date">—</strong></div></div>
+        <div class="body-panel">
+          <div class="numbers" data-numbers aria-label="Quinze dezenas não disponíveis"></div>
+          <div class="waiting" data-waiting>Aguardando dados verificados</div>
+          <div class="accumulation"><span>ACUMULOU:</span><strong data-field="accumulated">—</strong></div>
+        </div>
+      </article>
+    </section>
+
+    <footer class="page-footer">
+      <div><span class="screen-icon" aria-hidden="true">▣</span> <span id="data-status" role="status">LAYOUT DE HOMOLOGAÇÃO • SEM FONTE DE RESULTADOS CONFIGURADA</span></div>
+      <span>VISION • CONTEÚDO INFORMATIVO</span>
+    </footer>
+  </main>
+</body>
+</html>
