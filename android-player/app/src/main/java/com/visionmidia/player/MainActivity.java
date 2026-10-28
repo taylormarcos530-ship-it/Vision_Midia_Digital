@@ -436,9 +436,10 @@ public class MainActivity extends Activity {
         }
 
         @JavascriptInterface
-        public String getFcmToken() {
+        public String getFcmTokenMarker() {
             if (prefs == null || !VisionFcmApplication.isConfigured()) return "";
-            return prefs.getString(VisionFcmApplication.FCM_TOKEN_KEY, "");
+            String token = prefs.getString(VisionFcmApplication.FCM_TOKEN_KEY, "");
+            return token.length() < 50 ? "" : Integer.toString(token.hashCode());
         }
 
         @JavascriptInterface
