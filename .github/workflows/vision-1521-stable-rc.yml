@@ -1,0 +1,119 @@
+name: Vision 1.5.21 Stable RC - signed artifact only
+
+on:
+  push:
+    branches:
+      - release/vision-player-stable-1521-rc-20261028
+    paths:
+      - 'android-player/**'
+      - 'player.*'
+      - 'config.js'
+      - 'clock.html'
+      - 'news-feed.*'
+      - 'icon.svg'
+      - 'sw.js'
+      - 'tests/**'
+      - '.github/workflows/vision-1521-stable-rc.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify_and_build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Static and regression tests
+        run: |
+          set -euo pipefail
+          node --check player.js
+          node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs
+          node <<'NODE'
+          const fs=require('node:fs');
+          const previous=JSON.parse(fs.readFileSync('downloads/Vision-Player.source.json','utf8'));
+          const build=fs.readFileSync('android-player/app/build.gradle','utf8');
+          const officialCert=fs.readFileSync('android-player/signing-certificate.sha256','utf8').trim();
+          if(previous.version_code!==32 || previous.application_id!=='com.visionmidia.player.stable') throw Error('Unexpected installed production baseline');
+          if(previous.signer_sha256!==officialCert) throw Error('Official signing certificate changed');
+          if(!/versionCode 33/.test(build)||!/versionName '1.5.21'/.test(build)) throw Error('Incorrect upgrade version');
+          if(!/applicationIdSuffix '\\.stable'/.test(build)) throw Error('Stable package not preserved');
+          NODE
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Bundle offline media player assets
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - name: Build unsigned stable release candidate
+        run: gradle -p android-player --no-daemon assembleRelease
+      - name: Validate and sign only with existing OFFICIAL signing identity
+        shell: bash
+        env:
+          KEYSTORE_B64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for var in KEYSTORE_B64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            test -n "${!var}" || { echo "Required OFFICIAL signing credential not configured: $var"; exit 1; }
+          done
+          KEY_FILE="$RUNNER_TEMP/vision-official-key.jks"
+          trap 'rm -f "$KEY_FILE"' EXIT
+          printf '%s' "$KEYSTORE_B64" | base64 --decode > "$KEY_FILE"
+          chmod 600 "$KEY_FILE"
+          python3 scripts/verify-android-signing-key.py "$KEY_FILE" android-player/signing-certificate.sha256
+          INPUT=android-player/app/build/outputs/apk/release/app-release-unsigned.apk
+          test -s "$INPUT"
+          mkdir -p dist
+          APK=dist/Vision-Player-1.5.21-stable-rc.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" sign --ks "$KEY_FILE" --ks-pass env:KEYSTORE_PASSWORD --ks-key-alias "$KEY_ALIAS" --key-pass env:KEY_PASSWORD --out "$APK" "$INPUT"
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose --print-certs "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | tee dist/badging.txt
+          grep -q "name='com.visionmidia.player.stable'" dist/badging.txt
+          grep -q "versionCode='33'" dist/badging.txt
+          grep -q "versionName='1.5.21-stable'" dist/badging.txt
+          if grep -q 'application-debuggable' dist/badging.txt; then echo "Debuggable production APK is forbidden"; exit 1; fi
+          actual="$("$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs "$APK" | sed -n 's/^Signer #1 certificate SHA-256 digest: //p')"
+          expected="$(tr -d '[:space:]' < android-player/signing-certificate.sha256)"
+          test "$actual" = "$expected" || { echo "OFFICIAL certificate fingerprint mismatch"; exit 1; }
+          sha256sum "$APK" > dist/Vision-Player-1.5.21-stable-rc.sha256
+          {
+            echo "release_candidate=true"
+            echo "package=com.visionmidia.player.stable"
+            echo "versionCode=33"
+            echo "versionName=1.5.21-stable"
+            echo "git_commit=$GITHUB_SHA"
+            echo "signer_sha256=$actual"
+            echo "production_deploy=false"
+            echo "supabase_deploy=false"
+            echo "requires=test TV, offline boot, rotation, pairing, server rollout validation"
+          } > dist/provenance.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-1.5.21-Stable-Release-Candidate-NOT-PUBLISHED
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
