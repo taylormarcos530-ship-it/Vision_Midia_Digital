@@ -42,6 +42,8 @@
     pushTimer: null,
     pushReady: false,
     pushPending: false,
+    qaBundleSupported: true,
+    qaLastManifestAt: 0,
     pushRegisteredKey: '',
     pushRegisteredAt: 0,
     pushLastAttemptAt: 0,
@@ -90,6 +92,17 @@
   // command polling within a short bounded range.
   function staggeredPollInterval(ms) {
     return Math.round(ms * (0.85 + Math.random() * 0.30));
+  }
+  // Casa-only experiment: 1 Edge call approximately every 58s. The Master
+  // command fallback is safely bounded by one cycle, not pushed via FCM.
+  const QA_BUNDLE_DEVICE_ID = '45b27442-e0ee-4b79-87fc-c753a52f060c';
+  const QA_BUNDLE_VERSION = '1.5.24-homologacao';
+  const QA_BUNDLE_INTERVAL_MS = 58_000;
+  const QA_BUNDLE_MANIFEST_INTERVAL_MS = 120_000;
+  function useQaBundle() {
+    return state.qaBundleSupported &&
+      nativeAppVersion() === QA_BUNDLE_VERSION &&
+      state.manifest?.device?.id === QA_BUNDLE_DEVICE_ID;
   }
   const BACKGROUND_RETRY_BASE_MS = 15_000;
   const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
@@ -216,6 +229,7 @@
     'device-gateway.manifest', 'device-gateway.commands',
     'device-gateway.playback_batch', 'device-gateway.heartbeat',
     'device-monitoring.heartbeat', 'device-monitoring.event_batch',
+    'device-bundle-qa.cycle',
   ]);
   function requestMetricsSnapshot() {
     const stored = readJson(REQUEST_METRICS_KEY);
@@ -237,7 +251,7 @@
     if (!state.deviceToken) return;
     const key = route + '.' + String(action || 'other');
     const normalized = TRAFFIC_ACTIONS.has(key) ? key : route + '.other';
-    if (route !== 'device-gateway' && route !== 'device-monitoring') return;
+    if (route !== 'device-gateway' && route !== 'device-monitoring' && route !== 'device-bundle-qa') return;
     try {
       const snapshot = requestMetricsSnapshot();
       snapshot.counts[normalized] = Math.min(1000000000, (snapshot.counts[normalized] || 0) + 1);
@@ -748,7 +762,7 @@
     }
   }
 
-  async function heartbeat() {
+  async function heartbeat(asPayload = false) {
     if (!state.deviceToken) return;
     let storageFreeMb = null;
     try {
@@ -765,7 +779,7 @@
     const clientTimeMs = Date.now();
     const timezoneOffsetMinutes = new Date(clientTimeMs).getTimezoneOffset();
 
-    await monitorGateway({
+    const payload = {
       action: 'heartbeat',
       app_version: APP_VERSION,
       player_version: APP_VERSION,
@@ -803,7 +817,9 @@
         // Backend stores a sampled heartbeat every ~5min and can diff snapshots.
         request_metrics: requestMetricsSnapshot(),
       },
-    });
+    };
+    if (asPayload) return payload;
+    return monitorGateway(payload);
   }
 
   function cacheKey(item) {
@@ -1068,10 +1084,10 @@
     })().catch(error => console.warn('Prefetch de mídia falhou', error));
   }
 
-  async function syncManifest() {
+  async function syncManifest(preloadedManifest = null) {
     if (!state.deviceToken) return;
     try {
-      const manifest = validateManifestPayload(await gateway({ action: 'manifest', supports_item_schedules: true }));
+      const manifest = validateManifestPayload(preloadedManifest || await gateway({ action: 'manifest', supports_item_schedules: true }));
       const changed = !state.manifest || state.manifest.version !== manifest.version;
       // Keep playing the old program if the first essential new local item cannot load.
       if (changed && state.manifest && manifest.playlist) {
@@ -1476,9 +1492,9 @@
     }
   }
 
-  async function pollDeviceCommands() {
+  async function pollDeviceCommands(preloadedCommands = null) {
     if(!state.deviceToken||!navigator.onLine)return;
-    const result=await gateway({action:'commands'});
+    const result=preloadedCommands === null ? await gateway({action:'commands'}) : {commands:preloadedCommands};
     for(const command of result?.commands||[]){
       if(state.processingCommands.has(command.id))continue;
       if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type))continue;
@@ -1539,6 +1555,72 @@
           }
         }
       }finally{state.processingCommands.delete(command.id)}
+    }
+  }
+
+  function acknowledgeQaBatch(storageKey, sent) {
+    if (!Array.isArray(sent) || !sent.length) return;
+    const confirmed = new Set(sent.map(event => event.client_event_id));
+    const latest = readJson(storageKey);
+    if (!Array.isArray(latest)) return;
+    const pending = latest.filter(event => !confirmed.has(event.client_event_id));
+    writeJson(storageKey, pending.length ? pending : null);
+  }
+
+  async function runQaBundle() {
+    if (!state.deviceToken || !navigator.onLine || !useQaBundle()) return;
+    const proofs = playbackQueue().slice(0, 50);
+    const events = deviceEventQueue().slice(0, 25);
+    const manifestDue = !state.qaLastManifestAt ||
+      performance.now() - state.qaLastManifestAt >= QA_BUNDLE_MANIFEST_INTERVAL_MS;
+    let response;
+    try {
+      countRequestAttempt('device-bundle-qa', 'cycle');
+      response = await functionRequest('device-bundle-qa', {
+        action: 'cycle',
+        heartbeat: await heartbeat(true),
+        proofs, events,
+        include_manifest: manifestDue,
+      }, state.deviceToken);
+    } catch (error) {
+      // If this opt-in endpoint has not yet been deployed, fall back to V35
+      // polling automatically, without touching any offline media or pairing.
+      if (Number(error?.status) === 401) {
+        resetPairing(false);
+        void startPairing(true);
+      } else if (Number(error?.status) === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
+        showAccessBlocked(error);
+      }
+      if (Number(error?.status) === 404 ||
+          (Number(error?.status) === 403 &&
+            ['qa_only','wrong_qa_device'].includes(String(error?.data?.error || '')))) {
+        state.qaBundleSupported = false;
+        if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+        if (state.accessTimer) clearInterval(state.accessTimer);
+        startLegacyPollingTimers();
+      }
+      throw error;
+    }
+    if (response?.device_id !== QA_BUNDLE_DEVICE_ID || response?.ok !== true)
+      throw new Error('Resposta inválida do servidor QA: preservando filas locais.');
+    // Acknowledgements are independent; never lose cached proofs on a partial
+    // failure or a response interrupted after the database write.
+    if (response.proofs?.ok && response.proofs.data?.accepted === proofs.length)
+      acknowledgeQaBatch(PLAYBACK_QUEUE_KEY, proofs);
+    if (response.events?.ok && response.events.data?.accepted === events.length)
+      acknowledgeQaBatch(DEVICE_EVENT_QUEUE_KEY, events);
+
+    // Process authenticated Master commands before potentially slow cache
+    // work from a changed manifest; normal command latency stays near 58s.
+    if (response.commands?.ok && Array.isArray(response.commands.data?.commands))
+      await pollDeviceCommands(response.commands.data.commands);
+    else throw new Error('Comandos QA não confirmados; preservando comandos no servidor.');
+    if (response.heartbeat?.ok !== true)
+      throw new Error('Heartbeat QA não confirmado; retorno automático com backoff.');
+    if (manifestDue && response.manifest?.ok) {
+      await syncManifest(response.manifest.data);
+      state.qaLastManifestAt = performance.now();
     }
   }
 
@@ -1646,6 +1728,20 @@
       }
       if (localAccessState().startsWith('clock-')) void runBackgroundPoll(syncManifest);
     }, 15_000);
+    if (useQaBundle()) {
+      // No FCM assumed. Online watchdog remains checked in each bundled
+      // heartbeat; playback continues offline independently of the network.
+      state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
+      state.heartbeatTimer = setInterval(() => {
+        void runBackgroundPoll(runQaBundle);
+      }, QA_BUNDLE_INTERVAL_MS);
+      void runBackgroundPoll(runQaBundle);
+      return;
+    }
+    startLegacyPollingTimers();
+  }
+
+  function startLegacyPollingTimers() {
     state.heartbeatTimer = setInterval(() => {
       void runBackgroundPoll(async () => {
         await heartbeat();
@@ -1715,6 +1811,7 @@
     state.pushTimer = null;
     state.pushReady = false;
     state.pushPending = false;
+    state.qaLastManifestAt = 0;
     state.pushRegisteredKey = '';
     state.pushRegisteredAt = 0;
     state.lastCommandReconcileAt = 0;
