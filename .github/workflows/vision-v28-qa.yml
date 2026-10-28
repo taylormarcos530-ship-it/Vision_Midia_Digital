@@ -1,0 +1,88 @@
+name: Vision V28 QA - tests and unsigned APK
+on:
+  push:
+    branches:
+      - fix/vision-v28-qa-20261028
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check JavaScript syntax
+        run: node --check player.js
+      - name: Run backend regression and V28 QA tests
+        run: node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs
+
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android build tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ] && [ -x "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" ]; then
+            SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          fi
+          test -n "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Bundle local web assets into QA APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+      - name: Build QA package without release or permanent signing keys
+        run: gradle -p android-player --no-daemon assembleHomologUnsigned
+      - name: Inspect package and prepare ZIP payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="$(find android-player/app/build/outputs/apk -type f -name '*.apk' -path '*homologUnsigned*' | head -n 1)"
+          test -n "$APK" && test -s "$APK"
+          AAPT="$ANDROID_HOME/build-tools/35.0.0/aapt"
+          test -x "$AAPT"
+          "$AAPT" dump badging "$APK" | tee /tmp/v28-badging.txt
+          grep -q "name='com.visionmidia.player.homolog'" /tmp/v28-badging.txt
+          grep -q "versionCode='28'" /tmp/v28-badging.txt
+          if "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$APK"; then
+            echo 'ERROR: QA build unexpectedly signed; stop'
+            exit 1
+          fi
+          mkdir -p dist
+          cp "$APK" dist/Vision-V28-homologacao-sem-assinatura.apk
+          (cd dist && sha256sum Vision-V28-homologacao-sem-assinatura.apk > Vision-V28-homologacao-sem-assinatura.sha256)
+          {
+            echo "branch=$GITHUB_REF_NAME"
+            echo "commit=$GITHUB_SHA"
+            echo "package=com.visionmidia.player.homolog"
+            echo "versionCode=28"
+            echo "signature=unsigned; sign offline using operator's permanent QA key"
+            echo "deploy=QA ONLY; no production Supabase functions deployed"
+          } > dist/source.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-V28-QA-APK-unsigned
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
