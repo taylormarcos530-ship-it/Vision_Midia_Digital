@@ -23,7 +23,7 @@ async function persistCompanyNotificationBestEffort(admin: any, companyId: strin
   }
 }
 
-export async function sendCompanyPush(admin: any, companyId: string, payload: VisionPushPayload, persistInbox = true) {
+export async function sendCompanyPush(admin: any, companyId: string, payload: VisionPushPayload, persistInbox = true, recipientUserId?: string) {
   if (!companyId) return { sent: 0, failed: 0, skipped: 'company_required' }
 
   if (persistInbox) await persistCompanyNotificationBestEffort(admin, companyId, payload)
@@ -39,11 +39,14 @@ export async function sendCompanyPush(admin: any, companyId: string, payload: Vi
     return { sent: 0, failed: 0, skipped: 'vapid_not_configured' }
   }
 
-  const { data: subscriptions, error: subError } = await admin
+  // Optional user scope prevents master-only alerts leaking to other users of a company.
+  let subscriptionQuery = admin
     .from('web_push_subscriptions')
     .select('id,endpoint,p256dh,auth_key')
     .eq('company_id', companyId)
     .is('disabled_at', null)
+  if (recipientUserId) subscriptionQuery = subscriptionQuery.eq('user_id', recipientUserId)
+  const { data: subscriptions, error: subError } = await subscriptionQuery
 
   if (subError) throw subError
   if (!subscriptions?.length) return { sent: 0, failed: 0, skipped: 'no_subscriptions' }
