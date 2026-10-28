@@ -130,10 +130,16 @@ export function createAdvertiserPushControls(api) {
     // An explicit logout invalidates this advertiser device registration, avoiding
     // notifications on a shared phone; closing the browser does not log out.
     const sub=await localSubscription().catch(()=>null);
-    if(sub) await api.request('/functions/v1/advertiser-push',{
-      body:{action:'unsubscribe',endpoint:sub.endpoint},retry:false,
-    }).catch(()=>{});
+    let serverUnsubscribed = true;
+    if(sub) {
+      try {
+        await api.request('/functions/v1/advertiser-push',{
+          body:{action:'unsubscribe',endpoint:sub.endpoint},retry:false,
+        });
+      } catch { serverUnsubscribed = false; }
+    }
     attachedAdvertiserId=null;generation++;active=false;render();status('');
+    return serverUnsubscribed;
   }
   enable?.addEventListener('click',()=>{void activate();});
   disable?.addEventListener('click',()=>{void deactivate();});
