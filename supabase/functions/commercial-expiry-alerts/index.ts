@@ -2,7 +2,7 @@
 // Deploy with verify_jwt=false only because the request authenticates using the
 // existing private subscription-alert token (validated server-side via RPC).
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { sendCompanyPush } from '../_shared/web-push.ts'
+import { sendCompanyPush, sendAdvertiserPush } from '../_shared/web-push.ts'
 
 type Job = {
   id: string
@@ -17,6 +17,7 @@ type ClientEmailJob = {
   title: string
   message: string
 }
+type ClientPushJob = { id: string, advertiser_id: string, user_id: string, title: string, message: string }
 const htmlEscape = (value: string) => String(value)
   .replaceAll('&', '&amp;').replaceAll('<', '&lt;')
   .replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;')
@@ -76,6 +77,46 @@ Deno.serve(async (request: Request) => {
       if (finishError) throw finishError
       outcomes.push({ id: job.id, ...result })
     }
+
+    // Primary advertiser channel: Web Push. This queue is independent of
+    // e-mail, company notifications, and TV/Player.
+    let clientPushSent = 0
+    let clientPushFailed = 0
+    let clientPushProcessed = 0
+    let clientPushError = ''
+    try {
+      const { data: pushJobs, error: pushClaimError } = await admin.rpc(
+        'claim_vision_commercial_advertiser_push_alerts',
+      )
+      if (pushClaimError) throw pushClaimError
+      for (const job of (pushJobs || []) as ClientPushJob[]) {
+        let delivery: { sent: number, failed: number, skipped?: string }
+        try {
+          delivery = await sendAdvertiserPush(admin,job.advertiser_id,job.user_id,{
+            title:job.title,
+            body:job.message,
+            tag:'vision-advertiser-expiry-'+job.id,
+          })
+        } catch {
+          delivery = {sent:0,failed:1}
+        }
+        const { error: finishError } = await admin.rpc(
+          'finish_vision_commercial_advertiser_push_alert',{
+            p_id:job.id,
+            p_result:delivery,
+            p_retry:Number(delivery.failed||0)>0,
+          },
+        )
+        if (finishError) throw finishError
+        clientPushProcessed++
+        clientPushSent += Number(delivery.sent||0)
+        clientPushFailed += Number(delivery.failed||0)
+      }
+    } catch (pushError) {
+      console.error('commercial advertiser push delivery failed',String(pushError))
+      clientPushError = 'push_worker_failed'
+    }
+
     // Client notifications use the advertiser's verified login e-mail.
     // This is separate from Master Push, and cannot reach partner-company push devices.
     let emailSent = 0
@@ -151,6 +192,7 @@ Deno.serve(async (request: Request) => {
       ok: true,
       processed: outcomes.length,
       outcomes,
+      advertiser_push: { processed: clientPushProcessed, sent: clientPushSent, failed: clientPushFailed, error: clientPushError || undefined },
       client_email: { sent: emailSent, failed: emailFailed, skipped: emailSkipped || undefined },
     })
   } catch (error) {
