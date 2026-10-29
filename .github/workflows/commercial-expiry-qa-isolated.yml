@@ -1,0 +1,30 @@
+name: Vision commercial QA - safe isolated branch
+on:
+  push:
+    branches:
+      - qa/commercial-expiry-readonly-20261029
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  offline-contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Static syntax and manifest
+        run: |
+          node --check tests/commercial-expiry-alerts.test.cjs
+          node --check commercial-campaign-deadline.mjs
+          node --check master-advertisers.mjs
+          node --check advertiser-portal.mjs
+          node --check advertiser-push.mjs
+          node -e "JSON.parse(require('node:fs').readFileSync('advertiser.webmanifest','utf8'))"
+      - name: Commercial isolated contract tests
+        run: node --test tests/commercial-expiry-alerts.test.cjs
+      - name: Ensure no runtime credentials or deployments
+        run: |
+          echo "Offline tests only; no Supabase credentials, no migration, no deploy, no TV player change."
