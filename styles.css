@@ -2503,3 +2503,20 @@ details.player-branding-panel[open] > summary::after { content:"Recolher ▴"; }
  .media-row-compact.media-row-pro>.media-row-topline{gap:9px}
  .media-card-order .media-arrow-button{width:46px;height:46px;min-width:46px;font-size:25px}
 }
+
+/* Vision: destaque visual dos nomes das TVs; sem consultas ou lógica adicional. */
+.device-card-pro .device-card-title strong {
+  display: inline-block;
+  max-width: 100%;
+  padding: 7px 12px;
+  border: 1px solid #416cb8;
+  border-radius: 9px;
+  background: #193d73;
+  color: #fff;
+  font-size: 17px;
+  font-weight: 800;
+  line-height: 1.3;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+}
