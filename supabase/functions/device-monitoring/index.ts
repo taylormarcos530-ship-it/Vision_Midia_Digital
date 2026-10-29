@@ -140,7 +140,8 @@ Deno.serve(async (req) => {
     const action = body?.action
 
     if (action === 'heartbeat') {
-      const staleBefore = new Date(Date.now() - 90_000).toISOString()
+      // Match the 3-minute offline alert threshold for 2-minute player heartbeats.
+      const staleBefore = new Date(Date.now() - 3 * 60_000).toISOString()
       const { error: staleSweepError } = await admin.from('devices')
         .update({ status: 'offline' })
         .eq('company_id', device.company_id)

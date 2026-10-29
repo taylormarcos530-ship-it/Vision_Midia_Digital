@@ -48,4 +48,7 @@ $('#logout').onclick=async()=>{closeView();try{await api.logout()}catch{}message
 $('#refresh').onclick=async()=>{const button=$('#refresh');button.disabled=true;button.textContent='Atualizando…';try{await show(true)}finally{button.disabled=false;button.textContent='Atualizar'}};
 $('#password-form').onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target);if(f.get('password')!==f.get('confirmation'))return message('As senhas devem ser iguais.',true);e.submitter.disabled=true;try{await api.request('/auth/v1/user',{method:'PUT',body:{password:f.get('password')}});e.target.reset();message('Senha alterada.');}catch(error){message(error.message,true)}finally{e.submitter.disabled=false}};
 if(demo){$('#demo-banner').hidden=false;$('#password-section').hidden=true;show()}else if(api.session())show();else if(!api.config?.enabled)message('Login real ainda não habilitado neste preview. A homologação será conectada a um ambiente isolado, sem usar a produção.');
-setInterval(()=>{if(!demo&&!document.hidden&&!$('#dashboard').hidden)show()},15000);
+// Data already comes from completed playback batches; polling every 15s does not improve counting.
+// Refresh at most every 2 minutes while visible, or immediately when the advertiser requests it.
+const PORTAL_AUTO_REFRESH_MS = 120_000;
+setInterval(()=>{if(!demo&&!document.hidden&&!$('#dashboard').hidden)show()},PORTAL_AUTO_REFRESH_MS);
