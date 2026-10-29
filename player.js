@@ -613,7 +613,8 @@
           duration_seconds: Math.max(0, (endedAt - startedAt) / 1000),
           completed,
         });
-        flushPlaybackQueue().catch(() => {});
+        // The persistent offline queue is sent in batches by the existing heartbeat.
+        // Avoid one HTTP request for every media playback.
         if (completed && state.playbackHadError) {
           queueDeviceEvent('playback_recovered', 'info', 'Reprodução normal restabelecida após uma falha.', {
             media_id: item.media?.id || null,
