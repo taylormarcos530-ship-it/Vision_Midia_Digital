@@ -24,7 +24,7 @@ jobs:
           node --check advertiser-push.mjs
           node -e "JSON.parse(require('node:fs').readFileSync('advertiser.webmanifest','utf8'))"
       - name: Commercial isolated contract tests
-        run: node --test tests/commercial-expiry-alerts.test.cjs
+        run: node --test tests/commercial-expiry-alerts.test.cjs tests/commercial-calendar-validation.test.cjs
       - name: Ensure no runtime credentials or deployments
         run: |
           echo "Offline tests only; no Supabase credentials, no migration, no deploy, no TV player change."
