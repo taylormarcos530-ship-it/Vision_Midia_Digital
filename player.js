@@ -76,14 +76,22 @@
     writeJson(PLAYBACK_QUEUE_KEY, queue);
   }
 
+  let playbackFlushInProgress = false;
   async function flushPlaybackQueue() {
-    if (!state.deviceToken || !navigator.onLine) return;
-    let queue = playbackQueue();
-    while (queue.length) {
-      const batch = queue.slice(0, 50);
-      await gateway({ action: 'playback_batch', events: batch });
-      queue = queue.slice(batch.length);
-      writeJson(PLAYBACK_QUEUE_KEY, queue.length ? queue : null);
+    if (playbackFlushInProgress || !state.deviceToken || !navigator.onLine) return;
+    playbackFlushInProgress = true;
+    try {
+      while (state.deviceToken && navigator.onLine) {
+        const batch = playbackQueue().slice(0, 50);
+        if (!batch.length) break;
+        await gateway({ action: 'playback_batch', events: batch });
+        // Re-read storage after the request: playback may have added events meanwhile.
+        const sentIds = new Set(batch.map(event => event.client_event_id));
+        const remaining = playbackQueue().filter(event => !sentIds.has(event.client_event_id));
+        writeJson(PLAYBACK_QUEUE_KEY, remaining.length ? remaining : null);
+      }
+    } finally {
+      playbackFlushInProgress = false;
     }
   }
 
