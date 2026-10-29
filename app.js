@@ -1336,6 +1336,24 @@
     try {
       const filters = reportFilters();
       state.report = await restRequest('rpc/get_playback_report', { method: 'POST', body: filters });
+      // Shadow validation only: do not change displayed counts or advertiser evidence.
+      // The combined RPC is queried once per explicit report refresh, not on a timer.
+      try {
+        const combined = await restRequest('rpc/get_playback_combined_totals', { method: 'POST', body: filters });
+        const current = state.report?.summary;
+        if (current && combined && Number(combined.archive_started || 0) === 0) {
+          const countMatches = Number(current.started || 0) === Number(combined.started || 0);
+          const completedMatches = Number(current.completed || 0) === Number(combined.completed || 0);
+          if (!countMatches || !completedMatches) {
+            console.warn('[Vision] Playback report shadow check mismatch', {
+              currentStarted: current.started, combinedStarted: combined.started,
+              currentCompleted: current.completed, combinedCompleted: combined.completed
+            });
+          }
+        }
+      } catch (shadowError) {
+        console.warn('[Vision] Playback archive shadow check unavailable', shadowError?.message || shadowError);
+      }
       renderPlaybackReport();
       if (!quiet) toast('Relatório atualizado', 'A prova de veiculação foi recalculada.');
     } catch (error) {
