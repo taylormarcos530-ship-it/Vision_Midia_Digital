@@ -22,7 +22,7 @@
   const VALID_OPERATIONAL_VIEWS = new Set(['dashboard', 'devices', 'monitoring', 'media', 'playlists', 'campaigns', 'reports', 'inbox']);
   const MAX_UPLOAD_BYTES = 500 * 1024 * 1024;
   const EXPECTED_PLAYER_VERSION = 'vision-player-web-1.5.6';
-  const EXPECTED_APK_VERSION = '1.5.20';
+  const EXPECTED_APK_VERSION = '1.5.24';
 
   function readLocalValue(key) {
     try { return localStorage.getItem(key); }
