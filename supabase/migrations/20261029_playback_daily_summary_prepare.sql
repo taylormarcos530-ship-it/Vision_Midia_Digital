@@ -20,3 +20,10 @@ revoke all on public.playback_daily_summary from anon, authenticated;
 -- Validar SUM(started), SUM(completed) e SUM(total_seconds) antes de excluir.
 -- Manter uma janela de segurança para eventos offline atrasados.
 -- Não ativar DELETE, VACUUM FULL nem agendamento nesta migração.
+
+-- Verification query: read-only, compare both counts before any retention deletion.
+-- SELECT (SELECT count(*) FROM public.playback_logs WHERE started_at < now()-interval '32 days') AS source_events,
+--        (SELECT coalesce(sum(started),0) FROM public.playback_daily_summary) AS summarized_events;
+-- IMPORTANT: the current get_playback_report RPC reads playback_logs only.
+-- Never delete historical events until that RPC is updated and tested with mixed date ranges.
+-- The player should still preserve campaign playback proof and offline replay.
