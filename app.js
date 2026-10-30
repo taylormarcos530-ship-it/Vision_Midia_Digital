@@ -1337,6 +1337,26 @@
       const filters = reportFilters();
       state.report = await restRequest('rpc/get_playback_report', { method: 'POST', body: filters });
       renderPlaybackReport();
+      // QA: uma consulta adicional apenas ao abrir/atualizar o relatório (nunca por reprodução).
+      const qualityLabel = $('#report-generated-label');
+      const qualitySpan = document.createElement('div');
+      qualitySpan.id = 'vision-report-quality-warning-qa';
+      qualitySpan.setAttribute('role', 'status');
+      qualitySpan.style.cssText = 'margin-top:8px;font-weight:600;';
+      qualityLabel?.parentElement?.querySelector('#vision-report-quality-warning-qa')?.remove();
+      qualityLabel?.insertAdjacentElement('afterend', qualitySpan);
+      const days = Math.round((new Date(filters.p_end_date + 'T00:00:00Z') - new Date(filters.p_start_date + 'T00:00:00Z')) / 86400000);
+      if (days <= 31) {
+        try {
+          const quality = await restRequest('rpc/vision_report_quality_notice_qa', { method: 'POST', body: filters });
+          if (quality?.has_warning) {
+            qualitySpan.textContent = '⚠ Atenção: ' + Number(quality.suspect_past || 0) + ' horário(s) antigo(s) e ' + Number(quality.suspect_future || 0) + ' horário(s) futuro(s) suspeitos. Confira antes de usar como comprovante.';
+            qualitySpan.style.color = '#d97706';
+          } else qualitySpan.textContent = 'Verificação de horários: nenhuma anomalia identificada pelos critérios atuais.';
+        } catch (_) {
+          qualitySpan.textContent = 'Verificação adicional de horários indisponível; relatório original preservado.';
+        }
+      } else qualitySpan.textContent = 'Verificação adicional de horários disponível para períodos de até 32 dias.';
       if (!quiet) toast('Relatório atualizado', 'A prova de veiculação foi recalculada.');
     } catch (error) {
       state.report = null;
