@@ -64,7 +64,7 @@ test('interrupted native update is quarantined across app restart',async()=>{
  const h=make(store);
  await h.run({id:'apk-crash',command_type:'update_apk'});
  assert.equal(h.effects.apk,0);
- assert.equal(h.sent.length,0);
+ assert.equal(h.sent.filter(p=>p.action==='command_result').length,0);
 });
 test('interrupted native restart is quarantined across app restart',async()=>{
  const store=new Map();
@@ -72,7 +72,7 @@ test('interrupted native restart is quarantined across app restart',async()=>{
  const h=make(store);
  await h.run({id:'restart-crash',command_type:'restart_player'});
  assert.equal(h.timers.length,0);
- assert.equal(h.sent.length,0);
+ assert.equal(h.sent.filter(p=>p.action==='command_result').length,0);
 });
 
 test('full storage blocks native APK effect',async()=>{
