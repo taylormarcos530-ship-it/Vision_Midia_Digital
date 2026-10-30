@@ -74,7 +74,7 @@ async function authenticateDevice(admin, req) {
     await admin.from('device_credentials')
       .update({ last_used_at: new Date(nowMs).toISOString() })
       .eq('device_id', device.id)
-      .or(`last_used_at.is.null,last_used_at.lt.${cutoff}`)
+      .or(`last_used_at.is.null,last_used_at.lte.${cutoff}`)
   }
 
   return device
