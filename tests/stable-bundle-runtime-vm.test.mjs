@@ -30,7 +30,7 @@ function harness({valid=true,complete=true,online=true,push=false,linked=true}={
  };
  vm.createContext(context);
  vm.runInContext(player+'\n'+resume+'\nglobalThis.__start=startPlayer;globalThis.__resume=resumeSync;',context);
- return {state,calls,timers,context,async start(){await context.__start();await Promise.resolve();await Promise.resolve();},fire(ms){for(const [id,t] of [...timers])if(t.ms===ms){if(!t.interval)timers.delete(id);t.fn();}},push(){signal=true;},online(v){navigator.onLine=v;},changePair(){state.deviceToken='token-B';state.manifest.device.id='device-B';},resume(){context.__resume();}};
+ return {state,calls,timers,context,async start(){await context.__start();await new Promise(resolve=>setImmediate(resolve));},fire(ms){for(const [id,t] of [...timers])if(t.ms===ms){if(!t.interval)timers.delete(id);t.fn();}},push(){signal=true;},online(v){navigator.onLine=v;},changePair(){state.deviceToken='token-B';state.manifest.device.id='device-B';},resume(){context.__resume();}};
 }
 test('cached and valid: playback immediate, bundle delayed',async()=>{
  const h=harness();await h.start();assert.ok(h.calls.includes('playback'));assert.equal(h.calls.includes('bundle'),false);h.fire(7500);assert.equal(h.calls.filter(x=>x==='bundle').length,1);
