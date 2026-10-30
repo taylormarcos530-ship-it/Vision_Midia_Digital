@@ -655,7 +655,10 @@ async function runExistingGatewayAction(req, injected = null) {
         .eq('id', commandId)
         .eq('company_id', device.company_id)
         .eq('device_id', device.id)
+        .in('status', ['pending', 'sent'])
       if (error) throw error
+      // A delayed or duplicated acknowledgement must never rewrite a
+      // terminal completed/failed result. Zero rows is an idempotent no-op.
       return json({ ok:true })
     }
 
