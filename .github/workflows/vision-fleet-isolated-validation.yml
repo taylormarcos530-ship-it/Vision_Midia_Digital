@@ -20,3 +20,5 @@ jobs:
         run: node --test tests/player-fleet-scheduling.test.mjs
       - name: Offline fleet simulator
         run: node --test tests/fleet-load-isolated.test.mjs
+      - name: Health alert state guard tests
+        run: node --test tests/device-health-write-guard.test.mjs
