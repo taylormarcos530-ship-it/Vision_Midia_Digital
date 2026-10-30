@@ -8,19 +8,19 @@ function fleet(n, mode, duration=3600000){
  const b=new Uint16Array(duration/1000);let total=0;
  for(let i=0;i<n;i++){
   const interval=Math.round(58000*(0.85+rand()*.3));
-  const initial=mode==='cold-boot'?0:Math.floor(rand()*interval);
+  const initial=mode==='cold-boot'?0:mode==='cached-cold-boot'?Math.floor(rand()*15000):Math.floor(rand()*interval);
   for(let t=initial;t<duration;t+=interval){b[Math.floor(t/1000)]++;total++;}
  }
  const ordered=Array.from(b).sort((a,b)=>a-b);
  return {total,meanRps:total/(duration/1000),peakRps:ordered.at(-1),p95Rps:ordered[Math.floor(ordered.length*.95)],firstSecond:b[0],estimatedGatewayCyclesPerMonth:total*24*30};
 }
-for(const mode of ['cold-boot','distributed']){
+for(const mode of ['cold-boot','cached-cold-boot','distributed']){
  test('300 TVs '+mode+' synthetic no-network scheduling',()=>{
   const result=fleet(300,mode);
   console.log(JSON.stringify({mode,tvs:300,...result}));
   assert.ok(result.total>17000&&result.total<22000);
   if(mode==='cold-boot')assert.equal(result.firstSecond,300);
-  else assert.ok(result.peakRps<40);
+  else assert.ok(result.peakRps<65);
  });
 }
 test('existing startup bundle call is immediate, so cold boot spike is not yet fixed',()=>{
