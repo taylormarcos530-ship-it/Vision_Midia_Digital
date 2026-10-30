@@ -21,10 +21,10 @@ function boot(store,options={}){
  vm.createContext(ctx);vm.runInContext(commandCode+'\nglobalThis.poll=pollDeviceCommands;',ctx);
  return {requests,timers,events,run:()=>ctx.poll([cmd]),clock:n=>now=n};
 }
-test('power cut before durable intent: no restart and no acknowledgement',async()=>{
+test('storage failure before durable intent: no restart and no false completion',async()=>{
  const store=new Map();const h=boot(store,{failWrite:INTENT});await h.run();
  assert.equal(h.timers.length,0);assert.equal(store.has(INTENT),false);
- assert.equal(h.requests.some(r=>r.action==='command_result'),false);
+ assert.equal(h.requests.some(r=>r.action==='command_result'&&r.status==='completed'),false);
 });
 test('silent write failure before restart: no native schedule',async()=>{
  const store=new Map();const h=boot(store,{silentWrite:INTENT});await h.run();
