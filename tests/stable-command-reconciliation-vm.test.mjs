@@ -9,7 +9,7 @@ function fixture(status,device='tv'){
  store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'cmd',type:'update_apk',phase:'started'}));
  const effects={apk:0},requests=[];
  const state={deviceToken:'token',manifest:{device:{id:device}},processingCommands:new Set()};
- const ctx={state,navigator:{onLine:true},readJson:k=>JSON.parse(store.get(k)||'null'),
+ const ctx={state,performance:{now:()=>1000},navigator:{onLine:true},readJson:k=>JSON.parse(store.get(k)||'null'),
  writeJson:(k,v)=>{if(v==null)store.delete(k);else store.set(k,JSON.stringify(v));},
  gateway:async p=>{requests.push(p);if(p.action==='command_status')return {ok:true,command:{id:'cmd',device_id:'tv',command_type:'update_apk',status}};return {ok:true};},
  queueDeviceEvent:()=>{},window:{VisionAndroid:{requestApkUpdate:()=>{effects.apk++;return true;}}},console};
