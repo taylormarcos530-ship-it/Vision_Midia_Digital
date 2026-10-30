@@ -764,8 +764,19 @@
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
     state.heartbeatTimer = setInterval(() => heartbeat().then(async () => { await flushPlaybackQueue(); await flushDeviceEventQueue(); }).catch(() => setStatus('Offline • aguardando internet')), 30_000);
-    state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
-    state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    // Spread first periodic requests across TV boots without changing cadence.
+    const syncJitterMs = Math.floor(Math.random() * 15_000);
+    const commandJitterMs = Math.floor(Math.random() * 5_000);
+    state.syncTimer = setTimeout(() => {
+      if (!state.deviceToken) return;
+      syncManifest().catch(() => {});
+      state.syncTimer = setInterval(() => syncManifest().catch(() => {}), 15_000);
+    }, syncJitterMs);
+    state.commandTimer = setTimeout(() => {
+      if (!state.deviceToken) return;
+      pollDeviceCommands().catch(() => {});
+      state.commandTimer = setInterval(() => pollDeviceCommands().catch(() => {}), 5_000);
+    }, commandJitterMs);
     state.accessTimer = setInterval(() => enforceLocalAccess(), 10_000);
     pollDeviceCommands().catch(() => {});
   }
