@@ -20,7 +20,7 @@ function make(shared=new Map()){
  const effects={clear:0,apk:0,restart:0},sent=[],timers=[];
  let lost=false,network=true;
  const state={deviceToken:'token',manifest:{device:{id:'tv'}},processingCommands:new Set(),playlistNonce:0};
- const ctx={state,navigator:{get onLine(){return network;}},readJson:k=>JSON.parse(shared.get(k)||'null'),
+ const ctx={state,performance:{now:()=>1000},navigator:{get onLine(){return network;}},readJson:k=>JSON.parse(shared.get(k)||'null'),
  writeJson:(k,v)=>v==null?shared.delete(k):shared.set(k,JSON.stringify(v)),
  gateway:async p=>{sent.push(p);if(p.action==='command_result'&&lost){lost=false;throw Error('ack lost');}return {};},
  syncManifest:async()=>{},clearPlayerCache:async()=>{effects.clear++;},ensurePlaybackLoop:()=>{},queueDeviceEvent:()=>{},
