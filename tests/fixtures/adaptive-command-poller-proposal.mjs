@@ -25,7 +25,7 @@ export function createAdaptiveCommandPoller({
     } catch { delay=errorMs }
     finally {
       inFlight=false
-      if(version===generation&&running&&online()) queue(delay)
+      if(running&&online()) queue(version===generation?delay:0)
     }
   }
   return {
