@@ -1,0 +1,65 @@
+name: Vision 1.5.24 Casa isolated APK candidate (no publish)
+on:
+  push:
+    branches:
+      - perf/stable-1524-bundle-stagger-isolated-20261030
+    paths:
+      - '.github/workflows/vision-1524-casa-isolated-apk.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  build-casa-qa-only:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 39150595ad9342a9c370ef0ed8e125c5986ff9c5
+          persist-credentials: false
+      - name: Assert exact tested source
+        run: |
+          test "$(git rev-parse HEAD)" = "39150595ad9342a9c370ef0ed8e125c5986ff9c5"
+          node --check player.js
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+      - name: Android SDK
+        shell: bash
+        run: |
+          set -euo pipefail
+          SDKMANAGER="$(command -v sdkmanager || true)"
+          if [ -z "$SDKMANAGER" ]; then SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; fi
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+      - name: Bundle source and compile QA package only
+        run: |
+          set -euo pipefail
+          mkdir -p android-player/app/src/main/assets
+          cp player.html player.css player.js config.js icon.svg player.webmanifest sw.js clock.html news-feed.html news-feed.css news-feed.js android-player/app/src/main/assets/
+          gradle -p android-player --no-daemon assembleHomologUnsigned
+      - name: Inspect and fingerprint candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          APK="$(find android-player/app/build/outputs/apk/homologUnsigned -name '*.apk' -type f | head -n 1)"
+          test -n "$APK" && test -s "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" > dist/badging.txt
+          grep -q "name='com.visionmidia.player.homolog'" dist/badging.txt
+          grep -q "versionCode='37'" dist/badging.txt
+          grep -q "versionName='1.5.24" dist/badging.txt
+          cp "$APK" dist/Vision-1.5.24-Casa-HOMOLOG-UNSIGNED.apk
+          sha256sum dist/Vision-1.5.24-Casa-HOMOLOG-UNSIGNED.apk > dist/apk.sha256
+          printf 'source_commit=39150595ad9342a9c370ef0ed8e125c5986ff9c5\npackage=com.visionmidia.player.homolog\nversionCode=37\nsigning=UNSIGNED - DO NOT INSTALL\n' > dist/build-status.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Vision-1524-Casa-QA-UNSIGNED-NOT-FOR-INSTALLATION
+          path: dist/
+          if-no-files-found: error
+          retention-days: 14
+# No deployment, no stable package signing, no site changes, no installation.
