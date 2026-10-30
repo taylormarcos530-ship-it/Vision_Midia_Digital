@@ -1549,6 +1549,13 @@
   async function inspectCommandIntent(command) {
     const intent = commandIntent(command);
     if (!intent) return 'absent';
+    // A single pending command must not cause a status request on every
+    // bundle cycle. Use monotonic time (the TV clock can boot in 1970).
+    const now = performance.now();
+    const probe = state.commandReconcileProbe;
+    if (probe?.deviceId === intent.device_id && probe?.commandId === intent.id &&
+        now >= probe.at && now - probe.at < 300000) return 'cooldown';
+    state.commandReconcileProbe = {deviceId:intent.device_id,commandId:intent.id,at:now};
     let result;
     try {
       result = await gateway({action:'command_status',command_id:command.id});
@@ -2031,6 +2038,7 @@
     state.pushRegisteredKey = '';
     state.pushRegisteredAt = 0;
     state.lastCommandReconcileAt = 0;
+    state.commandReconcileProbe = null;
     state.accessTimer = null;
     state.processingCommands.clear();
     backgroundPollState.failures = 0;
@@ -2041,7 +2049,8 @@
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
     localStorage.removeItem(COMMAND_ACK_LEDGER_KEY);
     localStorage.removeItem(COMMAND_INTENT_KEY);
-    localStorage.removeItem('vision_player_command_intent_history_v1');
+    // Retain historical evidence on unpair; entries are scoped by device ID
+    // and cannot authorize commands on a replacement TV.
     localStorage.removeItem(REQUEST_METRICS_KEY);
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
