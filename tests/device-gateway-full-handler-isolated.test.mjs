@@ -11,7 +11,7 @@ const source = readFileSync(new URL('../supabase/functions/device-gateway/index.
 const script = stripTypeScriptTypes(source.replace(/^import \{ createClient \} from 'npm:@supabase\/supabase-js@2'\s*/,''), { mode: 'strip' })
 const id = '11111111-1111-4111-8111-111111111111'
 const token = 'x'.repeat(40)
-async function invoke({method='POST',body={action:'not_a_real_action'},valid=true,blocked=false,revoked=false,heartbeatAt=null,commands=[]}={}) {
+async function invoke({method='POST',body={action:'not_a_real_action'},valid=true,blocked=false,revoked=false,heartbeatAt=null,commands=[],commandUpdateError=false,sharedStore=null}={}) {
   let handler
   const calls=[]
   const credential={device_id:id,revoked_at:revoked?'2026-01-01':null,last_used_at:new Date().toISOString()}
@@ -21,22 +21,35 @@ async function invoke({method='POST',body={action:'not_a_real_action'},valid=tru
     companies:{status:'active'},
     company_subscriptions:{status:'active'},
     device_heartbeats:heartbeatAt?{received_at:heartbeatAt}:null,
-    device_commands:commands,
+    device_commands:sharedStore?.commands ?? commands,
   }
   const client={from(table){
     let operation='select'
+    const filters=[]
     const q={
       select(){return q},
-      eq(...args){if(operation==='update')calls.push({table,kind:'eq',args});return q},
+      eq(...args){filters.push(['eq',...args]);if(operation==='update')calls.push({table,kind:'eq',args});return q},
       or(){return q},
       not(...args){calls.push({table,kind:'not',args});return q},
       update(value){operation='update';calls.push({table,kind:'update',value});return q},
       insert(value){operation='insert';calls.push({table,kind:'insert',value});return q},
-      in(){return q},
+      in(...args){filters.push(['in',...args]);return q},
       order(){return q},
       limit(){return q},
       maybeSingle:async()=>({data:rows[table]??null,error:null}),
-      then(resolve,reject){return Promise.resolve({data:operation==='select'?(rows[table]??null):null,error:null}).then(resolve,reject)},
+      then(resolve,reject){
+        if(operation==='update' && table==='device_commands'){
+          if(commandUpdateError) return Promise.resolve({data:null,error:{message:'isolated command write failure'}}).then(resolve,reject)
+          if(sharedStore){
+            for(const command of sharedStore.commands){
+              if(filters.every(f=>f[0]==='eq'?command[f[1]]===f[2] || (f[1]==='company_id'||f[1]==='device_id'):f[0]==='in'?f[2].includes(command[f[1]]):true)){
+                command.status='sent'
+              }
+            }
+          }
+        }
+        return Promise.resolve({data:operation==='select'?(rows[table]??null):null,error:null}).then(resolve,reject)
+      },
     }
     return q
   }}
@@ -129,4 +142,31 @@ test('commands: mixed pending and sent only updates pending IDs',async()=>{
   assert.equal(updates.length,1)
   const eqs=x.calls.filter(c=>c.table==='device_commands'&&c.kind==='eq')
   assert.ok(eqs.some(c=>c.args[0]==='status'&&c.args[1]==='pending'))
+})
+
+test('commands: write failure returns 500 instead of acknowledging delivery',async()=>{
+  const x=await invoke({body:{action:'commands'},commands:[{id,command_type:'reload',status:'pending'}],commandUpdateError:true})
+  assert.equal(x.status,500)
+  assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,1)
+})
+test('commands: polling twice does not rewrite delivered command',async()=>{
+  const store={commands:[{id,command_type:'reload',status:'pending'}]}
+  const first=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(first.status,200)
+  assert.equal(store.commands[0].status,'sent')
+  const second=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(second.status,200)
+  assert.equal(second.data.commands[0].status,'sent')
+  assert.equal(second.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,0)
+})
+test('commands: concurrent polling preserves sent state without reverting',async()=>{
+  const store={commands:[{id,command_type:'reload',status:'pending'}]}
+  const [a,b]=await Promise.all([
+    invoke({body:{action:'commands'},sharedStore:store}),
+    invoke({body:{action:'commands'},sharedStore:store}),
+  ])
+  assert.equal(a.status,200)
+  assert.equal(b.status,200)
+  assert.equal(store.commands[0].status,'sent')
+  assert.ok([a,b].every(x=>x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length<=1))
 })
