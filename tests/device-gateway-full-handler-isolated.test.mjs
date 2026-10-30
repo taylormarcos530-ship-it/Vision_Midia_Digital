@@ -11,7 +11,7 @@ const source = readFileSync(new URL('../supabase/functions/device-gateway/index.
 const script = stripTypeScriptTypes(source.replace(/^import \{ createClient \} from 'npm:@supabase\/supabase-js@2'\s*/,''), { mode: 'strip' })
 const id = '11111111-1111-4111-8111-111111111111'
 const token = 'x'.repeat(40)
-async function invoke({method='POST',body={action:'not_a_real_action'},valid=true,blocked=false,revoked=false}={}) {
+async function invoke({method='POST',body={action:'not_a_real_action'},valid=true,blocked=false,revoked=false,heartbeatAt=null,commands=[]}={}) {
   let handler
   const calls=[]
   const credential={device_id:id,revoked_at:revoked?'2026-01-01':null,last_used_at:new Date().toISOString()}
@@ -20,15 +20,23 @@ async function invoke({method='POST',body={action:'not_a_real_action'},valid=tru
     devices:{id,company_id:id,status:'online',access_status:blocked?'blocked':'active'},
     companies:{status:'active'},
     company_subscriptions:{status:'active'},
+    device_heartbeats:heartbeatAt?{received_at:heartbeatAt}:null,
+    device_commands:commands,
   }
   const client={from(table){
+    let operation='select'
     const q={
       select(){return q},
       eq(){return q},
       or(){return q},
       not(...args){calls.push({table,kind:'not',args});return q},
-      update(value){calls.push({table,kind:'update',value});return q},
+      update(value){operation='update';calls.push({table,kind:'update',value});return q},
+      insert(value){operation='insert';calls.push({table,kind:'insert',value});return q},
+      in(){return q},
+      order(){return q},
+      limit(){return q},
       maybeSingle:async()=>({data:rows[table]??null,error:null}),
+      then(resolve,reject){return Promise.resolve({data:operation==='select'?(rows[table]??null):null,error:null}).then(resolve,reject)},
     }
     return q
   }}
@@ -72,4 +80,33 @@ test('complete gateway: blocked device returns 403',async()=>{
   const x=await invoke({blocked:true})
   assert.equal(x.status,403)
   assert.equal(x.data.error,'device_access_blocked')
+})
+
+test('heartbeat: updates device but skips heartbeat history when recent',async()=>{
+  const x=await invoke({body:{action:'heartbeat',screen_width:1920,screen_height:1080},heartbeatAt:new Date().toISOString()})
+  assert.equal(x.status,200)
+  assert.equal(x.data.ok,true)
+  assert.equal(x.calls.filter(c=>c.table==='devices'&&c.kind==='update').length,1)
+  assert.equal(x.calls.filter(c=>c.table==='device_heartbeats'&&c.kind==='insert').length,0)
+})
+test('heartbeat: records history when previous record is old',async()=>{
+  const x=await invoke({body:{action:'heartbeat'},heartbeatAt:new Date(Date.now()-6*60*1000).toISOString()})
+  assert.equal(x.status,200)
+  assert.equal(x.calls.filter(c=>c.table==='device_heartbeats'&&c.kind==='insert').length,1)
+})
+test('heartbeat: first record creates one history entry',async()=>{
+  const x=await invoke({body:{action:'heartbeat'}})
+  assert.equal(x.status,200)
+  assert.equal(x.calls.filter(c=>c.table==='device_heartbeats'&&c.kind==='insert').length,1)
+})
+test('commands: no pending commands means no status writes',async()=>{
+  const x=await invoke({body:{action:'commands'}})
+  assert.equal(x.status,200)
+  assert.equal(x.data.ok,true)
+  assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,0)
+})
+test('commands: pending command is marked sent once per request',async()=>{
+  const x=await invoke({body:{action:'commands'},commands:[{id,command_type:'reload',status:'pending'}]})
+  assert.equal(x.status,200)
+  assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,1)
 })
