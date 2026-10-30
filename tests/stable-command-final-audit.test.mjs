@@ -22,12 +22,14 @@ test('reconciliation throttle uses monotonic 300000ms clock',()=>{
  const s=player.slice(player.indexOf('async function inspectCommandIntent'),player.indexOf('async function acknowledgeCompletedCommand'));
  assert.match(s,/performance\.now\(\)/);assert.match(s,/300000/);
 });
-test('restart acknowledgement precedes native effect: documented publication blocker',()=>{
+test('restart intent is durable and no premature acknowledgement is sent',()=>{
  const s=player.slice(player.indexOf("if(command.command_type==='restart_player')"),player.indexOf("if(command.command_type==='update_apk')"));
- assert.ok(s.indexOf('await acknowledgeCompletedCommand')<s.indexOf('setTimeout(restartPlayerRuntime'));
+ assert.match(s,/recordCommandIntent\(command\)/);
+ assert.match(s,/setTimeout\(restartPlayerRuntime,250\)/);
+ assert.doesNotMatch(s,/acknowledgeCompletedCommand|clearCommandIntent/);
 });
-test('history schema has single device scope: replacement needs migration before deployment',()=>{
+test('history migration keeps multiple device identities',()=>{
  const s=player.slice(player.indexOf('async function inspectCommandIntent'),player.indexOf('async function acknowledgeCompletedCommand'));
- assert.match(s,/existing\?\.device_id === intent\.device_id/);
- assert.match(s,/writeJson\(key,\{device_id:intent\.device_id,entries\}\)/);
+ assert.match(s,/version:2,entries/);
+ assert.match(s,/row\.device_id \|\| existing\?\.device_id/);
 });
