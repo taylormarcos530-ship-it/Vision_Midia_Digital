@@ -74,3 +74,35 @@ test('interrupted native restart is quarantined across app restart',async()=>{
  assert.equal(h.timers.length,0);
  assert.equal(h.sent.length,0);
 });
+
+test('full storage blocks native APK effect',async()=>{
+ const store=new Map();
+ const set=store.set.bind(store);
+ store.set=(key,value)=>{if(key==='vision_player_command_intent_v1')throw new Error('QuotaExceededError');return set(key,value);};
+ const h=make(store);
+ await h.run({id:'quota',command_type:'update_apk'});
+ assert.equal(h.effects.apk,0);
+});
+test('silent storage write failure blocks native restart',async()=>{
+ const store=new Map();
+ const set=store.set.bind(store);
+ store.set=(key,value)=>key==='vision_player_command_intent_v1'?store:set(key,value);
+ const h=make(store);
+ await h.run({id:'silent',command_type:'restart_player'});
+ assert.equal(h.timers.length,0);
+});
+test('unresolved intent is not overwritten by a different command',async()=>{
+ const store=new Map();
+ store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'old',type:'update_apk',phase:'started'}));
+ const h=make(store);
+ await h.run({id:'new',command_type:'restart_player'});
+ assert.equal(h.timers.length,0);
+ assert.equal(JSON.parse(store.get('vision_player_command_intent_v1')).id,'old');
+});
+test('unrelated synchronization works with unresolved native intent',async()=>{
+ const store=new Map();
+ store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'old',type:'update_apk',phase:'started'}));
+ const h=make(store);
+ await h.run({id:'sync-other',command_type:'sync_now'});
+ assert.equal(h.sent.some(x=>x.action==='command_result'&&x.status==='completed'),true);
+});
