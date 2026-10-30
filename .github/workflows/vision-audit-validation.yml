@@ -19,7 +19,7 @@ jobs:
         with:
           node-version: '22'
       - name: Validate authentication and playback source contracts
-        run: node --test tests/credential-hourly-write-guard.test.mjs tests/device-auth-source-contract.test.mjs tests/playback-batch-dedup.test.mjs tests/playback-gateway-mock-integration.test.mjs tests/device-auth-real-source-mock.test.mjs tests/device-gateway-full-handler-isolated.test.mjs tests/player-command-lifecycle-isolated.test.mjs tests/player-command-polling-simulation-isolated.test.mjs tests/adaptive-command-poller-proposal-isolated.test.mjs tests/adaptive-polling-interval-comparison-isolated.test.mjs
+        run: node --test tests/credential-hourly-write-guard.test.mjs tests/device-auth-source-contract.test.mjs tests/playback-batch-dedup.test.mjs tests/playback-gateway-mock-integration.test.mjs tests/device-auth-real-source-mock.test.mjs tests/device-gateway-full-handler-isolated.test.mjs tests/player-command-lifecycle-isolated.test.mjs tests/player-command-polling-simulation-isolated.test.mjs tests/adaptive-command-poller-proposal-isolated.test.mjs tests/adaptive-polling-interval-comparison-isolated.test.mjs tests/adaptive-command-timeout-isolated.test.mjs
       - name: Validate SQL guard and playback uniqueness in isolated PostgreSQL
         run: |
           sudo systemctl start postgresql.service
