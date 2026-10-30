@@ -303,9 +303,17 @@ Deno.serve(async (req) => {
         .order('requested_at', { ascending: true })
         .limit(3)
       if (commandsError) throw commandsError
-      if (commands?.length) {
-        const ids = commands.map(row => row.id)
-        await admin.from('device_commands').update({ status:'sent', delivered_at:new Date().toISOString() }).in('id', ids)
+      // Comandos 'sent' continuam visíveis para a TV, mas não geram novas gravações.
+      // O filtro status='pending' também protege contra consultas concorrentes.
+      const pendingIds = (commands || []).filter(row => row.status === 'pending').map(row => row.id)
+      if (pendingIds.length) {
+        const { error: deliveryError } = await admin.from('device_commands')
+          .update({ status:'sent', delivered_at:new Date().toISOString() })
+          .eq('company_id', device.company_id)
+          .eq('device_id', device.id)
+          .eq('status', 'pending')
+          .in('id', pendingIds)
+        if (deliveryError) throw deliveryError
       }
       return json({ ok:true, commands: commands || [] })
     }
