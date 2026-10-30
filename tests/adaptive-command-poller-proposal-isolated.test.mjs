@@ -28,7 +28,7 @@ function harness({commands=()=>0,online=true,poll}={}) {
   const c=clock(),calls=[]
   let connected=online
   const scheduler=createAdaptiveCommandPoller({
-    poll:poll||async()=>{calls.push(c.now());return {commandsFound:commands(c.now())}},
+    poll:poll||(async()=>{calls.push(c.now());return {commandsFound:commands(c.now())}}),
     online:()=>connected,schedule:c.schedule,cancel:c.cancel,now:c.now
   })
   return {c,calls,scheduler,setOnline:value=>{connected=value;scheduler.networkChanged()}}
