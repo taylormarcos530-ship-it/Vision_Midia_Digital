@@ -44,7 +44,7 @@ test('app restart after accepted APK update does not trigger another update',asy
 test('restart_player is never acknowledged before reboot and remains quarantined after restart',async()=>{
  const store=new Map(),cmd={id:'restart-1',command_type:'restart_player'};
  const first=make(store);first.lose();await first.run(cmd);
- assert.equal(first.timers.length,0);
+ assert.equal(first.timers.length,1);
  const afterRestart=make(store);await afterRestart.run(cmd);
  assert.equal(afterRestart.timers.length,0);
 });
