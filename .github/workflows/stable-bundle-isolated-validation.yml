@@ -15,6 +15,6 @@ jobs:
         with:
           node-version: '22'
       - run: node --check player.js
-      - run: node --test tests/stable-bundle-scheduling.test.mjs tests/stable-bundle-integration-isolated.test.mjs tests/stable-bundle-cold-boot.test.mjs tests/stable-bundle-behavior-guards.test.mjs tests/stable-bundle-runtime-vm.test.mjs tests/stable-bundle-concurrency-vm.test.mjs tests/stable-command-idempotency-vm.test.mjs tests/stable-command-restart-contract.test.mjs tests/stable-command-storage-isolation.test.mjs tests/stable-command-reconciliation-vm.test.mjs tests/stable-command-final-audit.test.mjs
+      - run: node --test tests/stable-bundle-scheduling.test.mjs tests/stable-bundle-integration-isolated.test.mjs tests/stable-bundle-cold-boot.test.mjs tests/stable-bundle-behavior-guards.test.mjs tests/stable-bundle-runtime-vm.test.mjs tests/stable-bundle-concurrency-vm.test.mjs tests/stable-command-idempotency-vm.test.mjs tests/stable-command-restart-contract.test.mjs tests/stable-command-storage-isolation.test.mjs tests/stable-command-reconciliation-vm.test.mjs tests/stable-command-final-audit.test.mjs tests/stable-restart-power-loss-vm.test.mjs
       - name: Stable 1.5.24 regression suite
         run: node --test tests/qa-server-request-cost.test.cjs tests/qa-v28-traffic-and-rotation.test.cjs tests/qa-fcm-delivery.test.cjs tests/qa-kiosk-return-v35.test.cjs tests/qa-bundle-v36.test.cjs tests/stable-bundle-v37.test.cjs
