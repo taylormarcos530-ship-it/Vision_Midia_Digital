@@ -1,0 +1,22 @@
+name: Vision isolated fleet validation
+on:
+  push:
+    branches:
+      - perf/player-jitter-300-tvs-20261030
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  isolated-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript syntax
+        run: node --check player.js
+      - name: Fleet scheduling tests
+        run: node --test tests/player-fleet-scheduling.test.mjs
+      - name: Offline fleet simulator
+        run: node --test tests/fleet-load-isolated.test.mjs
