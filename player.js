@@ -1746,6 +1746,21 @@
       // network cycle. Unpaired, uncached, clock-grace and blocked devices
       // retain immediate verification and recovery.
       const startBundleImmediately = () => { void runBackgroundPoll(runQaBundle); };
+      // Native push and network recovery must bypass the optional cold-boot
+      // delay; do not wait for the next 58-second cycle.
+      state.pushTimer = setInterval(() => {
+        try {
+          if (window.VisionAndroid?.consumePushSignal?.() === true) state.pushPending = true;
+        } catch {}
+        if (!state.deviceToken || !navigator.onLine) return;
+        if (state.syncTimer && state.pushPending) {
+          clearTimeout(state.syncTimer);
+          state.syncTimer = null;
+          void runBackgroundPoll(runQaBundle);
+        } else if (state.pushPending) {
+          void runBackgroundPoll(runQaBundle);
+        }
+      }, 1000);
       if (localAccessState() === 'valid' && !state.serverAccessDenied &&
           state.manifest?.device?.id && Array.isArray(state.manifest.items) &&
           state.manifest.items.length > 0 && !state.pushPending) {
