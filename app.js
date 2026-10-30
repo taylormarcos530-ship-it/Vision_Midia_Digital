@@ -3465,6 +3465,26 @@
       const filters = reportFilters();
       state.report = await restRequest('rpc/get_playback_report', { method: 'POST', body: filters });
       renderPlaybackReport();
+      // QA: no máximo uma consulta de qualidade por carregamento de relatório.
+      const qualityAnchor = $('#report-generated-label');
+      qualityAnchor?.parentElement?.querySelector('#vision-report-quality-warning-qa')?.remove();
+      const qualityNotice = document.createElement('div');
+      qualityNotice.id = 'vision-report-quality-warning-qa';
+      qualityNotice.setAttribute('role', 'status');
+      qualityNotice.style.cssText = 'margin-top:8px;font-weight:600;';
+      qualityAnchor?.insertAdjacentElement('afterend', qualityNotice);
+      const reportDays = Math.round((Date.parse(filters.p_end_date + 'T00:00:00Z') - Date.parse(filters.p_start_date + 'T00:00:00Z')) / 86400000);
+      if (reportDays <= 31) {
+        try {
+          const quality = await restRequest('rpc/vision_report_quality_notice_qa', { method: 'POST', body: filters });
+          if (quality?.has_warning) {
+            qualityNotice.textContent = '⚠ Horários suspeitos: ' + Number(quality.suspect_past || 0) + ' antigos e ' + Number(quality.suspect_future || 0) + ' futuros no período; ' + Number(quality.recent_received_suspect_past || 0) + ' antigos e ' + Number(quality.recent_received_suspect_future || 0) + ' futuros recebidos nas últimas 24h. Confira antes de usar como comprovante.';
+            qualityNotice.style.color = '#d97706';
+          } else qualityNotice.textContent = 'Verificação de horários: nenhuma anomalia identificada pelos critérios atuais.';
+        } catch (_) {
+          qualityNotice.textContent = 'Verificação de horários indisponível; relatório original preservado.';
+        }
+      } else qualityNotice.textContent = 'Verificação adicional disponível para períodos de até 32 dias.';
       if (!quiet) toast('Relatório atualizado', 'A prova de veiculação foi recalculada.');
     } catch (error) {
       state.report = null;
