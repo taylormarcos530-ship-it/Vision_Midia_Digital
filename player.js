@@ -1749,6 +1749,8 @@
       if (localAccessState() === 'valid' && !state.serverAccessDenied &&
           state.manifest?.device?.id && Array.isArray(state.manifest.items) &&
           state.manifest.items.length > 0 && !state.pushPending) {
+        const pairedToken = state.deviceToken;
+        const pairedDeviceId = state.manifest.device.id;
         void (async () => {
           try {
             const media = state.manifest.items.filter(item =>
@@ -1761,14 +1763,16 @@
             const complete = (await Promise.all(media.map(item =>
               cache.match(cacheKey(item))))).every(response =>
                 response && Number(response.headers.get('Content-Length')) > 0);
-            if (!complete || !state.deviceToken || state.pushPending) {
+            if (!complete || state.deviceToken !== pairedToken ||
+                state.manifest?.device?.id !== pairedDeviceId || state.pushPending) {
               startBundleImmediately();
               return;
             }
             const firstCycleDelayMs = Math.floor(Math.random() * 15_000);
             state.syncTimer = setTimeout(() => {
               state.syncTimer = null;
-              startBundleImmediately();
+              if (state.deviceToken === pairedToken &&
+                  state.manifest?.device?.id === pairedDeviceId) startBundleImmediately();
             }, firstCycleDelayMs);
           } catch {
             startBundleImmediately();
