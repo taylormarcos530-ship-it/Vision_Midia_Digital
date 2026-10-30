@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - audit/playback-query-performance-20261030
+  pull_request:
+    branches:
+      - main
   workflow_dispatch:
 permissions:
   contents: read
