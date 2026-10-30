@@ -125,9 +125,19 @@ function itemScheduleIsActive(item, clock) {
   if (!item?.schedule_enabled) return true
   return campaignIsActive(item, clock)
 }
+// Negative capability cache only: a denied optional group lookup is retried after 5 minutes.
+// This reduces repeated 403 traffic without caching any authorization decision or playlist.
+let groupMembershipPermissionRetryAtMs = 0
+
 async function resolveProgram(admin, device) {
-  const [{ data: company, error: companyError }, { data: campaigns, error: campaignsError }, { data: targets, error: targetsError }, { data: assignment, error: assignmentError }] = await Promise.all([
-    admin.from('companies').select('timezone').eq('id', device.company_id).maybeSingle(),
+  const [
+    { data: company, error: companyError },
+    { data: campaigns, error: campaignsError },
+    { data: targets, error: targetsError },
+    { data: assignment, error: assignmentError },
+    { data: membership, error: membershipError },
+  ] = await Promise.all([
+    admin.from('companies').select('timezone,fallback_playlist_id').eq('id', device.company_id).maybeSingle(),
     admin.from('campaigns')
       .select('id,name,playlist_id,start_date,end_date,start_time,end_time,weekdays,priority,all_devices,updated_at,created_at')
       .eq('company_id', device.company_id)
@@ -136,20 +146,52 @@ async function resolveProgram(admin, device) {
       .order('created_at', { ascending: false }),
     admin.from('campaign_devices').select('campaign_id').eq('company_id', device.company_id).eq('device_id', device.id),
     admin.from('device_playlist_assignments').select('playlist_id,updated_at').eq('device_id', device.id).maybeSingle(),
+    (Date.now() >= groupMembershipPermissionRetryAtMs
+      ? admin.from('device_group_members').select('group_id,created_at').eq('company_id', device.company_id).eq('device_id', device.id).maybeSingle()
+      : Promise.resolve({ data: null, error: null })),
   ])
   if (companyError) throw companyError
   if (campaignsError) throw campaignsError
   if (targetsError) throw targetsError
   if (assignmentError) throw assignmentError
 
+  // Older databases may have the device-group tables created without SELECT
+  // granted to service_role. Grouping is optional; a missing grant must not
+  // prevent a directly assigned playlist from reaching the Player.
+  const membershipUnavailable = membershipError && String(membershipError.code || '') === '42501'
+  if (membershipError && !membershipUnavailable) throw membershipError
+  if (membershipUnavailable) {
+    groupMembershipPermissionRetryAtMs = Date.now() + 5 * 60_000
+    console.warn('device-gateway group membership unavailable; retrying access after cooldown', membershipError.message || membershipError)
+  }
+  const effectiveMembership = membershipUnavailable ? null : membership
+
+  let group = null
+  if (effectiveMembership?.group_id) {
+    const { data, error } = await admin.from('device_groups')
+      .select('id,name,playlist_id,updated_at')
+      .eq('company_id', device.company_id)
+      .eq('id', effectiveMembership.group_id)
+      .maybeSingle()
+    if (error) throw error
+    group = data || null
+  }
+
   const clock = localDateParts(new Date(), company?.timezone || 'America/Sao_Paulo')
   const targeted = new Set((targets || []).map(row => row.campaign_id))
   const campaign = (campaigns || []).find(item => (item.all_devices || targeted.has(item.id)) && campaignIsActive(item, clock)) || null
+  const fallbackPlaylistId = device.fallback_playlist_id || company?.fallback_playlist_id || null
+  const assignmentVersion = {
+    device: assignment?.updated_at || null,
+    group_member: effectiveMembership?.created_at || null,
+    group: group?.updated_at || null,
+  }
 
   if (campaign) {
     return {
       playlistId: campaign.playlist_id,
-      assignmentUpdatedAt: assignment?.updated_at || null,
+      fallbackPlaylistId: fallbackPlaylistId === campaign.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
       program: {
         source: 'campaign',
         campaign_id: campaign.id,
@@ -157,15 +199,256 @@ async function resolveProgram(admin, device) {
         priority: campaign.priority,
         schedule_updated_at: campaign.updated_at,
         timezone: clock.timeZone,
+        group_id: group?.id || null,
+        group_name: group?.name || null,
+      },
+    }
+  }
+
+  if (assignment?.playlist_id) {
+    return {
+      playlistId: assignment.playlist_id,
+      fallbackPlaylistId: fallbackPlaylistId === assignment.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
+      program: {
+        source: 'default',
+        campaign_id: null,
+        campaign_name: null,
+        priority: null,
+        schedule_updated_at: null,
+        timezone: clock.timeZone,
+        group_id: group?.id || null,
+        group_name: group?.name || null,
+      },
+    }
+  }
+
+  if (group?.playlist_id) {
+    return {
+      playlistId: group.playlist_id,
+      fallbackPlaylistId: fallbackPlaylistId === group.playlist_id ? null : fallbackPlaylistId,
+      assignmentUpdatedAt: assignmentVersion,
+      program: {
+        source: 'group',
+        campaign_id: null,
+        campaign_name: null,
+        priority: null,
+        schedule_updated_at: group.updated_at,
+        timezone: clock.timeZone,
+        group_id: group.id,
+        group_name: group.name,
       },
     }
   }
 
   return {
-    playlistId: assignment?.playlist_id || null,
-    assignmentUpdatedAt: assignment?.updated_at || null,
-    program: { source: assignment ? 'default' : 'none', campaign_id: null, campaign_name: null, priority: null, schedule_updated_at: null, timezone: clock.timeZone },
+    playlistId: null,
+    // A newly paired TV with no primary programming must stay idle.
+    // Emergency fallback is only valid when a campaign/direct/group playlist exists and fails.
+    fallbackPlaylistId: null,
+    assignmentUpdatedAt: assignmentVersion,
+    program: {
+      source: 'none',
+      campaign_id: null,
+      campaign_name: null,
+      priority: null,
+      schedule_updated_at: null,
+      timezone: clock.timeZone,
+      group_id: group?.id || null,
+      group_name: group?.name || null,
+    },
   }
+}
+
+// QA V28: reuse still-valid signed links inside one isolated Edge instance.
+// Fresh device authorization is always checked before a link is returned.
+// The process-local cache neither stores permission decisions nor survives restarts.
+const MEDIA_SIGNED_URL_TTL_SECONDS = 6 * 60 * 60
+const MEDIA_SIGNED_URL_REUSE_MS = 5 * 60 * 60_000
+const MEDIA_SIGNED_URL_CACHE_MAX = 256
+const mediaSignedUrlCache = new Map()
+const mediaSignedUrlInFlight = new Map()
+
+async function cachedSignedMediaUrl(admin, asset) {
+  const path = String(asset.storage_path || '')
+  if (!path) return null
+  const key = JSON.stringify([path, asset.updated_at || '', asset.checksum_sha256 || ''])
+  const now = Date.now()
+  const cached = mediaSignedUrlCache.get(key)
+  if (cached && cached.reuseUntilMs > now) return cached.url
+  if (cached) mediaSignedUrlCache.delete(key)
+  if (mediaSignedUrlInFlight.has(key)) return await mediaSignedUrlInFlight.get(key)
+  const work = (async () => {
+    const { data, error } = await admin.storage.from('vision-media')
+      .createSignedUrl(path, MEDIA_SIGNED_URL_TTL_SECONDS)
+    if (error) throw error
+    const url = data?.signedUrl || null
+    if (url) {
+      if (mediaSignedUrlCache.size >= MEDIA_SIGNED_URL_CACHE_MAX) {
+        const oldest = mediaSignedUrlCache.keys().next().value
+        if (oldest !== undefined) mediaSignedUrlCache.delete(oldest)
+      }
+      mediaSignedUrlCache.set(key, { url, reuseUntilMs: Date.now() + MEDIA_SIGNED_URL_REUSE_MS })
+    }
+    return url
+  })()
+  mediaSignedUrlInFlight.set(key, work)
+  try { return await work }
+  finally { mediaSignedUrlInFlight.delete(key) }
+}
+
+async function loadPlaylistPayload(admin, companyId, playlistId, supportsItemSchedules, timeZone, deviceId) {
+  if (!playlistId) return null
+  const { data: playlist, error: playlistError } = await admin
+    .from('playlists')
+    .select('id,name,shuffle,repeat_mode,updated_at')
+    .eq('id', playlistId)
+    .eq('company_id', companyId)
+    .maybeSingle()
+  if (playlistError) throw playlistError
+  if (!playlist) return null
+
+  const { data: playlistItems, error: itemsError } = await admin
+    .from('playlist_items')
+    .select('id,media_id,position,duration_override_seconds,enabled,is_essential,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at,target_device_ids')
+    .eq('playlist_id', playlist.id)
+    .eq('company_id', companyId)
+    .eq('enabled', true)
+    .order('position', { ascending: true })
+  if (itemsError) throw itemsError
+
+  // A NULL target is the legacy "all TVs" behavior. Restricted items never
+  // reach an unselected device, including via the emergency fallback playlist.
+  const perDeviceItems = (playlistItems || []).filter(item =>
+    item.target_device_ids == null ||
+    (Array.isArray(item.target_device_ids) && item.target_device_ids.includes(deviceId))
+  )
+  const itemClock = localDateParts(new Date(), timeZone || 'America/Sao_Paulo')
+  const effectivePlaylistItems = supportsItemSchedules
+    ? perDeviceItems
+    : perDeviceItems.filter(item => itemScheduleIsActive(item, itemClock))
+  const mediaIds = [...new Set(effectivePlaylistItems.map(item => item.media_id))]
+  let media = []
+  if (mediaIds.length) {
+    const { data: mediaRows, error: mediaError } = await admin
+      .from('media_assets')
+      .select('id,name,media_type,mime_type,storage_path,source_url,duration_seconds,size_bytes,checksum_sha256,width,height,processing_status,updated_at')
+      .eq('company_id', companyId)
+      .in('id', mediaIds)
+      .eq('processing_status', 'ready')
+    if (mediaError) throw mediaError
+    media = mediaRows || []
+  }
+
+  const mediaById = new Map(media.map(item => [item.id, item]))
+  const items = []
+  let essentialUnavailable = false
+  for (const item of effectivePlaylistItems) {
+    const asset = mediaById.get(item.media_id)
+    if (!asset) {
+      if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
+      continue
+    }
+    let url = asset.source_url || null
+    if (asset.storage_path) {
+      try {
+        url = await cachedSignedMediaUrl(admin, asset)
+      } catch (signedError) {
+        console.error('signed url failed', asset.id, signedError)
+        if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
+        continue
+      }
+    }
+    if (!url) {
+      if (item.is_essential && itemScheduleIsActive(item, itemClock)) essentialUnavailable = true
+      continue
+    }
+    items.push({
+      id: item.id,
+      essential: Boolean(item.is_essential),
+      position: item.position,
+      duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
+      schedule: {
+        enabled: Boolean(item.schedule_enabled),
+        start_date: item.start_date || null,
+        end_date: item.end_date || null,
+        start_time: item.start_time || null,
+        end_time: item.end_time || null,
+        weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6],
+      },
+      media: {
+        id: asset.id,
+        name: asset.name,
+        type: asset.media_type,
+        mime_type: asset.mime_type,
+        url,
+        size_bytes: asset.size_bytes,
+        checksum: [asset.checksum_sha256 || asset.updated_at, asset.storage_path || asset.source_url || ''].join(':'),
+        width: asset.width,
+        height: asset.height,
+      },
+    })
+  }
+
+  return {
+    updatedAt: playlist.updated_at,
+    essentialUnavailable,
+    playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
+    items,
+  }
+}
+
+function accountSubscriptionBlock(company, subscription) {
+  if (!company || company.status !== 'active') {
+    return { reason:'company_suspended', message:'A conta desta TV está suspensa.' }
+  }
+  if (!subscription) {
+    return { reason:'subscription_missing', message:'A assinatura desta conta ainda não foi liberada.' }
+  }
+
+  const status = String(subscription.status || '')
+  if (status === 'trialing') {
+    const trialDeadline = new Date(subscription.trial_ends_at || '').getTime();
+    if (!Number.isFinite(trialDeadline) || trialDeadline <= Date.now()) {
+      return {
+        reason:'trial_expired',
+        message:'O período de teste desta conta terminou.',
+        trial_ends_at:subscription.trial_ends_at,
+      }
+    }
+    return null
+  }
+
+  if (status === 'active') {
+    if (!['paid','waived'].includes(String(subscription.payment_status || 'pending'))) {
+      return { reason:'payment_required', message:'O pagamento desta conta ainda não foi liberado.' }
+    }
+    if (subscription.current_period_end && new Date(subscription.current_period_end).getTime() <= Date.now()) {
+      return {
+        reason:'subscription_expired',
+        message:'A assinatura desta conta venceu.',
+        current_period_end:subscription.current_period_end,
+      }
+    }
+    return null
+  }
+
+  if (status === 'pending_approval') return { reason:'pending_approval', message:'Esta conta está aguardando aprovação do Master.' }
+  if (status === 'past_due') return { reason:'payment_overdue', message:'Esta conta está com pagamento pendente.' }
+  if (status === 'suspended') return { reason:'subscription_suspended', message:'A assinatura desta conta está suspensa.' }
+  if (status === 'cancelled') return { reason:'subscription_cancelled', message:'A assinatura desta conta foi cancelada.' }
+  return { reason:'subscription_inactive', message:'Esta conta não está liberada para reprodução.' }
+}
+
+function offlineAccessDeadline(device, subscription, now = Date.now()) {
+  const deadlines = [now + 24 * 60 * 60 * 1000];
+  for (const value of [device.access_expires_at,
+    subscription.status === 'trialing' ? subscription.trial_ends_at : subscription.current_period_end]) {
+    if (!value) continue;
+    const deadline = new Date(value).getTime();
+    deadlines.push(Number.isFinite(deadline) ? deadline : now);
+  }
+  return new Date(Math.min(...deadlines)).toISOString();
 }
 
 async function authenticateDevice(admin, req) {
@@ -174,7 +457,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -196,22 +479,37 @@ async function authenticateDevice(admin, req) {
 
   const [{ data: company, error: companyError }, { data: subscription, error: subscriptionError }] = await Promise.all([
     admin.from('companies').select('status').eq('id', device.company_id).maybeSingle(),
-    admin.from('company_subscriptions').select('status').eq('company_id', device.company_id).maybeSingle(),
+    admin.from('company_subscriptions').select('status,trial_ends_at,current_period_end,payment_status').eq('company_id', device.company_id).maybeSingle(),
   ])
   if (companyError) throw companyError
   if (subscriptionError) throw subscriptionError
-  if (!company || company.status !== 'active') return { ...device, account_blocked: true }
-  if (subscription && ['suspended', 'cancelled'].includes(subscription.status)) return { ...device, account_blocked: true }
+  const accountBlock = accountSubscriptionBlock(company, subscription)
+  if (accountBlock) return { ...device, account_block: accountBlock }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
-  await admin.from('device_pairing_requests')
-    .update({ issued_token: null })
-    .eq('device_id', device.id)
-    .eq('status', 'issued')
+  // Avoid one credential UPDATE for each playback/command/manifest call.
+  // The SQL predicate protects concurrent requests from duplicate writes.
+  const lastUsedAtMs = credential.last_used_at ? Date.parse(credential.last_used_at) : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(lastUsedAtMs) || nowMs - lastUsedAtMs >= 60_000) {
+    const nowIso = new Date(nowMs).toISOString()
+    const cutoffIso = new Date(nowMs - 60_000).toISOString()
+    const { error: touchError } = await admin.from('device_credentials')
+      .update({ last_used_at: nowIso })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
+    if (touchError) throw touchError
 
-  return device
+    // Clear the issued pairing token on first use and on periodic credential touch.
+    // Avoid a PATCH for every authenticated player request (even when no row changes).
+    const { error: pairingCleanupError } = await admin.from('device_pairing_requests')
+      .update({ issued_token: null })
+      .eq('device_id', device.id)
+      .eq('status', 'issued')
+      .not('issued_token', 'is', 'null')
+    if (pairingCleanupError) console.error('pairing_token_cleanup_failed', pairingCleanupError)
+  }
+
+  return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
 
 Deno.serve(async (req) => {
@@ -222,13 +520,41 @@ Deno.serve(async (req) => {
     const admin = adminClient()
     const device = await authenticateDevice(admin, req)
     if (!device) return json({ error: 'invalid_device_token' }, 401)
-    if (device.account_blocked) return json({ error: 'account_suspended', message: 'Conta suspensa. Entre em contato com o administrador da plataforma.' }, 403)
+    if (device.account_block) return json({ error:'account_suspended', ...device.account_block }, 403)
     if (device.access_block === 'pending') return json({ error: 'device_access_pending', message: 'Esta TV está aguardando autorização do Master.' }, 403)
     if (device.access_block === 'blocked') return json({ error: 'device_access_blocked', message: 'O acesso desta TV foi bloqueado pelo Master.' }, 403)
     if (device.access_block === 'expired') return json({ error: 'device_access_expired', message: 'A autorização desta TV expirou.', access_expires_at: device.access_expires_at }, 403)
 
     const body = await req.json().catch(() => ({}))
     const action = body?.action
+
+    // Compatibility reply for the explicitly isolated QA APKs only.
+    // Production device actions, credentials, and playback paths remain intact.
+    // FCM server registration/delivery is not deployed: never claim pushReady.
+    // With {ok:true,push_enabled:false}, QA devices cache this unavailable
+    // state for 24h while keeping their existing command polling fallback.
+    if (action === 'register_push') {
+      const agent = String(req.headers.get('user-agent') || '')
+      if (/^VisionPlayerAndroid\/1\.5\.(22|23)-homologacao$/.test(agent)) {
+        return json({ ok:true, push_enabled:false, registration_status:'fcm_unavailable' })
+      }
+      return json({ error:'unknown_action' }, 400)
+    }
+
+    if (action === 'player_settings') {
+      if (typeof body?.kiosk_return_enabled !== 'boolean') return json({ error:'invalid_setting' }, 400)
+      const settings = { ...(device.settings || {}), kiosk_return_enabled:body.kiosk_return_enabled }
+      const { data: saved, error: saveError } = await admin.from('devices')
+        .update({ settings })
+        .eq('id', device.id)
+        .eq('company_id', device.company_id)
+        .eq('updated_at', device.updated_at)
+        .select('id,settings')
+        .maybeSingle()
+      if (saveError) throw saveError
+      if (!saved) return json({ error:'settings_changed', message:'A configuração mudou. Aguarde a sincronização e tente novamente.' }, 409)
+      return json({ ok:true, settings:saved.settings })
+    }
 
     if (action === 'unpair') {
       const { error: deleteError } = await admin
@@ -252,6 +578,8 @@ Deno.serve(async (req) => {
         status: 'online',
         last_seen_at: now,
         app_version: appVersion,
+        ...(body?.apk_version ? { apk_version: String(body.apk_version).slice(0, 80) } : {}),
+        ...(body?.player_version ? { player_version: String(body.player_version).slice(0, 80) } : {}),
         screen_width: screenWidth,
         screen_height: screenHeight,
         storage_free_mb: storageFreeMb == null ? null : Math.round(storageFreeMb),
@@ -294,11 +622,42 @@ Deno.serve(async (req) => {
         .order('requested_at', { ascending: true })
         .limit(3)
       if (commandsError) throw commandsError
-      if (commands?.length) {
-        const ids = commands.map(row => row.id)
-        await admin.from('device_commands').update({ status:'sent', delivered_at:new Date().toISOString() }).in('id', ids)
+      // Keep retrying unacknowledged 'sent' commands, but do not rewrite them
+      // on every poll. Only first delivery changes pending -> sent.
+      const pendingIds = (commands || []).filter(row => row.status === 'pending').map(row => row.id)
+      if (pendingIds.length) {
+        const { error: markError } = await admin.from('device_commands')
+          .update({ status:'sent', delivered_at:new Date().toISOString() })
+          .eq('company_id', device.company_id).eq('device_id', device.id)
+          .eq('status', 'pending').in('id', pendingIds)
+        if (markError) throw markError
       }
       return json({ ok:true, commands: commands || [] })
+    }
+
+    if (action === 'command_result') {
+      const commandId = String(body?.command_id || '')
+      const status = String(body?.status || 'completed')
+      if (!commandId || !['completed','failed'].includes(status)) return json({ error:'invalid_command_result' }, 400)
+      const { data: command, error: commandError } = await admin.from('device_commands')
+        .select('id,command_type,status')
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .maybeSingle()
+      if (commandError) throw commandError
+      if (!command) return json({ error:'command_not_found' }, 404)
+      if (!['restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type)) return json({ error:'unsupported_command_result' }, 400)
+      const update = status === 'completed'
+        ? { status:'completed', completed_at:new Date().toISOString(), error_message:null, result:{ acknowledged:true } }
+        : { status:'failed', completed_at:new Date().toISOString(), error_message:String(body?.error_message || 'command_failed').slice(0,500) }
+      const { error } = await admin.from('device_commands')
+        .update(update)
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+      if (error) throw error
+      return json({ ok:true })
     }
 
     if (action === 'screenshot_result') {
@@ -352,103 +711,67 @@ Deno.serve(async (req) => {
 
     if (action === 'manifest') {
       const resolved = await resolveProgram(admin, device)
-
-      if (!resolved.playlistId) {
-        return json({
-          version: await sha256Hex(JSON.stringify({ device: device.updated_at, access: [device.access_status, device.access_expires_at], program: resolved.program })),
-          device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
-          program: resolved.program,
-          playlist: null,
-          items: [],
-          generated_at: new Date().toISOString(),
-        })
-      }
-
-      const { data: playlist, error: playlistError } = await admin
-        .from('playlists')
-        .select('id,name,shuffle,repeat_mode,updated_at')
-        .eq('id', resolved.playlistId)
-        .eq('company_id', device.company_id)
-        .maybeSingle()
-      if (playlistError) throw playlistError
-      if (!playlist) return json({ error: 'assigned_playlist_missing' }, 409)
-
-      const { data: playlistItems, error: itemsError } = await admin
-        .from('playlist_items')
-        .select('id,media_id,position,duration_override_seconds,enabled,schedule_enabled,start_date,end_date,start_time,end_time,weekdays,updated_at')
-        .eq('playlist_id', playlist.id)
-        .eq('company_id', device.company_id)
-        .eq('enabled', true)
-        .order('position', { ascending: true })
-      if (itemsError) throw itemsError
-
-      const itemClock = localDateParts(new Date(), resolved.program?.timezone || 'America/Sao_Paulo')
       const supportsItemSchedules = body?.supports_item_schedules === true
-      const effectivePlaylistItems = supportsItemSchedules ? (playlistItems || []) : (playlistItems || []).filter(item => itemScheduleIsActive(item, itemClock))
-      const mediaIds = [...new Set(effectivePlaylistItems.map((item) => item.media_id))]
-      let media = []
-      if (mediaIds.length) {
-        const { data: mediaRows, error: mediaError } = await admin
-          .from('media_assets')
-          .select('id,name,media_type,mime_type,storage_path,source_url,duration_seconds,size_bytes,checksum_sha256,width,height,processing_status,updated_at')
-          .eq('company_id', device.company_id)
-          .in('id', mediaIds)
-          .eq('processing_status', 'ready')
-        if (mediaError) throw mediaError
-        media = mediaRows || []
+
+      let primary = await loadPlaylistPayload(
+        admin,
+        device.company_id,
+        resolved.playlistId,
+        supportsItemSchedules,
+        resolved.program?.timezone,
+        device.id,
+      )
+      const fallback = resolved.fallbackPlaylistId
+        ? await loadPlaylistPayload(admin, device.company_id, resolved.fallbackPlaylistId, supportsItemSchedules, resolved.program?.timezone, device.id)
+        : null
+
+      if (resolved.playlistId && !primary && !fallback) {
+        return json({ error: 'assigned_playlist_missing' }, 409)
       }
 
-      const mediaById = new Map(media.map((item) => [item.id, item]))
-      const items = []
-      for (const item of effectivePlaylistItems) {
-        const asset = mediaById.get(item.media_id)
-        if (!asset) continue
-        let url = asset.source_url || null
-        if (asset.storage_path) {
-          const { data: signed, error: signedError } = await admin.storage
-            .from('vision-media')
-            .createSignedUrl(asset.storage_path, 6 * 60 * 60)
-          if (signedError) {
-            console.error('signed url failed', asset.id, signedError)
-            continue
-          }
-          url = signed?.signedUrl || null
+      let program = resolved.program
+      const fallbackUsable = Boolean(fallback?.items?.length && !fallback?.essentialUnavailable)
+      let fallbackPayload = fallbackUsable ? fallback : null
+      if ((!primary || !primary.items.length || primary.essentialUnavailable) && fallbackUsable) {
+        const fallbackReason = primary?.essentialUnavailable
+          ? 'essential_media_unavailable'
+          : (resolved.playlistId ? 'primary_unavailable' : 'no_primary_playlist')
+        primary = fallback
+        fallbackPayload = null
+        program = {
+          ...resolved.program,
+          source: 'fallback',
+          fallback_reason: fallbackReason,
         }
-        if (!url) continue
-        items.push({
-          id: item.id,
-          position: item.position,
-          duration_seconds: item.duration_override_seconds || asset.duration_seconds || (asset.media_type === 'image' ? 10 : null),
-          schedule: { enabled: Boolean(item.schedule_enabled), start_date: item.start_date || null, end_date: item.end_date || null, start_time: item.start_time || null, end_time: item.end_time || null, weekdays: Array.isArray(item.weekdays) ? item.weekdays.map(Number) : [0,1,2,3,4,5,6] },
-          media: {
-            id: asset.id,
-            name: asset.name,
-            type: asset.media_type,
-            mime_type: asset.mime_type,
-            url,
-            size_bytes: asset.size_bytes,
-            checksum: asset.checksum_sha256 || asset.updated_at,
-            width: asset.width,
-            height: asset.height,
-          },
-        })
       }
 
       const versionSource = JSON.stringify({
-        device: device.updated_at,
+        device_config: [device.orientation, device.settings || {}, device.fallback_playlist_id || null],
         access: [device.access_status, device.access_expires_at],
         assignment: resolved.assignmentUpdatedAt,
-        program: resolved.program,
-        playlist: playlist.updated_at,
-        items: items.map((item) => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.schedule]),
+        program,
+        playlist: primary?.updatedAt || null,
+        items: (primary?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
+        fallback_playlist: fallbackPayload?.updatedAt || null,
+        fallback_items: (fallbackPayload?.items || []).map(item => [item.id, item.media.id, item.media.checksum, item.duration_seconds, item.essential, item.schedule]),
       })
 
       return json({
         version: await sha256Hex(versionSource),
-        device: { id: device.id, name: device.name, orientation: device.orientation, settings: device.settings || {}, access_status: device.access_status || 'active', access_expires_at: device.access_expires_at || null },
-        program: resolved.program,
-        playlist: { id: playlist.id, name: playlist.name, shuffle: playlist.shuffle, repeat_mode: playlist.repeat_mode },
-        items,
+        device: {
+          id: device.id,
+          name: device.name,
+          orientation: device.orientation,
+          settings: device.settings || {},
+          access_status: device.access_status || 'active',
+          access_expires_at: device.offline_access_expires_at,
+        },
+        program,
+        playlist: primary?.playlist || null,
+        items: primary?.items || [],
+        fallback: fallbackPayload?.items?.length
+          ? { playlist: fallbackPayload.playlist, items: fallbackPayload.items }
+          : null,
         generated_at: new Date().toISOString(),
       })
     }
