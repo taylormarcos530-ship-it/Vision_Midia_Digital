@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 const src=readFileSync(new URL('../player.js',import.meta.url),'utf8');
 const clear=src.slice(src.indexOf('async function clearPlayerCache()'),src.indexOf('function restartPlayerRuntime()'));
-const reset=src.slice(src.indexOf('function resetPairing('),src.indexOf('async function startPlayer()'));
+const reset=src.slice(src.indexOf('function resetPairing('),src.indexOf("window.addEventListener('resize'",src.indexOf('function resetPairing(')));
 test('media cache clearing never erases native command intent',async()=>{
  const storage=new Map([['vision_player_command_intent_v1','pending']]);let deleted='';
  const state={cacheItems:3,cacheBytes:100,cachePrefetchVersion:'v'};
