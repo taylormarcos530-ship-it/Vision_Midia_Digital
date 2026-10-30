@@ -6,7 +6,7 @@ import vm from 'node:vm'
 // Execute the actual pollDeviceCommands() body from player.js, not a rewritten model.
 // All gateways, frames and network state are in-memory. No Supabase, TV or APK access.
 const source = readFileSync(new URL('../player.js', import.meta.url), 'utf8')
-const start = source.indexOf('  async function pollDeviceCommands() {')
+const start = source.indexOf("  const SCREENSHOT_ACK_KEY = 'vision_screenshot_ack_v1';")
 const end = source.indexOf('  function shuffled(', start)
 assert.ok(start >= 0 && end > start, 'player command handler source not found')
 const handler = source.slice(start, end)
