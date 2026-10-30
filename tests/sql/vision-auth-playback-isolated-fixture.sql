@@ -26,7 +26,7 @@ DO $$ BEGIN IF (SELECT count(*) FROM vision_gateway_test.playback_logs)<>1 THEN 
 INSERT INTO vision_gateway_test.device_pairing_requests VALUES
  ('22222222-2222-4222-8222-222222222222','11111111-1111-4111-8111-111111111111','issued','temporary-token'),
  ('33333333-3333-4333-8333-333333333333','11111111-1111-4111-8111-111111111111','claimed','keep-claimed');
-DO $
+DO $vision$
 DECLARE n integer;
 BEGIN
  UPDATE vision_gateway_test.device_pairing_requests SET issued_token=NULL
@@ -45,5 +45,5 @@ BEGIN
  WHERE device_id='11111111-1111-4111-8111-111111111111' AND status='issued';
  GET DIAGNOSTICS n=ROW_COUNT;
  IF n<>1 THEN RAISE EXCEPTION 'expected current repeated update behavior %',n; END IF;
-END $;
+END $vision$;
 ROLLBACK;
