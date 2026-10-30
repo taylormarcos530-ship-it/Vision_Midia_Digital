@@ -12,7 +12,7 @@ assert.ok(start >= 0 && end > start, 'player command handler source not found')
 const handler = source.slice(start, end)
 const id = 'isolated-screenshot-1'
 
-function harness({online=true, commands=[{id,command_type:'screenshot',status:'sent'}],loseResult=false,failCapture=false}={}) {
+function harness({online=true, commands=[{id,command_type:'screenshot',status:'sent'}],loseResult=false,failCapture=false,storage=new Map()}={}) {
   const state = {deviceToken:'isolated-only',processingCommands:new Set()}
   const navigator = {onLine:online}
   const calls = []
@@ -31,7 +31,10 @@ function harness({online=true, commands=[{id,command_type:'screenshot',status:'s
     if(failCapture) throw Error('simulated capture failure')
     return {image_base64:'isolated',width:1,height:1}
   }
-  const context = {state,navigator,gateway,captureCurrentFrame,String,Error}
+  const localStorage={getItem:key=>storage.get(key)??null,setItem:(key,value)=>storage.set(key,value),removeItem:key=>storage.delete(key)}
+  const readJson=key=>{try{return JSON.parse(localStorage.getItem(key)||'null')}catch{return null}}
+  const writeJson=(key,value)=>value==null?localStorage.removeItem(key):localStorage.setItem(key,JSON.stringify(value))
+  const context = {state,navigator,gateway,captureCurrentFrame,String,Error,readJson,writeJson}
   vm.runInNewContext(handler+'\nthis.poll=pollDeviceCommands',context)
   return {state,navigator,calls,poll:context.poll}
 }
@@ -53,16 +56,17 @@ test('screenshot success sends result and releases in-memory lock',async()=>{
 test('lost result response causes error report and later retry: current behavior documented',async()=>{
   const h=harness({loseResult:true})
   await h.poll()
-  assert.deepEqual(h.calls,['commands','capture','screenshot_result','screenshot_error'])
+  assert.deepEqual(h.calls,['commands','capture','screenshot_result'])
   await h.poll()
-  assert.deepEqual(h.calls.slice(4),['commands','capture','screenshot_result'])
+  assert.deepEqual(h.calls.slice(3),['commands','capture','screenshot_result'])
 })
-test('restart resets processing set: sent command can be processed again',async()=>{
-  const first=harness()
+test('restart retains successful screenshot acknowledgment and avoids duplicate capture',async()=>{
+  const storage=new Map()
+  const first=harness({storage})
   await first.poll()
-  const restarted=harness()
+  const restarted=harness({storage})
   await restarted.poll()
-  assert.deepEqual(restarted.calls,['commands','capture','screenshot_result'])
+  assert.deepEqual(restarted.calls,['commands'])
 })
 test('capture failure reports screenshot_error and releases processing lock',async()=>{
   const h=harness({failCapture:true})
@@ -74,4 +78,14 @@ test('unsupported command type is not executed by web screenshot poller',async()
   const h=harness({commands:[{id,command_type:'restart',status:'sent'}]})
   await h.poll()
   assert.deepEqual(h.calls,['commands'])
+})
+
+test('lost response never emits screenshot_error; retry waits for server status',async()=>{
+  const commands=[{id,command_type:'screenshot',status:'sent'}]
+  const h=harness({commands,loseResult:true})
+  await h.poll()
+  assert.deepEqual(h.calls,['commands','capture','screenshot_result'])
+  commands.length=0 // server already committed despite lost response
+  await h.poll()
+  assert.deepEqual(h.calls,['commands','capture','screenshot_result','commands'])
 })
