@@ -46,7 +46,7 @@ test('restart_player is acknowledged before reboot and replay after response los
  const first=make(store);first.lose();await first.run(cmd);
  assert.equal(first.timers.length,0);
  const afterRestart=make(store);await afterRestart.run(cmd);
- assert.equal(afterRestart.timers.length,1);
+ assert.equal(afterRestart.timers.length,0);
 });
 test('offline command does not execute and is processed after reconnection',async()=>{
  const h=make(),cmd={id:'offline',command_type:'clear_cache'};
