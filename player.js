@@ -1595,6 +1595,12 @@
           await acknowledgeCompletedCommand(command);
           continue;
         }
+        if (['restart_player','update_apk'].includes(command.command_type)) {
+          const history = readJson('vision_player_command_intent_history_v1');
+          if (history?.device_id === state.manifest?.device?.id &&
+              history.entries?.some(entry => entry.id === command.id &&
+                entry.type === command.command_type)) continue;
+        }
         if (['restart_player','update_apk'].includes(command.command_type) &&
             readJson(COMMAND_INTENT_KEY) && !commandIntent(command)) {
           // Do not block a replacement TV with an old TV's intent. Keep
