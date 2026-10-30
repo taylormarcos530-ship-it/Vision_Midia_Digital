@@ -1742,7 +1742,41 @@
       state.heartbeatTimer = setInterval(() => {
         void runBackgroundPoll(runQaBundle);
       }, staggeredPollInterval(QA_BUNDLE_INTERVAL_MS));
-      void runBackgroundPoll(runQaBundle);
+      // Only a previously authorized, fully cached player can defer its first
+      // network cycle. Unpaired, uncached, clock-grace and blocked devices
+      // retain immediate verification and recovery.
+      const startBundleImmediately = () => { void runBackgroundPoll(runQaBundle); };
+      if (localAccessState() === 'valid' && !state.serverAccessDenied &&
+          state.manifest?.device?.id && Array.isArray(state.manifest.items) &&
+          state.manifest.items.length > 0 && !state.pushPending) {
+        void (async () => {
+          try {
+            const media = state.manifest.items.filter(item =>
+              item?.media && ['image', 'video'].includes(item.media.type));
+            if (!media.length || media.length !== state.manifest.items.length) {
+              startBundleImmediately();
+              return;
+            }
+            const cache = await caches.open(MEDIA_CACHE);
+            const complete = (await Promise.all(media.map(item =>
+              cache.match(cacheKey(item))))).every(response =>
+                response && Number(response.headers.get('Content-Length')) > 0);
+            if (!complete || !state.deviceToken || state.pushPending) {
+              startBundleImmediately();
+              return;
+            }
+            const firstCycleDelayMs = Math.floor(Math.random() * 15_000);
+            state.syncTimer = setTimeout(() => {
+              state.syncTimer = null;
+              startBundleImmediately();
+            }, firstCycleDelayMs);
+          } catch {
+            startBundleImmediately();
+          }
+        })();
+      } else {
+        startBundleImmediately();
+      }
       return;
     }
     startLegacyPollingTimers();
