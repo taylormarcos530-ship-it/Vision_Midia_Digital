@@ -2,12 +2,13 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import vm from 'node:vm'
+import { stripTypeScriptTypes } from 'node:module'
 import { webcrypto } from 'node:crypto'
 
 // Executes the ENTIRE original Deno gateway handler with an in-memory Supabase
 // double. No Supabase credentials, network, database, or deployed function.
 const source = readFileSync(new URL('../supabase/functions/device-gateway/index.ts', import.meta.url), 'utf8')
-const script = source.replace(/^import \{ createClient \} from 'npm:@supabase\/supabase-js@2'\s*/,'')
+const script = stripTypeScriptTypes(source.replace(/^import \{ createClient \} from 'npm:@supabase\/supabase-js@2'\s*/,''), { mode: 'strip' })
 const id = '11111111-1111-4111-8111-111111111111'
 const token = 'x'.repeat(40)
 async function invoke({method='POST',body={action:'not_a_real_action'},valid=true,blocked=false,revoked=false}={}) {
