@@ -30,7 +30,7 @@ DO $vision$
 DECLARE n integer;
 BEGIN
  UPDATE vision_gateway_test.device_pairing_requests SET issued_token=NULL
- WHERE device_id='11111111-1111-4111-8111-111111111111' AND status='issued';
+ WHERE device_id='11111111-1111-4111-8111-111111111111' AND status='issued' AND issued_token IS NOT NULL;
  GET DIAGNOSTICS n=ROW_COUNT;
  IF n<>1 THEN RAISE EXCEPTION 'issued token cleanup count %',n; END IF;
  IF EXISTS (SELECT 1 FROM vision_gateway_test.device_pairing_requests WHERE status='issued' AND issued_token IS NOT NULL) THEN
@@ -39,11 +39,10 @@ BEGIN
  IF NOT EXISTS (SELECT 1 FROM vision_gateway_test.device_pairing_requests WHERE status='claimed' AND issued_token='keep-claimed') THEN
   RAISE EXCEPTION 'claimed token modified';
  END IF;
- -- O UPDATE atual ainda toca a linha mesmo quando issued_token ja e NULL.
- -- Isso revela um candidato a reducao de escrita, sem mudar producao.
+ -- A segunda limpeza nao deve atualizar nenhuma linha ja limpa.
  UPDATE vision_gateway_test.device_pairing_requests SET issued_token=NULL
- WHERE device_id='11111111-1111-4111-8111-111111111111' AND status='issued';
+ WHERE device_id='11111111-1111-4111-8111-111111111111' AND status='issued' AND issued_token IS NOT NULL;
  GET DIAGNOSTICS n=ROW_COUNT;
- IF n<>1 THEN RAISE EXCEPTION 'expected current repeated update behavior %',n; END IF;
+ IF n<>0 THEN RAISE EXCEPTION 'redundant token write %',n; END IF;
 END $vision$;
 ROLLBACK;
