@@ -37,3 +37,22 @@ test('deduplication scope is per request, not across batches', () => {
   assert.equal(filterPlaybackEvents([event('a')]).length, 1)
   assert.equal(filterPlaybackEvents([event('a')]).length, 1)
 })
+
+// Player contract: a successful batch response acknowledges the whole submitted batch;
+// accepted is informational and is not used to slice the queue.
+function simulatePlayerFlush(queue, responseOk) {
+  const batch = queue.slice(0, 50)
+  if (!responseOk) throw new Error('playback_log_failed')
+  return queue.slice(batch.length)
+}
+
+test('successful response clears submitted batch even with duplicate IDs', () => {
+  const queue = [event('a'), event('a'), event('b')]
+  assert.equal(filterPlaybackEvents(queue).length, 2)
+  assert.deepEqual(simulatePlayerFlush(queue, true), [])
+})
+test('failed response does not acknowledge queued events', () => {
+  const queue = [event('a'), event('b')]
+  assert.throws(() => simulatePlayerFlush(queue, false), /playback_log_failed/)
+  assert.equal(queue.length, 2)
+})
