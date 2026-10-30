@@ -1,0 +1,19 @@
+name: Vision isolated audit validation
+on:
+  push:
+    branches:
+      - audit/playback-query-performance-20261030
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate authentication and playback source contracts
+        run: node --test tests/credential-hourly-write-guard.test.mjs tests/device-auth-source-contract.test.mjs tests/playback-batch-dedup.test.mjs tests/playback-gateway-mock-integration.test.mjs
