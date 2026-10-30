@@ -635,6 +635,20 @@ Deno.serve(async (req) => {
       return json({ ok:true, commands: commands || [] })
     }
 
+    if (action === 'command_status') {
+      const commandId = String(body?.command_id || '')
+      if (!commandId) return json({ error:'invalid_command_id' }, 400)
+      const { data: command, error: commandError } = await admin.from('device_commands')
+        .select('id,device_id,command_type,status')
+        .eq('id', commandId)
+        .eq('company_id', device.company_id)
+        .eq('device_id', device.id)
+        .maybeSingle()
+      if (commandError) throw commandError
+      if (!command) return json({ error:'command_not_found' }, 404)
+      return json({ ok:true, command })
+    }
+
     if (action === 'command_result') {
       const commandId = String(body?.command_id || '')
       const status = String(body?.status || 'completed')
