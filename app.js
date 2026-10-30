@@ -1350,7 +1350,7 @@
         try {
           const quality = await restRequest('rpc/vision_report_quality_notice_qa', { method: 'POST', body: filters });
           if (quality?.has_warning) {
-            qualitySpan.textContent = '⚠ Atenção: ' + Number(quality.suspect_past || 0) + ' horário(s) antigo(s) e ' + Number(quality.suspect_future || 0) + ' horário(s) futuro(s) suspeitos. Confira antes de usar como comprovante.';
+            qualitySpan.textContent = '⚠ Atenção: ' + Number(quality.suspect_past || 0) + ' horário(s) antigos e ' + Number(quality.suspect_future || 0) + ' futuros no período; ' + Number(quality.recent_received_suspect_past || 0) + ' antigos e ' + Number(quality.recent_received_suspect_future || 0) + ' futuros recebidos nas últimas 24h (podem estar fora do período). Confira antes de usar como comprovante.';
             qualitySpan.style.color = '#d97706';
           } else qualitySpan.textContent = 'Verificação de horários: nenhuma anomalia identificada pelos critérios atuais.';
         } catch (_) {
