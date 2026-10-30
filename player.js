@@ -1629,6 +1629,8 @@
       await syncManifest(response.manifest.data);
       state.qaLastManifestAt = performance.now();
     }
+    // Clear the push latch only after commands and heartbeat are confirmed.
+    state.pushPending = false;
   }
 
   function shuffled(items) {
@@ -1752,14 +1754,12 @@
         try {
           if (window.VisionAndroid?.consumePushSignal?.() === true) state.pushPending = true;
         } catch {}
-        if (!state.deviceToken || !navigator.onLine) return;
-        if (state.syncTimer && state.pushPending) {
+        if (!state.deviceToken || !navigator.onLine || !state.pushPending) return;
+        if (state.syncTimer) {
           clearTimeout(state.syncTimer);
           state.syncTimer = null;
-          void runBackgroundPoll(runQaBundle);
-        } else if (state.pushPending) {
-          void runBackgroundPoll(runQaBundle);
         }
+        void runBackgroundPoll(runQaBundle);
       }, 1000);
       if (localAccessState() === 'valid' && !state.serverAccessDenied &&
           state.manifest?.device?.id && Array.isArray(state.manifest.items) &&
