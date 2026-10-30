@@ -218,6 +218,7 @@ async function authenticateDevice(admin, req) {
     .update({ issued_token: null })
     .eq('device_id', device.id)
     .eq('status', 'issued')
+    .not('issued_token', 'is', null)
 
   return device
 }
