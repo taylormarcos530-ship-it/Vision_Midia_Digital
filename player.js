@@ -1544,6 +1544,40 @@
     if (commandIntent(command)) writeJson(COMMAND_INTENT_KEY, null);
   }
 
+  // Reconciliation is observational. Never turn an ambiguous intent into
+  // permission to repeat a native operation.
+  async function inspectCommandIntent(command) {
+    const intent = commandIntent(command);
+    if (!intent) return 'absent';
+    let result;
+    try {
+      result = await gateway({action:'command_status',command_id:command.id});
+    } catch {
+      return 'unverified';
+    }
+    const server = result?.command;
+    if (server?.id !== command.id ||
+        server?.device_id !== intent.device_id ||
+        server?.command_type !== command.command_type) return 'unverified';
+    if (server.status === 'completed' || server.status === 'failed') {
+      // Preserve the original intent as evidence before releasing the slot.
+      const key = 'vision_player_command_intent_history_v1';
+      const existing = readJson(key);
+      const history = existing?.device_id === intent.device_id &&
+        Array.isArray(existing.entries) ? existing.entries : [];
+      const entries = [...history.filter(row => row.id !== intent.id),
+        {...intent,server_status:server.status}].slice(-100);
+      writeJson(key,{device_id:intent.device_id,entries});
+      const verified = readJson(key);
+      if (verified?.device_id !== intent.device_id ||
+          !verified.entries?.some(row => row.id === intent.id &&
+            row.server_status === server.status)) return 'unverified';
+      clearCommandIntent(command);
+      return 'terminal';
+    }
+    return 'pending';
+  }
+
   async function acknowledgeCompletedCommand(command) {
     await gateway({action:'command_result',command_id:command.id,status:'completed'});
   }
@@ -1576,11 +1610,13 @@
         }
         if (['restart_player','update_apk'].includes(command.command_type) &&
             commandIntent(command)) {
-          // Crash between intent and native effect is indistinguishable
-          // from crash after the effect. No duplicate and no false success.
-          queueDeviceEvent('command_reconciliation_required','warning',
-            'Comando interrompido; verificar manualmente antes de reenviar.',
-            {command_id:command.id,command_type:command.command_type},30000);
+          const outcome = await inspectCommandIntent(command);
+          // Even a terminal response never authorizes replay of this ID.
+          if (outcome !== 'terminal') {
+            queueDeviceEvent('command_reconciliation_required','warning',
+              'Comando interrompido; verificar manualmente antes de reenviar.',
+              {command_id:command.id,command_type:command.command_type},30000);
+          }
           continue;
         }
         if(command.command_type==='screenshot'){
@@ -1999,6 +2035,7 @@
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
     localStorage.removeItem(COMMAND_ACK_LEDGER_KEY);
     localStorage.removeItem(COMMAND_INTENT_KEY);
+    localStorage.removeItem('vision_player_command_intent_history_v1');
     localStorage.removeItem(REQUEST_METRICS_KEY);
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
