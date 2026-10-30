@@ -1513,6 +1513,25 @@
       completed: completed.slice(-100),
     });
   }
+  // An intent is persisted before a non-repeatable native action.
+  // An interrupted intent is ambiguous: never automatically replay or
+  // acknowledge it as completed. It needs operator reconciliation.
+  const COMMAND_INTENT_KEY = 'vision_player_command_intent_v1';
+  function commandIntent(command) {
+    const saved = readJson(COMMAND_INTENT_KEY);
+    return saved?.device_id === state.manifest?.device?.id &&
+      saved?.id === command.id && saved?.type === command.command_type ? saved : null;
+  }
+  function recordCommandIntent(command) {
+    writeJson(COMMAND_INTENT_KEY, {
+      device_id: state.manifest?.device?.id, id:command.id,
+      type:command.command_type, phase:'started',
+    });
+  }
+  function clearCommandIntent(command) {
+    if (commandIntent(command)) writeJson(COMMAND_INTENT_KEY, null);
+  }
+
   async function acknowledgeCompletedCommand(command) {
     await gateway({action:'command_result',command_id:command.id,status:'completed'});
   }
@@ -1530,6 +1549,15 @@
           await acknowledgeCompletedCommand(command);
           continue;
         }
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            commandIntent(command)) {
+          // Crash between intent and native effect is indistinguishable
+          // from crash after the effect. No duplicate and no false success.
+          queueDeviceEvent('command_reconciliation_required','warning',
+            'Comando interrompido; verificar manualmente antes de reenviar.',
+            {command_id:command.id,command_type:command.command_type},30000);
+          continue;
+        }
         if(command.command_type==='screenshot'){
           const capture=await captureCurrentFrame();
           await gateway({action:'screenshot_result',command_id:command.id,...capture});
@@ -1537,7 +1565,10 @@
         }
 
         if(command.command_type==='restart_player'){
-          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          recordCommandIntent(command);
+          await acknowledgeCompletedCommand(command);
+          rememberCommandEffect(command);
+          clearCommandIntent(command);
           queueDeviceEvent('player_restart_requested','info','Reinício remoto recebido do painel.',{command_id:command.id},30000);
           setTimeout(restartPlayerRuntime,250);
           continue;
@@ -1545,9 +1576,14 @@
 
         if(command.command_type==='update_apk'){
           if(typeof window.VisionAndroid?.requestApkUpdate!=='function')throw new Error('Atualizador indisponível neste APK');
+          recordCommandIntent(command);
           const accepted=window.VisionAndroid.requestApkUpdate('https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk');
-          if(accepted!==true)throw new Error('Download não iniciado');
+          if(accepted!==true) {
+            clearCommandIntent(command);
+            throw new Error('Download não iniciado');
+          }
           rememberCommandEffect(command);
+          clearCommandIntent(command);
           await acknowledgeCompletedCommand(command);
           continue;
         }
@@ -1580,6 +1616,9 @@
           queueDeviceEvent('programming_reloaded','info','Programação recarregada por comando remoto.',{command_id:command.id},15000);
         }
       }catch(error){
+        // An uncertain native effect must not be marked failed or retried.
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            commandIntent(command)) continue;
         // A failed acknowledgement does not mean a completed action failed.
         // Keep the command pending on the server for a safe acknowledgement retry.
         if (commandAckLedger().some(entry =>
@@ -1934,6 +1973,7 @@
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
     localStorage.removeItem(COMMAND_ACK_LEDGER_KEY);
+    localStorage.removeItem(COMMAND_INTENT_KEY);
     localStorage.removeItem(REQUEST_METRICS_KEY);
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
