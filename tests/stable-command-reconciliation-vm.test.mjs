@@ -9,12 +9,12 @@ function fixture(status,device='tv'){
  store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'cmd',type:'update_apk',phase:'started'}));
  const effects={apk:0},requests=[];
  const state={deviceToken:'token',manifest:{device:{id:device}},processingCommands:new Set()};
- const ctx={state,performance:{now:()=>1000},navigator:{onLine:true},readJson:k=>JSON.parse(store.get(k)||'null'),
+ let clock=1000;const ctx={state,performance:{now:()=>clock},navigator:{onLine:true},readJson:k=>JSON.parse(store.get(k)||'null'),
  writeJson:(k,v)=>{if(v==null)store.delete(k);else store.set(k,JSON.stringify(v));},
  gateway:async p=>{requests.push(p);if(p.action==='command_status')return {ok:true,command:{id:'cmd',device_id:'tv',command_type:'update_apk',status}};return {ok:true};},
  queueDeviceEvent:()=>{},window:{VisionAndroid:{requestApkUpdate:()=>{effects.apk++;return true;}}},console};
  vm.createContext(ctx);vm.runInContext(code+'\nglobalThis.poll=pollDeviceCommands;',ctx);
- return {store,effects,requests,run:()=>ctx.poll([{id:'cmd',command_type:'update_apk'}])};
+ return {store,effects,requests,setClock:v=>clock=v,run:()=>ctx.poll([{id:'cmd',command_type:'update_apk'}])};
 }
 for(const status of ['pending','sent']){
  test(status+' retains uncertain intent and never replays APK',async()=>{
@@ -48,3 +48,22 @@ for(const path of ['supabase/functions/device-gateway/index.ts','supabase/functi
   assert.doesNotMatch(p,/\.update\(|\.insert\(|\.delete\(/);
  });
 }
+
+test('repeated pending status is throttled for five minutes',async()=>{
+ const h=fixture('sent');await h.run();await h.run();await h.run();
+ assert.equal(h.requests.filter(x=>x.action==='command_status').length,1);
+ h.setClock(301001);await h.run();
+ assert.equal(h.requests.filter(x=>x.action==='command_status').length,2);
+});
+test('contradictory server identity cannot archive or release intent',async()=>{
+ const h=fixture('completed','new-tv');await h.run();
+ assert.equal(h.store.has('vision_player_command_intent_v1'),true);
+ assert.equal(h.store.has('vision_player_command_intent_history_v1'),false);
+});
+test('terminal archive is not overwritten by stale command replay',async()=>{
+ const h=fixture('completed');await h.run();
+ const history=h.store.get('vision_player_command_intent_history_v1');
+ await h.run();
+ assert.equal(h.effects.apk,0);
+ assert.equal(h.store.get('vision_player_command_intent_history_v1'),history);
+});
