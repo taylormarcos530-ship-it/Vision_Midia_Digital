@@ -11,7 +11,7 @@ function harness({valid=true,complete=true,online=true,push=false,linked=true}={
  const navigator={onLine:online};
  const context={
   state,navigator,window:{VisionAndroid:{consumePushSignal:()=>{const x=signal;signal=false;return x;}}},
-  performance:{now:()=>0},Math:{...Math,random:()=>.5},Array,Promise,
+  performance:{now:()=>0},Math:Object.assign(Object.create(Math),{random:()=>.5}),Array,Promise,
   MEDIA_CACHE:'test',caches:{open:async()=>({match:async()=>complete?{headers:{get:()=> '512'}}:undefined})},
   cacheKey:()=>({url:'test'}),localAccessState:()=>valid?'valid':'clock-grace',
   useQaBundle:()=>true,enforceLocalAccess:()=>false,showPlayback:()=>{},setStatus:()=>{},
