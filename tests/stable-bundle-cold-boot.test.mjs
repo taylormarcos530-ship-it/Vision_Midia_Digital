@@ -23,9 +23,13 @@ for(const mode of ['cold-boot','cached-cold-boot','distributed']){
   else assert.ok(result.peakRps<65);
  });
 }
-test('existing startup bundle call is immediate, so cold boot spike is not yet fixed',()=>{
- assert.match(code,/void runBackgroundPoll\(runQaBundle\);\s*return;/);
- assert.match(code,/staggeredPollInterval\(QA_BUNDLE_INTERVAL_MS\)/);
+test('first cycle deferred only for valid fully cached device',()=>{
+ assert.ok(code.includes("localAccessState() === 'valid'"));
+ assert.ok(code.includes("state.manifest.items.length > 0"));
+ assert.ok(code.includes("cache.match(cacheKey(item))"));
+ assert.ok(code.includes("Math.random() * 15_000"));
+ assert.ok(code.includes("state.deviceToken !== pairedToken"));
+ assert.ok(code.includes("startBundleImmediately()"));
 });
 test('offline alert tolerance is independent of player polling cadence',()=>{
  const offlineAfterMs=8*60000,cronPeriodMs=3*60000;
