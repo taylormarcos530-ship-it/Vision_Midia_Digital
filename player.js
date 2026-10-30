@@ -1523,10 +1523,22 @@
       saved?.id === command.id && saved?.type === command.command_type ? saved : null;
   }
   function recordCommandIntent(command) {
-    writeJson(COMMAND_INTENT_KEY, {
-      device_id: state.manifest?.device?.id, id:command.id,
-      type:command.command_type, phase:'started',
-    });
+    const deviceId = state.manifest?.device?.id;
+    if (!deviceId || !command?.id) throw new Error('command_intent_identity_missing');
+    const existing = readJson(COMMAND_INTENT_KEY);
+    if (existing && (existing.device_id !== deviceId ||
+        existing.id !== command.id || existing.type !== command.command_type)) {
+      throw new Error('command_intent_reconciliation_required');
+    }
+    const intent = {device_id:deviceId, id:command.id,
+      type:command.command_type, phase:'started'};
+    writeJson(COMMAND_INTENT_KEY, intent);
+    // localStorage can throw QuotaExceededError or silently fail in a
+    // mocked / restricted WebView. Never trigger the native effect unless
+    // the persisted record can be read back and matches exactly.
+    const verified = commandIntent(command);
+    if (!verified || verified.phase !== 'started')
+      throw new Error('command_intent_not_persisted');
   }
   function clearCommandIntent(command) {
     if (commandIntent(command)) writeJson(COMMAND_INTENT_KEY, null);
@@ -1547,6 +1559,12 @@
         if (commandAckLedger().some(entry =>
           entry.id === command.id && entry.type === command.command_type)) {
           await acknowledgeCompletedCommand(command);
+          continue;
+        }
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            readJson(COMMAND_INTENT_KEY) && !commandIntent(command)) {
+          // Another command/device has an unresolved intent. Do not
+          // overwrite it; unrelated playback and commands remain available.
           continue;
         }
         if (['restart_player','update_apk'].includes(command.command_type) &&
