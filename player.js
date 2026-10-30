@@ -1741,7 +1741,7 @@
       state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
       state.heartbeatTimer = setInterval(() => {
         void runBackgroundPoll(runQaBundle);
-      }, QA_BUNDLE_INTERVAL_MS);
+      }, staggeredPollInterval(QA_BUNDLE_INTERVAL_MS));
       void runBackgroundPoll(runQaBundle);
       return;
     }
