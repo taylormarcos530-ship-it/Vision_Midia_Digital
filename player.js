@@ -1575,6 +1575,7 @@
     if (!state.deviceToken || !navigator.onLine || !useQaBundle()) return;
     const proofs = playbackQueue().slice(0, 50);
     const events = deviceEventQueue().slice(0, 25);
+    const pushGenerationAtStart = state.pushSignalGeneration || 0;
     const manifestDue = !state.qaLastManifestAt ||
       performance.now() - state.qaLastManifestAt >= QA_BUNDLE_MANIFEST_INTERVAL_MS;
     let response;
@@ -1629,8 +1630,10 @@
       await syncManifest(response.manifest.data);
       state.qaLastManifestAt = performance.now();
     }
-    // Clear the push latch only after commands and heartbeat are confirmed.
-    state.pushPending = false;
+    // A new push received while this request was in flight must be retried.
+    // Clear only the generation already covered by this successful cycle.
+    if ((state.pushSignalGeneration || 0) === pushGenerationAtStart)
+      state.pushPending = false;
   }
 
   function shuffled(items) {
@@ -1755,7 +1758,10 @@
       // delay; do not wait for the next 58-second cycle.
       state.pushTimer = setInterval(() => {
         try {
-          if (window.VisionAndroid?.consumePushSignal?.() === true) state.pushPending = true;
+          if (window.VisionAndroid?.consumePushSignal?.() === true) {
+            state.pushPending = true;
+            state.pushSignalGeneration = (state.pushSignalGeneration || 0) + 1;
+          }
         } catch {}
         if (!state.deviceToken || !navigator.onLine || !state.pushPending) return;
         if (state.syncTimer) {
@@ -1825,7 +1831,10 @@
     }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.commands));
     // Local SharedPreferences check only: NO network call until a push arrives.
     state.pushTimer = setInterval(() => {
-      try { if (window.VisionAndroid?.consumePushSignal?.() === true) state.pushPending = true; }
+      try { if (window.VisionAndroid?.consumePushSignal?.() === true) {
+            state.pushPending = true;
+            state.pushSignalGeneration = (state.pushSignalGeneration || 0) + 1;
+          } }
       catch {}
       if (!state.pushPending || !state.deviceToken || !navigator.onLine) return;
       void runBackgroundPoll(async () => {
@@ -1877,6 +1886,7 @@
     state.pushTimer = null;
     state.pushReady = false;
     state.pushPending = false;
+    state.pushSignalGeneration = 0;
     state.qaLastManifestAt = 0;
     state.pushRegisteredKey = '';
     state.pushRegisteredAt = 0;
