@@ -461,11 +461,16 @@ Deno.serve(async (req) => {
 
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       const parsedEvents = []
+      // Duplicatas no mesmo lote não precisam consultar metadados nem chegar ao banco.
+      // A chave única (device_id, client_event_id) continua protegendo reenvios entre lotes.
+      const seenClientEventIds = new Set<string>()
       for (const event of events) {
         const clientEventId = String(event?.client_event_id || '').slice(0, 120)
         const startedAt = new Date(event?.started_at || Date.now())
         const endedAt = event?.ended_at ? new Date(event.ended_at) : null
         if (!clientEventId || Number.isNaN(startedAt.getTime()) || (endedAt && Number.isNaN(endedAt.getTime()))) continue
+        if (seenClientEventIds.has(clientEventId)) continue
+        seenClientEventIds.add(clientEventId)
         parsedEvents.push({
           client_event_id: clientEventId,
           campaign_id: uuidPattern.test(String(event?.campaign_id || '')) ? event.campaign_id : null,
