@@ -674,17 +674,39 @@
     return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
   }
 
+  // Acknowledged screenshot commands survive WebView restarts; bounded to 50 IDs.
+  // Never persist image bytes or credentials. An uncertain network response is
+  // not a capture error: let the server's command status decide the next retry.
+  const SCREENSHOT_ACK_KEY = 'vision_screenshot_ack_v1';
+  function acknowledgedScreenshots() {
+    const saved = readJson(SCREENSHOT_ACK_KEY);
+    return Array.isArray(saved) ? saved.filter(id => typeof id === 'string').slice(-50) : [];
+  }
+  function rememberScreenshotAck(id) {
+    const saved = acknowledgedScreenshots().filter(value => value !== id);
+    saved.push(id);
+    try { writeJson(SCREENSHOT_ACK_KEY, saved.slice(-50)); } catch { /* storage unavailable */ }
+  }
+
   async function pollDeviceCommands() {
     if(!state.deviceToken||!navigator.onLine)return;
     const result=await gateway({action:'commands'});
     for(const command of result?.commands||[]){
-      if(command.command_type!=='screenshot'||state.processingCommands.has(command.id))continue;
+      if(command.command_type!=='screenshot'||state.processingCommands.has(command.id)||acknowledgedScreenshots().includes(command.id))continue;
       state.processingCommands.add(command.id);
       try{
-        const capture=await captureCurrentFrame();
-        await gateway({action:'screenshot_result',command_id:command.id,...capture});
-      }catch(error){
-        await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        let capture;
+        try {
+          capture=await captureCurrentFrame();
+        } catch(error) {
+          await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+          continue;
+        }
+        // A lost HTTP response must not turn a successful server-side screenshot into 'failed'.
+        try {
+          await gateway({action:'screenshot_result',command_id:command.id,...capture});
+          rememberScreenshotAck(command.id);
+        } catch { /* next poll checks the server's pending/sent list */ }
       }finally{state.processingCommands.delete(command.id)}
     }
   }

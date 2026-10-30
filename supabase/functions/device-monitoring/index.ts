@@ -46,7 +46,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -66,9 +66,16 @@ async function authenticateDevice(admin, req) {
     return { ...device, access_block: 'expired' }
   }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
+  // Compartilha a janela de uma hora com device-gateway, sem cachear autorização.
+  const lastUsedAt = credential.last_used_at ? new Date(credential.last_used_at).getTime() : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(lastUsedAt) || nowMs - lastUsedAt >= 60 * 60 * 1000) {
+    const cutoff = new Date(nowMs - 60 * 60 * 1000).toISOString()
+    await admin.from('device_credentials')
+      .update({ last_used_at: new Date(nowMs).toISOString() })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lte.${cutoff}`)
+  }
 
   return device
 }

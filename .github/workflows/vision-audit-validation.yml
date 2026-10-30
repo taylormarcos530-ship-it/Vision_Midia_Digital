@@ -1,0 +1,30 @@
+name: Vision isolated audit validation
+on:
+  push:
+    branches:
+      - audit/playback-query-performance-20261030
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate authentication and playback source contracts
+        run: node --test tests/credential-hourly-write-guard.test.mjs tests/device-auth-source-contract.test.mjs tests/playback-batch-dedup.test.mjs tests/playback-gateway-mock-integration.test.mjs tests/device-auth-real-source-mock.test.mjs tests/device-gateway-full-handler-isolated.test.mjs tests/player-command-lifecycle-isolated.test.mjs tests/player-command-polling-simulation-isolated.test.mjs tests/adaptive-command-poller-proposal-isolated.test.mjs tests/adaptive-polling-interval-comparison-isolated.test.mjs tests/adaptive-command-timeout-isolated.test.mjs tests/adaptive-command-quarantine-isolated.test.mjs tests/adaptive-command-integration-simulation-isolated.test.mjs tests/adaptive-command-integration-edgecases-isolated.test.mjs
+      - name: Validate SQL guard and playback uniqueness in isolated PostgreSQL
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -X -v ON_ERROR_STOP=1 -f tests/sql/vision-auth-playback-isolated-fixture.sql
+      - name: Validate real concurrent command writes in isolated PostgreSQL
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres bash tests/sql/vision-command-concurrency-isolated.sh

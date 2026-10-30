@@ -174,7 +174,7 @@ async function authenticateDevice(admin, req) {
   const tokenHash = await sha256Hex(rawToken)
   const { data: credential, error } = await admin
     .from('device_credentials')
-    .select('device_id,revoked_at')
+    .select('device_id,revoked_at,last_used_at')
     .eq('token_hash', tokenHash)
     .maybeSingle()
   if (error) throw error
@@ -203,13 +203,22 @@ async function authenticateDevice(admin, req) {
   if (!company || company.status !== 'active') return { ...device, account_blocked: true }
   if (subscription && ['suspended', 'cancelled'].includes(subscription.status)) return { ...device, account_blocked: true }
 
-  await admin.from('device_credentials')
-    .update({ last_used_at: new Date().toISOString() })
-    .eq('device_id', device.id)
+  // Atualizar uso no máximo uma vez por hora por credencial; não armazenar decisões de autorização.
+  // O filtro no UPDATE protege contra requisições concorrentes e não depende do relógio da TV.
+  const lastUsedAt = credential.last_used_at ? new Date(credential.last_used_at).getTime() : NaN
+  const nowMs = Date.now()
+  if (!Number.isFinite(lastUsedAt) || nowMs - lastUsedAt >= 60 * 60 * 1000) {
+    const cutoff = new Date(nowMs - 60 * 60 * 1000).toISOString()
+    await admin.from('device_credentials')
+      .update({ last_used_at: new Date(nowMs).toISOString() })
+      .eq('device_id', device.id)
+      .or(`last_used_at.is.null,last_used_at.lte.${cutoff}`)
+  }
   await admin.from('device_pairing_requests')
     .update({ issued_token: null })
     .eq('device_id', device.id)
     .eq('status', 'issued')
+    .not('issued_token', 'is', null)
 
   return device
 }
@@ -294,9 +303,17 @@ Deno.serve(async (req) => {
         .order('requested_at', { ascending: true })
         .limit(3)
       if (commandsError) throw commandsError
-      if (commands?.length) {
-        const ids = commands.map(row => row.id)
-        await admin.from('device_commands').update({ status:'sent', delivered_at:new Date().toISOString() }).in('id', ids)
+      // Comandos 'sent' continuam visíveis para a TV, mas não geram novas gravações.
+      // O filtro status='pending' também protege contra consultas concorrentes.
+      const pendingIds = (commands || []).filter(row => row.status === 'pending').map(row => row.id)
+      if (pendingIds.length) {
+        const { error: deliveryError } = await admin.from('device_commands')
+          .update({ status:'sent', delivered_at:new Date().toISOString() })
+          .eq('company_id', device.company_id)
+          .eq('device_id', device.id)
+          .eq('status', 'pending')
+          .in('id', pendingIds)
+        if (deliveryError) throw deliveryError
       }
       return json({ ok:true, commands: commands || [] })
     }
@@ -461,11 +478,16 @@ Deno.serve(async (req) => {
 
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       const parsedEvents = []
+      // Duplicatas no mesmo lote não precisam consultar metadados nem chegar ao banco.
+      // A chave única (device_id, client_event_id) continua protegendo reenvios entre lotes.
+      const seenClientEventIds = new Set<string>()
       for (const event of events) {
         const clientEventId = String(event?.client_event_id || '').slice(0, 120)
         const startedAt = new Date(event?.started_at || Date.now())
         const endedAt = event?.ended_at ? new Date(event.ended_at) : null
         if (!clientEventId || Number.isNaN(startedAt.getTime()) || (endedAt && Number.isNaN(endedAt.getTime()))) continue
+        if (seenClientEventIds.has(clientEventId)) continue
+        seenClientEventIds.add(clientEventId)
         parsedEvents.push({
           client_event_id: clientEventId,
           campaign_id: uuidPattern.test(String(event?.campaign_id || '')) ? event.campaign_id : null,
