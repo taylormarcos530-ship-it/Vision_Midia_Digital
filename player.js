@@ -1496,6 +1496,27 @@
     }
   }
 
+  // Device-scoped acknowledgement ledger: bounded to 100 entries.
+  // Prevents repeating a completed side effect if the server accepted its
+  // result but the acknowledgement response was lost.
+  const COMMAND_ACK_LEDGER_KEY = 'vision_player_command_ack_v1';
+  function commandAckLedger() {
+    const saved = readJson(COMMAND_ACK_LEDGER_KEY);
+    return saved?.device_id === state.manifest?.device?.id &&
+      Array.isArray(saved.completed) ? saved.completed : [];
+  }
+  function rememberCommandEffect(command) {
+    const completed = commandAckLedger().filter(entry => entry.id !== command.id);
+    completed.push({id: command.id, type: command.command_type});
+    writeJson(COMMAND_ACK_LEDGER_KEY, {
+      device_id: state.manifest?.device?.id,
+      completed: completed.slice(-100),
+    });
+  }
+  async function acknowledgeCompletedCommand(command) {
+    await gateway({action:'command_result',command_id:command.id,status:'completed'});
+  }
+
   async function pollDeviceCommands(preloadedCommands = null) {
     if(!state.deviceToken||!navigator.onLine)return;
     const result=preloadedCommands === null ? await gateway({action:'commands'}) : {commands:preloadedCommands};
@@ -1504,6 +1525,11 @@
       if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type))continue;
       state.processingCommands.add(command.id);
       try{
+        if (commandAckLedger().some(entry =>
+          entry.id === command.id && entry.type === command.command_type)) {
+          await acknowledgeCompletedCommand(command);
+          continue;
+        }
         if(command.command_type==='screenshot'){
           const capture=await captureCurrentFrame();
           await gateway({action:'screenshot_result',command_id:command.id,...capture});
@@ -1521,12 +1547,14 @@
           if(typeof window.VisionAndroid?.requestApkUpdate!=='function')throw new Error('Atualizador indisponível neste APK');
           const accepted=window.VisionAndroid.requestApkUpdate('https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk');
           if(accepted!==true)throw new Error('Download não iniciado');
-          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
           continue;
         }
         if(command.command_type==='sync_now'){
           await syncManifest();
-          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
           queueDeviceEvent('manual_sync_completed','info','Sincronização remota concluída.',{command_id:command.id},15000);
           continue;
         }
@@ -1536,7 +1564,8 @@
           state.runtimeFallbackVersion=null;
           state.playlistNonce++;
           await syncManifest();
-          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
           queueDeviceEvent('cache_cleared','info','Cache local limpo por comando remoto.',{command_id:command.id},15000);
           continue;
         }
@@ -1546,10 +1575,15 @@
           state.playlistNonce++;
           await syncManifest();
           ensurePlaybackLoop();
-          await gateway({action:'command_result',command_id:command.id,status:'completed'});
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
           queueDeviceEvent('programming_reloaded','info','Programação recarregada por comando remoto.',{command_id:command.id},15000);
         }
       }catch(error){
+        // A failed acknowledgement does not mean a completed action failed.
+        // Keep the command pending on the server for a safe acknowledgement retry.
+        if (commandAckLedger().some(entry =>
+          entry.id === command.id && entry.type === command.command_type)) continue;
         if(command.command_type==='screenshot'){
           await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
         }else{
@@ -1899,6 +1933,7 @@
     try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
     localStorage.removeItem(PLAYBACK_QUEUE_KEY);
     localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
+    localStorage.removeItem(COMMAND_ACK_LEDGER_KEY);
     localStorage.removeItem(REQUEST_METRICS_KEY);
     writeJson(PAIRING_KEY, null);
     state.deviceToken = null;
