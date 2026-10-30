@@ -1570,15 +1570,21 @@
       // Preserve the original intent as evidence before releasing the slot.
       const key = 'vision_player_command_intent_history_v1';
       const existing = readJson(key);
-      const history = existing?.device_id === intent.device_id &&
-        Array.isArray(existing.entries) ? existing.entries : [];
-      const entries = [...history.filter(row => row.id !== intent.id),
-        {...intent,server_status:server.status}].slice(-100);
-      writeJson(key,{device_id:intent.device_id,entries});
+      // v1 was single-device. Migrate it without discarding prior TV evidence.
+      const history = Array.isArray(existing?.entries) ? existing.entries : [];
+      const normalized = history.map(row => ({
+        ...row, device_id: row.device_id || existing?.device_id,
+      }));
+      const entries = [...normalized.filter(row =>
+        !(row.device_id === intent.device_id && row.id === intent.id)),
+        {...intent,server_status:server.status}];
+      // Never silently truncate evidence. Full storage must leave the intent
+      // pending rather than authorize a duplicate native operation.
+      writeJson(key,{version:2,entries});
       const verified = readJson(key);
-      if (verified?.device_id !== intent.device_id ||
-          !verified.entries?.some(row => row.id === intent.id &&
-            row.server_status === server.status)) return 'unverified';
+      if (verified?.version !== 2 ||
+          !verified.entries?.some(row => row.device_id === intent.device_id &&
+            row.id === intent.id && row.server_status === server.status)) return 'unverified';
       clearCommandIntent(command);
       return 'terminal';
     }
@@ -1604,9 +1610,9 @@
         }
         if (['restart_player','update_apk'].includes(command.command_type)) {
           const history = readJson('vision_player_command_intent_history_v1');
-          if (history?.device_id === state.manifest?.device?.id &&
-              history.entries?.some(entry => entry.id === command.id &&
-                entry.type === command.command_type)) continue;
+          if (history?.entries?.some(entry =>
+              (entry.device_id || history.device_id) === state.manifest?.device?.id &&
+              entry.id === command.id && entry.type === command.command_type)) continue;
         }
         if (['restart_player','update_apk'].includes(command.command_type) &&
             readJson(COMMAND_INTENT_KEY) && !commandIntent(command)) {
@@ -1640,9 +1646,9 @@
 
         if(command.command_type==='restart_player'){
           recordCommandIntent(command);
-          await acknowledgeCompletedCommand(command);
-          rememberCommandEffect(command);
-          clearCommandIntent(command);
+          // restartApp()/location.reload() cannot confirm completion: the
+          // runtime disappears before an acknowledgement could be trusted.
+          // Preserve intent, leave server status sent, and reconcile after boot.
           queueDeviceEvent('player_restart_requested','info','Reinício remoto recebido do painel.',{command_id:command.id},30000);
           setTimeout(restartPlayerRuntime,250);
           continue;
