@@ -57,3 +57,20 @@ test('power loss before local effect record is an unresolved atomicity boundary'
  const s=commandCode.slice(commandCode.indexOf("if(command.command_type==='clear_cache')"),commandCode.indexOf("if(command.command_type==='reload_programming')"));
  assert.ok(s.indexOf('await clearPlayerCache()')<s.indexOf('rememberCommandEffect(command)'));
 });
+
+test('interrupted native update is quarantined across app restart',async()=>{
+ const store=new Map();
+ store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'apk-crash',type:'update_apk',phase:'started'}));
+ const h=make(store);
+ await h.run({id:'apk-crash',command_type:'update_apk'});
+ assert.equal(h.effects.apk,0);
+ assert.equal(h.sent.length,0);
+});
+test('interrupted native restart is quarantined across app restart',async()=>{
+ const store=new Map();
+ store.set('vision_player_command_intent_v1',JSON.stringify({device_id:'tv',id:'restart-crash',type:'restart_player',phase:'started'}));
+ const h=make(store);
+ await h.run({id:'restart-crash',command_type:'restart_player'});
+ assert.equal(h.timers.length,0);
+ assert.equal(h.sent.length,0);
+});
