@@ -27,7 +27,7 @@ async function invoke({method='POST',body={action:'not_a_real_action'},valid=tru
     let operation='select'
     const q={
       select(){return q},
-      eq(){return q},
+      eq(...args){if(operation==='update')calls.push({table,kind:'eq',args});return q},
       or(){return q},
       not(...args){calls.push({table,kind:'not',args});return q},
       update(value){operation='update';calls.push({table,kind:'update',value});return q},
@@ -109,4 +109,24 @@ test('commands: pending command is marked sent once per request',async()=>{
   const x=await invoke({body:{action:'commands'},commands:[{id,command_type:'reload',status:'pending'}]})
   assert.equal(x.status,200)
   assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,1)
+})
+
+test('commands: already sent command is returned without any update',async()=>{
+  const x=await invoke({body:{action:'commands'},commands:[{id,command_type:'reload',status:'sent'}]})
+  assert.equal(x.status,200)
+  assert.equal(x.data.commands.length,1)
+  assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,0)
+})
+test('commands: mixed pending and sent only updates pending IDs',async()=>{
+  const pending='22222222-2222-4222-8222-222222222222'
+  const x=await invoke({body:{action:'commands'},commands:[
+    {id:pending,command_type:'reload',status:'pending'},
+    {id,command_type:'reload',status:'sent'},
+  ]})
+  assert.equal(x.status,200)
+  assert.equal(x.data.commands.length,2)
+  const updates=x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update')
+  assert.equal(updates.length,1)
+  const eqs=x.calls.filter(c=>c.table==='device_commands'&&c.kind==='eq')
+  assert.ok(eqs.some(c=>c.args[0]==='status'&&c.args[1]==='pending'))
 })
