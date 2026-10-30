@@ -1720,7 +1720,10 @@
     queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
     // Timers and offline playback must not wait for a blocked backend call.
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
-    if (state.syncTimer) clearInterval(state.syncTimer);
+    if (state.syncTimer) {
+      clearInterval(state.syncTimer);
+      clearTimeout(state.syncTimer);
+    }
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.pushTimer) clearInterval(state.pushTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
@@ -1853,7 +1856,10 @@
 
   function resetPairing(clearManifest = true) {
     if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
-    if (state.syncTimer) clearInterval(state.syncTimer);
+    if (state.syncTimer) {
+      clearInterval(state.syncTimer);
+      clearTimeout(state.syncTimer);
+    }
     if (state.commandTimer) clearInterval(state.commandTimer);
     if (state.pushTimer) clearInterval(state.pushTimer);
     if (state.accessTimer) clearInterval(state.accessTimer);
@@ -1946,6 +1952,16 @@
     });
     const resumeSync = () => {
       if (!state.deviceToken) return;
+      // Stable 1.5.24 uses one consolidated call. Never trigger legacy
+      // heartbeat/manifest writes on reconnect or window focus.
+      if (useQaBundle()) {
+        if (state.syncTimer) {
+          clearTimeout(state.syncTimer);
+          state.syncTimer = null;
+        }
+        void runBackgroundPoll(runQaBundle);
+        return;
+      }
       void runBackgroundPoll(async () => {
         await heartbeat();
         await syncManifest();
