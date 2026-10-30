@@ -24,3 +24,7 @@ jobs:
         run: |
           sudo systemctl start postgresql.service
           sudo -u postgres psql -X -v ON_ERROR_STOP=1 -f tests/sql/vision-auth-playback-isolated-fixture.sql
+      - name: Validate real concurrent command writes in isolated PostgreSQL
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres bash tests/sql/vision-command-concurrency-isolated.sh
