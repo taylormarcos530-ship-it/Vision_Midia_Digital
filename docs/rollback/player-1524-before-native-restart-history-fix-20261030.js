@@ -1,0 +1,2150 @@
+(() => {
+  'use strict';
+  // preview-refresh-v39-timed-access
+
+  const CONFIG = window.VISION_CONFIG;
+  if (!CONFIG?.supabaseUrl || !CONFIG?.supabasePublishableKey) {
+    document.body.innerHTML = '<main style="padding:40px;color:white">Configuração do Supabase ausente.</main>';
+    return;
+  }
+
+  const APP_VERSION = 'vision-player-web-1.5.11';
+  const DEVICE_TOKEN_KEY = 'vision_player_device_token_v1';
+  const PAIRING_KEY = 'vision_player_pairing_v1';
+  const MANIFEST_KEY = 'vision_player_manifest_v1';
+  const MEDIA_CACHE = 'vision-player-media-v1';
+  const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
+  const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
+  // QA telemetry uses the existing heartbeat; it does not create API calls.
+  // Counts are cumulative attempts, not official Supabase billable invocations.
+  const REQUEST_METRICS_KEY = 'vision_player_request_metrics_v1';
+  const SETUP_CODE_KEY = 'vision_player_setup_code_v1';
+  const CACHE_REV_KEY = 'vision_player_cache_revision_v1';
+  const querySetupCode = new URLSearchParams(location.search).get('setup');
+  if (querySetupCode) localStorage.setItem(SETUP_CODE_KEY, String(querySetupCode).slice(0,128));
+
+  function nativeStoredDeviceToken() {
+    try { return String(window.VisionAndroid?.getDeviceToken?.() || '') || null; }
+    catch { return null; }
+  }
+
+  const state = {
+    deviceToken: localStorage.getItem(DEVICE_TOKEN_KEY) || nativeStoredDeviceToken() || null,
+    pairing: readJson(PAIRING_KEY),
+    manifest: readJson(MANIFEST_KEY),
+    running: false,
+    playlistNonce: 0,
+    currentObjectUrl: null,
+    wakeLock: null,
+    heartbeatTimer: null,
+    syncTimer: null,
+    commandTimer: null,
+    pushTimer: null,
+    pushReady: false,
+    pushPending: false,
+    qaBundleSupported: true,
+    qaLastManifestAt: 0,
+    pushRegisteredKey: '',
+    pushRegisteredAt: 0,
+    pushLastAttemptAt: 0,
+    lastCommandReconcileAt: 0,
+    accessTimer: null,
+    clockRecoveryTimer: null,
+    startupClockStartedAt: performance.now(),
+    clockAnchor: null,
+    clockVerificationPaused: false,
+    localExpiryBlocked: false,
+    serverAccessDenied: false,
+    processingCommands: new Set(),
+    lastSyncAt: readJson(MANIFEST_KEY)?.generated_at || null,
+    currentMediaId: null,
+    cacheItems: 0,
+    cacheBytes: 0,
+    audioEnabled: true,
+    syncHadError: false,
+    playbackHadError: false,
+    lastEventTimes: {},
+    cachePrefetchVersion: null,
+    runtimeFallbackVersion: null,
+    priorityMediaId: null,
+    pairingStartInFlight: false,
+    pairingRetryTimer: null,
+    pairingRateLimitedUntil: 0,
+  };
+
+  if (state.deviceToken) {
+    try { localStorage.setItem(DEVICE_TOKEN_KEY, state.deviceToken); } catch {}
+    try { window.VisionAndroid?.storeDeviceToken?.(state.deviceToken); } catch {}
+  }
+
+  const $ = (selector) => document.querySelector(selector);
+  const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
+
+  const BACKGROUND_POLL_INTERVALS = Object.freeze({
+    // Master marks a TV offline after 90s; jittered heartbeat must stay <90s.
+    // 60s average, max 69s, leaves 21s for typical network latency.
+    heartbeat: 60_000,
+    manifest: 120_000,
+    commands: 45_000,
+  });
+  // A fleet powering up together must not hit the backend at identical moments.
+  // Per-boot, per-channel jitter keeps the average rate unchanged and keeps
+  // command polling within a short bounded range.
+  function staggeredPollInterval(ms) {
+    return Math.round(ms * (0.85 + Math.random() * 0.30));
+  }
+  // Casa-only experiment: 1 Edge call approximately every 58s. The Master
+  // command fallback is safely bounded by one cycle, not pushed via FCM.
+  const QA_BUNDLE_DEVICE_ID = '45b27442-e0ee-4b79-87fc-c753a52f060c';
+  const QA_BUNDLE_VERSION = '1.5.24-homologacao';
+  const STABLE_BUNDLE_VERSION = '1.5.24-stable';
+  const QA_BUNDLE_INTERVAL_MS = 58_000;
+  const QA_BUNDLE_MANIFEST_INTERVAL_MS = 120_000;
+  function useQaBundle() {
+    return state.qaBundleSupported && (
+      (nativeAppVersion() === QA_BUNDLE_VERSION &&
+       state.manifest?.device?.id === QA_BUNDLE_DEVICE_ID) ||
+      (nativeAppVersion() === STABLE_BUNDLE_VERSION &&
+       Boolean(state.manifest?.device?.id))
+    );
+  }
+  const BACKGROUND_RETRY_BASE_MS = 15_000;
+  const BACKGROUND_RETRY_MAX_MS = 5 * 60_000;
+  const BOOT_CLOCK_GRACE_MS = 10 * 60_000;
+  // A TV Box may wake with a date OLDER than the server timestamp in its
+  // last accepted manifest. This alone is not proof that access expired.
+  // Allow only a bounded boot grace while revalidating; never extend a truly
+  // expired lease, and never override a 403 returned by the gateway.
+  function evaluateCachedAuthorization(manifest, wallClockMs, monotonicMs, serverClock = null, bootStartedMs = 0) {
+    if (!manifest) return 'missing';
+    const issuedAt = Date.parse(manifest?.generated_at || '');
+    const expiresAt = Date.parse(manifest?.device?.access_expires_at || '');
+    if (!Number.isFinite(issuedAt) || !Number.isFinite(expiresAt) || expiresAt <= issuedAt)
+      return 'expired';
+
+    const trustedNow = serverClock
+      ? serverClock.serverTimeMs + Math.max(0, monotonicMs - serverClock.monotonicMs)
+      : wallClockMs;
+    if (!serverClock && wallClockMs < issuedAt - 60_000) {
+      return monotonicMs - bootStartedMs < BOOT_CLOCK_GRACE_MS ? 'clock-grace' : 'clock-unverified';
+    }
+    return trustedNow >= expiresAt ? 'expired' : 'valid';
+  }
+  // Reject truncated or foreign-device responses before replacing cached authorization.
+  function validateManifestPayload(manifest, previous = state.manifest) {
+    const isRecord = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+    const validDate = value => typeof value === 'string' && Number.isFinite(Date.parse(value));
+    if (!isRecord(manifest) || typeof manifest.version !== 'string' || !manifest.version ||
+        !isRecord(manifest.device) || !manifest.device.id ||
+        !validDate(manifest.device.access_expires_at) || !validDate(manifest.generated_at) ||
+        !isRecord(manifest.program) || !Array.isArray(manifest.items) ||
+        !(manifest.playlist === null || (isRecord(manifest.playlist) && manifest.playlist.id)) ||
+        (previous?.device?.id && manifest.device.id !== previous.device.id) ||
+        (manifest.playlist === null && (manifest.items.length !== 0 || manifest.program.source !== 'none')) ||
+        (manifest.playlist && manifest.items.some(item =>
+          !isRecord(item) || !isRecord(item.media) || !item.media.id || !['image', 'video', 'url'].includes(item.media.type)))) {
+      throw new Error('Programação recebida incompleta ou inválida; conteúdo anterior preservado.');
+    }
+    return manifest;
+  }
+
+  const backgroundPollState = { inFlight: false, failures: 0, retryAt: 0 };
+
+  // All recurring polls share one in-flight slot. A failing backend must not
+  // accumulate requests or cause a retry storm while cached media is playing.
+  async function runBackgroundPoll(task) {
+    if (!state.deviceToken || !navigator.onLine || backgroundPollState.inFlight ||
+        performance.now() < backgroundPollState.retryAt) return false;
+    backgroundPollState.inFlight = true;
+    try {
+      await task();
+      backgroundPollState.failures = 0;
+      backgroundPollState.retryAt = 0;
+      return true;
+    } catch (error) {
+      const status = Number(error?.status || 0);
+      if (status === 403) {
+        // Authorization denial or permission failure: retry only after a
+        // bounded cooldown. The local access gate keeps blocked TVs stopped.
+        // Manual verification still calls syncManifest directly when needed.
+        backgroundPollState.failures = 0;
+        backgroundPollState.retryAt = performance.now() + 5 * 60_000;
+      } else if (status !== 401 && !isAccessError(error)) {
+        backgroundPollState.failures = Math.min(7, backgroundPollState.failures + 1);
+        const delay = Math.min(
+          BACKGROUND_RETRY_MAX_MS,
+          BACKGROUND_RETRY_BASE_MS * 2 ** (backgroundPollState.failures - 1)
+        );
+        backgroundPollState.retryAt = performance.now() + delay + Math.floor(Math.random() * 3_000);
+      }
+      return false;
+    } finally {
+      backgroundPollState.inFlight = false;
+    }
+  }
+
+  function replaceNodeChildren(node, ...children) {
+    if (!node) return;
+    while (node.firstChild) node.removeChild(node.firstChild);
+    for (const child of children) {
+      if (child) node.appendChild(child);
+    }
+  }
+
+  function clientId() {
+    try {
+      if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+        return window.crypto.randomUUID();
+      }
+    } catch {}
+    try {
+      if (window.crypto && typeof window.crypto.getRandomValues === 'function') {
+        const bytes = new Uint8Array(16);
+        window.crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
+      }
+    } catch {}
+    return `vision-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 14)}`;
+  }
+
+  async function waitForChangeOrTimeout(nonce, ms) {
+    const deadline = Date.now() + ms;
+    while (Date.now() < deadline) {
+      if (nonce !== state.playlistNonce) return 'changed';
+      await sleep(Math.min(250, Math.max(1, deadline - Date.now())));
+    }
+    return nonce !== state.playlistNonce ? 'changed' : 'timeout';
+  }
+
+  function readJson(key) {
+    try { return JSON.parse(localStorage.getItem(key) || 'null'); }
+    catch { return null; }
+  }
+
+  function writeJson(key, value) {
+    if (value == null) localStorage.removeItem(key);
+    else localStorage.setItem(key, JSON.stringify(value));
+  }
+
+  const TRAFFIC_ACTIONS = new Set([
+    'device-gateway.manifest', 'device-gateway.commands',
+    'device-gateway.playback_batch', 'device-gateway.heartbeat',
+    'device-monitoring.heartbeat', 'device-monitoring.event_batch',
+    'device-bundle-qa.cycle', 'device-bundle-stable.cycle',
+  ]);
+  function requestMetricsSnapshot() {
+    const stored = readJson(REQUEST_METRICS_KEY);
+    if (stored?.version === 1 && stored.counts && typeof stored.counts === 'object' &&
+        typeof stored.started_at === 'string' && Number.isFinite(Date.parse(stored.started_at))) {
+      const counts = {};
+      for (const [key, value] of Object.entries(stored.counts)) {
+        if (TRAFFIC_ACTIONS.has(key) || key === 'device-gateway.other' ||
+            key === 'device-monitoring.other') {
+          const safe = Number(value);
+          if (Number.isSafeInteger(safe) && safe >= 0) counts[key] = safe;
+        }
+      }
+      return { version: 1, started_at: stored.started_at, counts };
+    }
+    return {version: 1, started_at: new Date().toISOString(), counts: {}};
+  }
+  function countRequestAttempt(route, action) {
+    if (!state.deviceToken) return;
+    const key = route + '.' + String(action || 'other');
+    const normalized = TRAFFIC_ACTIONS.has(key) ? key : route + '.other';
+    if (route !== 'device-gateway' && route !== 'device-monitoring' && route !== 'device-bundle-qa' && route !== 'device-bundle-stable') return;
+    try {
+      const snapshot = requestMetricsSnapshot();
+      snapshot.counts[normalized] = Math.min(1000000000, (snapshot.counts[normalized] || 0) + 1);
+      writeJson(REQUEST_METRICS_KEY, snapshot);
+    } catch { /* monitoring failure must never affect playback */ }
+  }
+
+  function playbackQueue() {
+    const queue = readJson(PLAYBACK_QUEUE_KEY);
+    return Array.isArray(queue) ? queue : [];
+  }
+
+  function queuePlayback(event) {
+    const queue = playbackQueue();
+    queue.push(event);
+    if (queue.length > 2000) queue.splice(0, queue.length - 2000);
+    writeJson(PLAYBACK_QUEUE_KEY, queue);
+  }
+
+  let playbackFlushInFlight = null;
+  async function flushPlaybackQueue() {
+    if (playbackFlushInFlight) return playbackFlushInFlight;
+    if (!state.deviceToken || !navigator.onLine) return;
+    // Only one uploader is allowed to read and acknowledge queued events.
+    // Concurrent automatic + forced uploads used to resend the same records.
+    playbackFlushInFlight = (async () => {
+      let queue = playbackQueue();
+      while (queue.length && state.deviceToken && navigator.onLine) {
+        const batch = queue.slice(0, 50);
+        await gateway({ action: 'playback_batch', events: batch });
+        // Remove only the acknowledged IDs: new events may have arrived during
+        // the HTTP request and must never be lost by overwriting localStorage.
+        const confirmed = new Set(batch.map(event => event.client_event_id));
+        const latest = playbackQueue();
+        const remainder = latest.filter(event => !confirmed.has(event.client_event_id));
+        writeJson(PLAYBACK_QUEUE_KEY, remainder.length ? remainder : null);
+        queue = remainder;
+      }
+    })();
+    try { await playbackFlushInFlight; }
+    finally { playbackFlushInFlight = null; }
+  }
+
+
+  function deviceEventQueue() {
+    const queue = readJson(DEVICE_EVENT_QUEUE_KEY);
+    return Array.isArray(queue) ? queue : [];
+  }
+
+  function queueDeviceEvent(eventCode, severity, message, details = {}, dedupeMs = 60_000) {
+    const code = String(eventCode || '').slice(0, 80);
+    const text = String(message || '').slice(0, 500);
+    if (!code || !text) return;
+    const fingerprint = `${code}:${text}`;
+    const now = Date.now();
+    if (now - Number(state.lastEventTimes[fingerprint] || 0) < dedupeMs) return;
+    state.lastEventTimes[fingerprint] = now;
+    const queue = deviceEventQueue();
+    queue.push({
+      client_event_id: clientId(),
+      severity: ['info', 'warning', 'error', 'critical'].includes(severity) ? severity : 'info',
+      event_code: code,
+      message: text,
+      details: details && typeof details === 'object' ? details : {},
+      occurred_at: new Date().toISOString(),
+    });
+    if (queue.length > 500) queue.splice(0, queue.length - 500);
+    writeJson(DEVICE_EVENT_QUEUE_KEY, queue);
+  }
+
+  let deviceEventFlushInFlight = null;
+  async function flushDeviceEventQueue() {
+    if (deviceEventFlushInFlight) return deviceEventFlushInFlight;
+    if (!state.deviceToken || !navigator.onLine) return;
+    deviceEventFlushInFlight = (async () => {
+      let queue = deviceEventQueue();
+      while (queue.length && state.deviceToken && navigator.onLine) {
+        const batch = queue.slice(0, 25);
+        await monitorGateway({ action: 'event_batch', events: batch });
+        const confirmed = new Set(batch.map(event => event.client_event_id));
+        const latest = deviceEventQueue();
+        const remainder = latest.filter(event => !confirmed.has(event.client_event_id));
+        writeJson(DEVICE_EVENT_QUEUE_KEY, remainder.length ? remainder : null);
+        queue = remainder;
+      }
+    })();
+    try { await deviceEventFlushInFlight; }
+    finally { deviceEventFlushInFlight = null; }
+  }
+
+  async function parseResponse(response) {
+    const text = await response.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; }
+    catch { data = text; }
+    if (!response.ok) {
+      const error = new Error(data?.message || data?.error || `Erro HTTP ${response.status}`);
+      error.status = response.status;
+      error.data = data;
+      throw error;
+    }
+    return data;
+  }
+
+  function decodeNativeBase64(value) {
+    const binary = atob(String(value || ''));
+    if (typeof TextDecoder !== 'undefined') {
+      const bytes = Uint8Array.from(binary, ch => ch.charCodeAt(0));
+      return new TextDecoder().decode(bytes);
+    }
+    try {
+      return decodeURIComponent([...binary].map(ch => '%' + ch.charCodeAt(0).toString(16).padStart(2, '0')).join(''));
+    } catch {
+      return binary;
+    }
+  }
+
+  const nativeRequests = new Map();
+  let nativeRequestSequence = 0;
+  window.VisionNativeNetwork = {
+    complete(id, envelope) {
+      const request = nativeRequests.get(id);
+      if (!request) return;
+      nativeRequests.delete(id);
+      clearTimeout(request.timer);
+      request.resolve(String(envelope || ''));
+    },
+  };
+
+  function requestNativeAsync(url, payload, token) {
+    return new Promise((resolve, reject) => {
+      const id = `${Date.now()}-${++nativeRequestSequence}`;
+      const timer = setTimeout(() => {
+        nativeRequests.delete(id);
+        const error = new Error('A conexão demorou demais. A reprodução local continua.');
+        error.status = 0;
+        reject(error);
+      }, 40000);
+      nativeRequests.set(id, { resolve, timer });
+      try { window.VisionAndroid.postJsonAsync(id, url, payload, CONFIG.supabasePublishableKey, token || ''); }
+      catch (error) { clearTimeout(timer); nativeRequests.delete(id); reject(error); }
+    });
+  }
+
+  async function functionRequest(name, body, deviceToken = null) {
+    const url = `${CONFIG.supabaseUrl}/functions/v1/${name}`;
+    const payload = JSON.stringify(body || {});
+
+    if (window.VisionAndroid?.postJsonAsync || window.VisionAndroid?.postJson) {
+      let envelope = '';
+      try {
+        envelope = window.VisionAndroid.postJsonAsync
+          ? await requestNativeAsync(url, payload, deviceToken)
+          : String(window.VisionAndroid.postJson(
+          url,
+          payload,
+          CONFIG.supabasePublishableKey,
+          deviceToken || ''
+        ) || '');
+      } catch (bridgeError) {
+        const error = new Error(`Falha na ponte Android: ${bridgeError?.message || bridgeError}`);
+        error.status = 0;
+        throw error;
+      }
+      const separator = envelope.indexOf('\n');
+      const status = Number(separator >= 0 ? envelope.slice(0, separator) : 0);
+      const encoded = separator >= 0 ? envelope.slice(separator + 1) : '';
+      const text = encoded ? decodeNativeBase64(encoded) : '';
+      if (status === 0) {
+        const error = new Error(text || 'Sem conexão com o servidor. Verifique a internet e a data/hora do TV Box.');
+        error.status = 0;
+        throw error;
+      }
+      let data = null;
+      try { data = text ? JSON.parse(text) : null; }
+      catch { data = text; }
+      if (status < 200 || status >= 300) {
+        const error = new Error(data?.message || data?.error || `Erro HTTP ${status}`);
+        error.status = status;
+        error.data = data;
+        throw error;
+      }
+      return data;
+    }
+
+    const headers = {
+      apikey: CONFIG.supabasePublishableKey,
+      'Content-Type': 'application/json',
+    };
+    if (deviceToken) headers['x-device-token'] = deviceToken;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: payload,
+      cache: 'no-store',
+    });
+    return parseResponse(response);
+  }
+
+  function detectPlatform() {
+    const ua = navigator.userAgent.toLowerCase();
+    if (ua.includes('aft') || ua.includes('fire tv')) return 'firetv';
+    if (ua.includes('android')) return 'android';
+    if (ua.includes('windows')) return 'windows';
+    if (ua.includes('smart-tv') || ua.includes('smarttv') || ua.includes('tizen') || ua.includes('webos')) return 'smarttv';
+    return 'web';
+  }
+
+  function setStatus(text) {
+    $('#player-status').textContent = text;
+  }
+
+  function isAccessError(error) {
+    const code = String(error?.data?.error || error?.error || '');
+    return ['device_access_pending','device_access_blocked','device_access_expired','account_suspended'].includes(code);
+  }
+
+  function showAccessBlocked(errorOrData = {}) {
+    const data = errorOrData?.data || errorOrData || {};
+    const code = String(data.error || '');
+    if (code === 'account_suspended' || code === 'device_access_blocked' || code === 'device_access_pending') {
+      state.manifest = null;
+      writeJson(MANIFEST_KEY, null);
+    }
+    let title = 'Acesso desta TV bloqueado';
+    let message = data.message || 'Entre em contato com o administrador.';
+    let expiry = 'O pareamento desta TV foi preservado.';
+
+    if (code === 'device_access_pending') {
+      title = 'Aguardando autorização';
+      message = 'Esta TV já foi vinculada. O Master precisa definir o período de acesso.';
+      expiry = 'Você não precisa instalar nem parear novamente.';
+    } else if (code === 'device_access_expired') {
+      title = 'Autorização expirada';
+      message = 'O prazo de funcionamento desta TV terminou. O Master pode renovar sem novo pareamento.';
+      expiry = data.access_expires_at ? `Vencimento: ${new Date(data.access_expires_at).toLocaleString('pt-BR')}` : 'Prazo encerrado.';
+    } else if (code === 'device_access_blocked') {
+      title = 'TV bloqueada pelo Master';
+      message = 'O acesso desta TV foi bloqueado. O vínculo permanece salvo para uma futura reativação.';
+    } else if (code === 'account_suspended') {
+      if (data.reason === 'trial_expired') { title = 'Período de teste encerrado'; message = data.message || 'O período de demonstração terminou. Contrate ou renove um plano para continuar.'; expiry = data.trial_ends_at ? `Teste encerrado em: ${new Date(data.trial_ends_at).toLocaleString('pt-BR')}` : 'Período de teste encerrado.'; }
+      else if (data.reason === 'pending_approval') { title = 'Aguardando aprovação'; message = data.message || 'O Master ainda precisa liberar esta conta.'; }
+      else if (data.reason === 'payment_required' || data.reason === 'payment_overdue' || data.reason === 'subscription_expired') { title = 'Plano precisa ser regularizado'; message = data.message || 'Regularize o plano para continuar a exibição.'; }
+      else { title = 'Conta suspensa'; message = data.message || 'A conta desta TV está suspensa.'; }
+    }
+
+    state.playlistNonce++;
+    try { clearCurrentObjectUrl(); } catch {}
+    replaceNodeChildren($('#media-stage'));
+    $('#pairing-screen').classList.add('hidden');
+    $('#playback-screen').classList.add('hidden');
+    $('#access-screen').classList.remove('hidden');
+    $('#access-heading').textContent = title;
+    $('#access-message').textContent = message;
+    $('#access-expiry').textContent = expiry;
+    $('#access-status').textContent = 'A TV verificará a autorização automaticamente.';
+  }
+
+  function localAccessState() {
+    return evaluateCachedAuthorization(
+      state.manifest, Date.now(), performance.now(), state.clockAnchor, state.startupClockStartedAt
+    );
+  }
+
+  function enforceLocalAccess() {
+    // A genuine 403 from Supabase always wins over an offline cache.
+    if (state.serverAccessDenied) return true;
+    const access = localAccessState();
+    if (access === 'valid' || access === 'clock-grace' || access === 'missing') {
+      if (state.clockVerificationPaused || state.localExpiryBlocked) {
+        state.clockVerificationPaused = false;
+        state.localExpiryBlocked = false;
+        hideIdle();
+        showPlayback();
+        if (state.manifest) ensurePlaybackLoop();
+      }
+      return false;
+    }
+    if (access === 'clock-unverified') {
+      // Never present a false "expired" label just because the RTC is wrong.
+      // Stop after a bounded grace until a trustworthy time is available.
+      if (!state.clockVerificationPaused) {
+        state.clockVerificationPaused = true;
+        state.playlistNonce++;
+        clearCurrentObjectUrl();
+        replaceNodeChildren($('#media-stage'));
+        showPlayback();
+        showIdle('Aguardando sincronização de horário',
+          'O relógio está incorreto. A Vision verificará a autorização automaticamente quando houver conexão.');
+      }
+      return true;
+    }
+    state.localExpiryBlocked = true;
+    if ($('#access-screen').classList.contains('hidden') ||
+        $('#access-heading').textContent !== 'Autorização expirada') {
+      showAccessBlocked({
+        error: 'device_access_expired',
+        access_expires_at: state.manifest?.device?.access_expires_at || null,
+      });
+    }
+    return true;
+  }
+
+  function applyPairingBranding(branding = null) {
+    const screen = $('#pairing-screen');
+    const title = branding?.title || 'Vision Mídia Digital';
+    const message = branding?.message || 'No painel Vision, abra TVs → Parear TV e informe o código acima.';
+    $('#pairing-brand-title').textContent = title;
+    $('#pairing-heading').textContent = branding ? 'Vincule esta TV pelo código' : 'Digite este código no painel';
+    $('#pairing-instruction').textContent = message;
+    if (branding?.splash_url) {
+      screen.style.backgroundImage = `linear-gradient(rgba(0,0,0,.32),rgba(0,0,0,.58)),url("${branding.splash_url}")`;
+    } else {
+      screen.style.backgroundImage = '';
+    }
+  }
+
+  function showPairing() {
+    $('#pairing-screen').classList.remove('hidden');
+    $('#playback-screen').classList.add('hidden');
+    $('#access-screen').classList.add('hidden');
+  }
+
+  function showPlayback() {
+    $('#pairing-screen').classList.add('hidden');
+    $('#access-screen').classList.add('hidden');
+    $('#playback-screen').classList.remove('hidden');
+  }
+
+  async function startPairing(force = false) {
+    showPairing();
+
+    if (!force && state.pairing?.request_id && new Date(state.pairing.expires_at).getTime() > Date.now()) {
+      applyPairingBranding(state.pairing.branding || null);
+      renderPairing(state.pairing);
+      pollPairing(state.pairing);
+      return;
+    }
+
+    const cooldownRemaining = Math.max(0, Number(state.pairingRateLimitedUntil || 0) - Date.now());
+    if (cooldownRemaining > 0) {
+      const seconds = Math.ceil(cooldownRemaining / 1000);
+      const min = Math.floor(seconds / 60);
+      const sec = String(seconds % 60).padStart(2, '0');
+      $('#pairing-code').textContent = 'AGUARDE';
+      $('#pairing-status').textContent = `Limite temporário de pareamento. Tente novamente em ${min}:${sec}.`;
+      const button = $('#new-code-button');
+      button.classList.remove('hidden');
+      button.disabled = true;
+      return;
+    }
+
+    if (state.pairingStartInFlight) return;
+    state.pairingStartInFlight = true;
+    clearTimeout(state.pairingRetryTimer);
+    state.pairingRetryTimer = null;
+
+    const button = $('#new-code-button');
+    button.classList.add('hidden');
+    button.disabled = true;
+    button.textContent = 'Gerar novo código';
+    $('#pairing-status').textContent = 'Gerando código seguro…';
+
+    try {
+      const pairing = await functionRequest('device-bootstrap', { action: 'start', platform: detectPlatform(), setup_code: localStorage.getItem(SETUP_CODE_KEY) || null });
+      state.pairingRateLimitedUntil = 0;
+      state.pairing = pairing;
+      writeJson(PAIRING_KEY, pairing);
+      applyPairingBranding(pairing.branding || null);
+      renderPairing(pairing);
+      pollPairing(pairing);
+    } catch (error) {
+      const networkFailure = Number(error?.status || 0) === 0;
+      const rateLimited = Number(error?.status || 0) === 429;
+
+      if (rateLimited) {
+        const retryAfterSeconds = Math.max(1, Number(error?.data?.retry_after_seconds || 600));
+        state.pairingRateLimitedUntil = Date.now() + (retryAfterSeconds * 1000);
+        $('#pairing-code').textContent = 'AGUARDE';
+        button.classList.remove('hidden');
+        button.disabled = true;
+
+        const tickRateLimit = () => {
+          const remaining = Math.max(0, state.pairingRateLimitedUntil - Date.now());
+          if (remaining <= 0) {
+            button.disabled = false;
+            button.textContent = 'Gerar novo código';
+            $('#pairing-status').textContent = 'Limite liberado. Gere um novo código.';
+            return;
+          }
+          const totalSeconds = Math.ceil(remaining / 1000);
+          const min = Math.floor(totalSeconds / 60);
+          const sec = String(totalSeconds % 60).padStart(2, '0');
+          button.textContent = `Aguarde ${min}:${sec}`;
+          $('#pairing-status').textContent = `Muitas solicitações de pareamento. Nova tentativa disponível em ${min}:${sec}.`;
+          state.pairingRetryTimer = setTimeout(tickRateLimit, 1000);
+        };
+        tickRateLimit();
+        return;
+      }
+
+      $('#pairing-code').textContent = networkFailure ? 'SEM REDE' : 'ERRO';
+      const retryDelay = networkFailure ? 15000 : 30000;
+      $('#pairing-status').textContent = networkFailure
+        ? `${error.message || 'Sem conexão com o servidor.'} Verifique Wi-Fi/cabo e Data e hora automáticas. Nova tentativa em 15 segundos…`
+        : `${error.message} • nova tentativa em 30 segundos…`;
+      button.classList.remove('hidden');
+      button.disabled = false;
+      state.pairingRetryTimer = setTimeout(() => {
+        if (!state.deviceToken && !state.pairing?.request_id) startPairing(true);
+      }, retryDelay);
+    } finally {
+      state.pairingStartInFlight = false;
+    }
+  }
+
+  function renderPairing(pairing) {
+    $('#pairing-code').textContent = pairing.pairing_code || '------';
+    $('#pairing-status').textContent = 'Aguardando autorização no painel…';
+    const tick = () => {
+      if (state.pairing?.request_id !== pairing.request_id) return;
+      const remaining = Math.max(0, new Date(pairing.expires_at).getTime() - Date.now());
+      const totalSeconds = Math.ceil(remaining / 1000);
+      const min = Math.floor(totalSeconds / 60);
+      const sec = String(totalSeconds % 60).padStart(2, '0');
+      $('#pairing-countdown').textContent = `Código válido por ${min}:${sec}`;
+      if (remaining <= 0) {
+        $('#pairing-status').textContent = 'Código expirado.';
+        $('#new-code-button').classList.remove('hidden');
+        return;
+      }
+      setTimeout(tick, 1000);
+    };
+    tick();
+  }
+
+  async function pollPairing(pairing) {
+    let temporaryFailures = 0;
+    while (!state.deviceToken && state.pairing?.request_id === pairing.request_id) {
+      if (new Date(pairing.expires_at).getTime() <= Date.now()) return;
+      try {
+        const result = await functionRequest('device-bootstrap', {
+          action: 'poll',
+          request_id: pairing.request_id,
+          request_secret: pairing.request_secret,
+        });
+        temporaryFailures = 0;
+        if (result.status === 'claimed') $('#pairing-status').textContent = 'Autorizado. Finalizando vínculo…';
+        if (result.status === 'issued' && result.device_token) {
+          state.deviceToken = result.device_token;
+          localStorage.setItem(DEVICE_TOKEN_KEY, result.device_token);
+          try { window.VisionAndroid?.storeDeviceToken?.(result.device_token); } catch {}
+          // A newly paired TV must never inherit the previous device's saved programming.
+          // Clear only the device-owned manifest/runtime fallback; media cache stays available
+          // and will be reused only if the new manifest explicitly references it.
+          writeJson(MANIFEST_KEY, null);
+          state.manifest = null;
+          state.runtimeFallbackVersion = null;
+          state.playlistNonce++;
+          state.pairing = null;
+          writeJson(PAIRING_KEY, null);
+          await startPlayer();
+          return;
+        }
+      } catch (error) {
+        if ([404, 410].includes(error.status)) {
+          $('#pairing-status').textContent = 'Código expirado. Gere um novo código.';
+          $('#new-code-button').classList.remove('hidden');
+          return;
+        }
+        temporaryFailures = Math.min(5, temporaryFailures + 1);
+        $('#pairing-status').textContent = navigator.onLine ? 'Reconectando ao servidor…' : 'Sem internet. Aguardando conexão…';
+      }
+      await sleep(temporaryFailures ? Math.min(30_000, 3_000 * 2 ** (temporaryFailures - 1)) : 3_000);
+    }
+  }
+
+  async function gateway(body) {
+    countRequestAttempt('device-gateway', body?.action);
+    try {
+      return await functionRequest('device-gateway', body, state.deviceToken);
+    } catch (error) {
+      if (error.status === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
+        showAccessBlocked(error);
+      } else if (error.status === 401) {
+        resetPairing(false);
+        startPairing(true);
+      }
+      throw error;
+    }
+  }
+
+
+  async function monitorGateway(body) {
+    countRequestAttempt('device-monitoring', body?.action);
+    try {
+      return await functionRequest('device-monitoring', body, state.deviceToken);
+    } catch (error) {
+      if (error.status === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
+        showAccessBlocked(error);
+      } else if (error.status === 401) {
+        resetPairing(false);
+        startPairing(true);
+      }
+      throw error;
+    }
+  }
+
+  async function heartbeat(asPayload = false) {
+    if (!state.deviceToken) return;
+    let storageFreeMb = null;
+    try {
+      if (navigator.storage?.estimate) {
+        const estimate = await navigator.storage.estimate();
+        if (estimate.quota != null && estimate.usage != null) storageFreeMb = Math.max(0, (estimate.quota - estimate.usage) / (1024 * 1024));
+      }
+    } catch { /* telemetry is optional */ }
+
+    const nativeNetwork = nativeNetworkDiagnostics();
+    const networkConnected = nativeNetwork?.connected == null ? navigator.onLine : Boolean(nativeNetwork.connected);
+    const networkValidated = nativeNetwork?.validated == null ? null : Boolean(nativeNetwork.validated);
+    const networkTransport = String(nativeNetwork?.transport || (navigator.onLine ? 'unknown' : 'offline')).slice(0, 40);
+    const clientTimeMs = Date.now();
+    const timezoneOffsetMinutes = new Date(clientTimeMs).getTimezoneOffset();
+
+    const payload = {
+      action: 'heartbeat',
+      app_version: APP_VERSION,
+      player_version: APP_VERSION,
+      apk_version: nativeAppVersion(),
+      screen_width: screen.width || innerWidth,
+      screen_height: screen.height || innerHeight,
+      orientation: screen.orientation?.type || (innerWidth >= innerHeight ? 'landscape' : 'portrait'),
+      storage_free_mb: storageFreeMb,
+      last_sync_at: state.lastSyncAt,
+      current_campaign_id: state.manifest?.program?.campaign_id || null,
+      current_playlist_id: state.manifest?.playlist?.id || null,
+      current_media_id: state.currentMediaId,
+      cache_items: state.cacheItems,
+      cache_bytes: state.cacheBytes,
+      playback_queue_size: playbackQueue().length,
+      event_queue_size: deviceEventQueue().length,
+      client_time_ms: clientTimeMs,
+      timezone_offset_minutes: timezoneOffsetMinutes,
+      timezone_name: browserTimeZoneName(),
+      network_connected: networkConnected,
+      network_validated: networkValidated,
+      network_transport: networkTransport,
+      details: {
+        standalone: matchMedia('(display-mode: standalone)').matches,
+        language: navigator.language,
+        player_version: APP_VERSION,
+        apk_version: nativeAppVersion(),
+        client_time_ms: clientTimeMs,
+        timezone_offset_minutes: timezoneOffsetMinutes,
+        timezone_name: browserTimeZoneName(),
+        network_connected: networkConnected,
+        network_validated: networkValidated,
+        network_transport: networkTransport,
+        // Persisted, cumulative attempts by action; no extra network request.
+        // Backend stores a sampled heartbeat every ~5min and can diff snapshots.
+        request_metrics: requestMetricsSnapshot(),
+      },
+    };
+    if (asPayload) return payload;
+    return monitorGateway(payload);
+  }
+
+  function cacheKey(item) {
+    const checksum = encodeURIComponent(String(item.media.checksum || 'v1'));
+    return new Request(`${location.origin}/__vision_media_cache__/${encodeURIComponent(item.media.id)}/${checksum}`);
+  }
+
+
+  function applyCssOrientationFallback(mode) {
+    const normalized = ['portrait','landscape'].includes(mode) ? mode : 'auto';
+    const landscapeViewport = innerWidth >= innerHeight;
+    document.body.classList.toggle('force-player-portrait', normalized === 'portrait' && landscapeViewport);
+    document.body.classList.toggle('force-player-landscape', normalized === 'landscape' && !landscapeViewport);
+  }
+
+  async function applyPlayerOrientation(mode = 'auto') {
+    const normalized = ['portrait','landscape'].includes(mode) ? mode : 'auto';
+    document.documentElement.dataset.playerOrientation = normalized;
+
+    let nativeHandled = false;
+    try {
+      if (window.VisionAndroid?.setOrientation) {
+        const result = window.VisionAndroid.setOrientation(normalized);
+        // New TV builds explicitly return false when Android must keep the
+        // HDMI/WebView viewport in its physical orientation and CSS must rotate
+        // the virtual Player stage. Older builds return undefined and keep the
+        // previous native-orientation behavior.
+        nativeHandled = result !== false;
+      }
+    } catch {}
+
+    // Some Android TV / TV Box firmwares expose the native bridge but ignore
+    // requested portrait orientation. Do not assume the native request changed
+    // the actual viewport: keep the CSS fallback synchronized with reality.
+    if (!nativeHandled) {
+      try {
+        if (screen.orientation?.lock && document.fullscreenElement && normalized !== 'auto') {
+          await screen.orientation.lock(normalized === 'portrait' ? 'portrait-primary' : 'landscape-primary');
+        } else if (screen.orientation?.unlock && normalized === 'auto') {
+          screen.orientation.unlock();
+        }
+      } catch {}
+    }
+
+    const syncFallback = () => applyCssOrientationFallback(normalized);
+    syncFallback();
+    setTimeout(syncFallback, 250);
+    setTimeout(syncFallback, 900);
+    setTimeout(syncFallback, 1800);
+  }
+
+  function notifyNativePlayerAlive() {
+    try { window.VisionAndroid?.playerAlive?.(); } catch {}
+  }
+
+  function nativeAppVersion() {
+    try { return String(window.VisionAndroid?.getAppVersion?.() || '').slice(0, 80) || null; }
+    catch { return null; }
+  }
+
+  function nativeNetworkDiagnostics() {
+    try {
+      const raw = window.VisionAndroid?.getNetworkDiagnostics?.();
+      if (!raw) return null;
+      const data = JSON.parse(String(raw));
+      return data && typeof data === 'object' ? data : null;
+    } catch { return null; }
+  }
+
+  function browserTimeZoneName() {
+    try { return Intl.DateTimeFormat().resolvedOptions().timeZone || null; }
+    catch { return null; }
+  }
+
+  function consumeNativeWatchdogRecovery() {
+    try { return String(window.VisionAndroid?.consumeWatchdogRecovery?.() || '') || null; }
+    catch { return null; }
+  }
+
+  async function clearPlayerCache() {
+    state.cachePrefetchVersion = null;
+    await caches.delete(MEDIA_CACHE).catch(() => false);
+    state.cacheItems = 0;
+    state.cacheBytes = 0;
+  }
+
+  function restartPlayerRuntime() {
+    try {
+      if (window.VisionAndroid?.restartApp) {
+        window.VisionAndroid.restartApp();
+        return;
+      }
+    } catch {}
+    location.reload();
+  }
+
+  // V28: restore the last server-approved orientation before offline playback.
+  // Do not run the whole settings handler here: cache_revision may purge cached
+  // media during boot when the network and RTC have not recovered yet.
+  async function applyStartupPresentation(manifestOrConfig) {
+    const source = manifestOrConfig?.device || manifestOrConfig || {};
+    const settings = source.settings || {};
+    const orientation = source.orientation || 'auto';
+    await applyPlayerOrientation(orientation);
+    const angle = [0, 90, 180, 270].includes(Number(settings.screen_rotation_degrees))
+      ? Number(settings.screen_rotation_degrees) : 0;
+    let nativeRotationApplied = false;
+    try {
+      if (window.VisionAndroid?.setDisplayRotation) {
+        nativeRotationApplied = window.VisionAndroid.setDisplayRotation(angle) === true;
+      }
+    } catch {}
+    // Android TV may not support native 90/270 rotation; CSS is the fallback.
+    document.body.dataset.screenRotationDegrees = String(nativeRotationApplied ? 0 : angle);
+  }
+
+  async function applyDeviceSettings(settings = {}, orientation = 'auto') {
+    state.audioEnabled = settings.audio_enabled !== false;
+    try { window.VisionAndroid?.setAudioEnabled?.(state.audioEnabled); } catch {}
+    await applyStartupPresentation({ orientation, settings });
+    const currentVideo = $('#media-stage video');
+    if (currentVideo) currentVideo.muted = !state.audioEnabled;
+    const revision = Number(settings.cache_revision || 0);
+    const previous = Number(localStorage.getItem(CACHE_REV_KEY) || 0);
+    if (revision !== previous) {
+      await caches.delete(MEDIA_CACHE).catch(() => false);
+      localStorage.setItem(CACHE_REV_KEY, String(revision));
+      state.cacheItems = 0; state.cacheBytes = 0;
+      queueDeviceEvent('cache_revision_applied','info','Cache local renovado por solicitação do painel.',{revision},30000);
+    }
+    try { window.VisionAndroid?.setAutostart?.(settings.autostart_enabled !== false); } catch {}
+    try { window.VisionAndroid?.setKioskReturn?.(settings.kiosk_return_enabled === true); } catch {}
+  }
+
+  async function changeKioskReturn(enabled) {
+    try {
+      if (!state.deviceToken) throw new Error('Vincule esta TV antes de alterar o quiosque.');
+      const result = await gateway({ action:'player_settings', kiosk_return_enabled:enabled === true });
+      if (!result?.ok || !result.settings) throw new Error('Não foi possível salvar a configuração.');
+      if (state.manifest?.device) {
+        state.manifest.device.settings = result.settings;
+        writeJson(MANIFEST_KEY, state.manifest);
+      }
+      await applyDeviceSettings(result.settings, state.manifest?.device?.orientation || 'auto');
+      window.VisionAndroid?.showSettingsResult?.(enabled ? 'Quiosque ativado nesta TV e no painel.' : 'Quiosque desativado nesta TV e no painel.', true);
+    } catch (error) {
+      window.VisionAndroid?.showSettingsResult?.('Não foi possível salvar: ' + error.message, false);
+    }
+  }
+
+  window.VisionPlayerControls = { setKioskReturn:changeKioskReturn };
+
+  async function cacheMediaItem(cache, item, { foreground = false } = {}) {
+    if (!item?.media || !['image','video'].includes(item.media.type)) return false;
+    const key = cacheKey(item);
+    let cached = await cache.match(key);
+    if (cached) {
+      // A zero-byte cache entry must never be treated as a playable asset.
+      if (Number(cached.headers.get('Content-Length')) > 0) return true;
+      await cache.delete(key);
+    }
+    try {
+      if (foreground) setStatus(`Preparando ${item.media.name}…`);
+      const response = await fetch(item.media.url, { cache:'no-store' });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const blob = await response.blob();
+      if (!blob.size || String(response.headers.get('Content-Type') || '').includes('text/html')) {
+        throw new Error('Arquivo de mídia vazio ou resposta HTML inválida.');
+      }
+      await cache.put(key, new Response(blob, {
+        headers: {
+          'Content-Type': item.media.mime_type || blob.type || 'application/octet-stream',
+          'Content-Length': String(blob.size),
+        },
+      }));
+      return true;
+    } catch (error) {
+      console.warn('Falha ao armazenar mídia', item.media.id, error);
+      queueDeviceEvent('cache_error', 'warning', `Falha ao armazenar ${item.media.name || 'mídia'} no cache.`, {
+        media_id: item.media.id,
+        media_name: item.media.name || null,
+        error: String(error?.message || error).slice(0, 300),
+      }, 10 * 60_000);
+      return false;
+    }
+  }
+
+  async function cacheWithConcurrency(cache, items, concurrency = 2, foreground = false, version = null) {
+    let cursor = 0;
+    const workers = Array.from({ length: Math.max(1, Math.min(concurrency, items.length || 1)) }, async () => {
+      while (cursor < items.length) {
+        if (version && state.cachePrefetchVersion !== version) return;
+        const index = cursor++;
+        await cacheMediaItem(cache, items[index], { foreground });
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  async function refreshCacheStats(cache, items) {
+    const countedMedia = new Set();
+    let cacheItems = 0;
+    let cacheBytes = 0;
+    for (const item of items) {
+      if (!item?.media || countedMedia.has(item.media.id)) continue;
+      if (await cache.match(cacheKey(item))) {
+        countedMedia.add(item.media.id);
+        cacheItems += 1;
+        cacheBytes += Math.max(0, Number(item.media.size_bytes || 0));
+      }
+    }
+    state.cacheItems = cacheItems;
+    state.cacheBytes = cacheBytes;
+  }
+
+  async function cacheManifestAssets(manifest) {
+    const cache = await caches.open(MEDIA_CACHE);
+    const seen = new Set();
+    const candidates = [...(manifest.items || [])].filter(item => {
+      if (!item?.media || !['image','video'].includes(item.media.type) || seen.has(item.media.id)) return false;
+      seen.add(item.media.id);
+      return true;
+    });
+    const keep = new Set(candidates.map(item => cacheKey(item).url));
+
+    // Preserve the old playlist's binaries until every incoming local item exists.
+    async function pruneAfterCompleteDownload() {
+      // Do not erase offline media for a URL-only playlist or stale download.
+      if (!candidates.length || state.manifest?.version !== manifest.version) return false;
+      for (const item of candidates) {
+        if (!await cache.match(cacheKey(item))) return false;
+      }
+      const keys = await cache.keys();
+      await Promise.all(keys
+        .filter(key => key.url.includes('/__vision_media_cache__/') && !keep.has(key.url))
+        .map(key => cache.delete(key)));
+      return true;
+    }
+
+    const warmCount = Math.min(8, candidates.length);
+    const warm = candidates.slice(0, warmCount);
+    await cacheWithConcurrency(cache, warm, 2, true);
+    await refreshCacheStats(cache, candidates);
+
+    const rest = candidates.slice(warmCount);
+    if (!rest.length) {
+      state.cachePrefetchVersion = await pruneAfterCompleteDownload()
+        ? (manifest.version || null) : null;
+      return;
+    }
+
+    const version = manifest.version || clientId();
+    if (state.cachePrefetchVersion === version) return;
+    state.cachePrefetchVersion = version;
+
+    void (async () => {
+      await cacheWithConcurrency(cache, rest, 2, false, version);
+      if (state.cachePrefetchVersion === version) {
+        await refreshCacheStats(cache, candidates);
+        if (!await pruneAfterCompleteDownload()) state.cachePrefetchVersion = null;
+      }
+    })().catch(error => console.warn('Prefetch de mídia falhou', error));
+  }
+
+  async function syncManifest(preloadedManifest = null) {
+    if (!state.deviceToken) return;
+    try {
+      const manifest = validateManifestPayload(preloadedManifest || await gateway({ action: 'manifest', supports_item_schedules: true }));
+      const changed = !state.manifest || state.manifest.version !== manifest.version;
+      // Keep playing the old program if the first essential new local item cannot load.
+      if (changed && state.manifest && manifest.playlist) {
+        const firstMedia = manifest.items.find(item => ['image','video'].includes(item.media?.type));
+        if (firstMedia) {
+          const stagedCache = await caches.open(MEDIA_CACHE);
+          if (!await cacheMediaItem(stagedCache, firstMedia)) {
+            throw new Error('Primeira mídia da nova playlist indisponível; mantendo programação anterior.');
+          }
+        }
+      }
+      await applyDeviceSettings(manifest?.device?.settings || {}, manifest?.device?.orientation || 'auto');
+      if (changed) state.priorityMediaId = null;
+      if (changed && state.manifest && state.manifest?.playlist?.id === manifest?.playlist?.id) {
+        const previousIds = new Set((state.manifest.items || []).map(item => item.media?.id));
+        state.priorityMediaId = (manifest.items || []).find(item => item.media && !previousIds.has(item.media.id) && itemScheduleActive(item, manifest?.program?.timezone))?.media.id || null;
+      }
+      state.manifest = manifest;
+      // Timestamp supplied by an authorized response is the anchor for a
+      // monotonic lease clock, regardless of Android's incorrect wall clock.
+      state.clockAnchor = { serverTimeMs: Date.parse(manifest.generated_at), monotonicMs: performance.now() };
+      state.serverAccessDenied = false;
+      if (state.clockVerificationPaused || state.localExpiryBlocked) hideIdle();
+      state.clockVerificationPaused = false;
+      state.localExpiryBlocked = false;
+      if (changed || state.cachePrefetchVersion !== manifest.version)
+        void cacheManifestAssets(manifest).catch(error => console.warn('Prefetch de mídia falhou', error));
+      state.lastSyncAt = new Date().toISOString();
+      writeJson(MANIFEST_KEY, manifest);
+      if (enforceLocalAccess()) return;
+      showPlayback();
+      if (state.syncHadError) {
+        queueDeviceEvent('sync_recovered', 'info', 'Sincronização com o servidor restabelecida.', {}, 60_000);
+        state.syncHadError = false;
+      }
+      const programLabel = manifest?.program?.source === 'campaign' && manifest.program.campaign_name
+        ? `Campanha: ${manifest.program.campaign_name}`
+        : 'Programação padrão';
+      setStatus(navigator.onLine ? `Online • ${programLabel}` : `Offline • ${programLabel}`);
+      if (changed) { state.runtimeFallbackVersion = null; state.playlistNonce++; }
+      ensurePlaybackLoop();
+    } catch (error) {
+      if (isAccessError(error)) throw error;
+      if (navigator.onLine) {
+        state.syncHadError = true;
+        queueDeviceEvent('sync_error', 'warning', 'Falha ao sincronizar a programação com o servidor.', {
+          error: String(error?.message || error).slice(0, 300),
+        }, 5 * 60_000);
+      }
+      if (state.manifest) {
+        setStatus('Offline • usando conteúdo salvo');
+        ensurePlaybackLoop();
+      } else {
+        setStatus('Sem conexão e sem conteúdo salvo');
+        showIdle('Sem conteúdo disponível', 'Conecte a internet para receber a primeira playlist.');
+      }
+      throw error;
+    }
+  }
+
+  function showIdle(title, message) {
+    clearCurrentObjectUrl();
+    replaceNodeChildren($('#media-stage'));
+    $('#idle-title').textContent = title;
+    $('#idle-message').textContent = message;
+    $('#idle-overlay').classList.remove('hidden');
+  }
+
+  function hideIdle() {
+    $('#idle-overlay').classList.add('hidden');
+  }
+
+  async function getCachedBlob(item) {
+    const cache = await caches.open(MEDIA_CACHE);
+    let response = await cache.match(cacheKey(item));
+    if (!response && navigator.onLine) {
+      await cacheMediaItem(cache, item, { foreground:true });
+      response = await cache.match(cacheKey(item));
+    }
+    if (!response) return null;
+    return response.blob();
+  }
+
+  function clearCurrentObjectUrl() {
+    if (state.currentObjectUrl) URL.revokeObjectURL(state.currentObjectUrl);
+    state.currentObjectUrl = null;
+  }
+
+  function swapStageElement(stage, element, objectUrl = null) {
+    const previousUrl = state.currentObjectUrl;
+    replaceNodeChildren(stage, element);
+    state.currentObjectUrl = objectUrl;
+    if (previousUrl && previousUrl !== objectUrl) URL.revokeObjectURL(previousUrl);
+  }
+
+  function resolveOnlineMediaUrl(rawUrl) {
+    const url = new URL(rawUrl, location.href);
+    const legacyVisionHost = /^(?:visionmidiadigital|vision-midia-digital)(?:-[a-z0-9-]+)?\.vercel\.app$/i.test(url.hostname)
+      || /^(?:[a-z0-9-]+--)?visionmidiadigitalgo\.netlify\.app$/i.test(url.hostname);
+    const file = url.pathname.split('/').pop();
+    if (url.origin === location.origin || legacyVisionHost) {
+      if (file === 'clock.html' || (file === 'widget.html' && url.searchParams.get('type') === 'clock')) {
+        return new URL('./clock.html', location.href).href;
+      }
+      if (file === 'news-feed.html') return new URL('./news-feed.html' + url.search, location.href).href;
+    }
+    return url.href;
+  }
+
+  async function prepareOnlineFrame(stage, iframe, url, nonce) {
+    iframe.style.visibility = 'hidden';
+    iframe.style.position = 'absolute';
+    iframe.style.inset = '0';
+    iframe.style.background = '#07111f';
+    let finish;
+    const ready = new Promise(resolve => { finish = resolve; });
+    const loaded = () => finish('loaded');
+    const failed = () => finish('error');
+    iframe.addEventListener('load', loaded, { once:true });
+    iframe.addEventListener('error', failed, { once:true });
+    iframe.src = url;
+    stage.appendChild(iframe);
+    try {
+      const result = await Promise.race([ready, waitForChangeOrTimeout(nonce, 8000)]);
+      if (result !== 'loaded' || nonce !== state.playlistNonce || !navigator.onLine) {
+        iframe.remove();
+        return false;
+      }
+      iframe.style.visibility = 'visible';
+      iframe.style.position = '';
+      iframe.style.inset = '';
+      swapStageElement(stage, iframe, null);
+      return true;
+    } finally {
+      iframe.removeEventListener('load', loaded);
+      iframe.removeEventListener('error', failed);
+    }
+  }
+
+  async function playItem(item, playlist, program, nonce) {
+    const startedAt = new Date();
+    let completed = false;
+    state.currentMediaId = item.media?.id || null;
+    hideIdle();
+    const stage = $('#media-stage');
+
+    try {
+      if (item.media.type === 'image') {
+        const blob = await getCachedBlob(item);
+        if (!blob) throw new Error('Imagem ainda não está disponível localmente.');
+        const url = URL.createObjectURL(blob);
+        const img = new Image();
+        img.alt = item.media.name || '';
+        img.style.width = '100%';
+        img.style.height = '100%';
+        img.style.objectFit = 'contain';
+        img.style.objectPosition = 'center';
+
+        try {
+          await new Promise((resolve, reject) => {
+            const timeout = setTimeout(() => reject(new Error('Tempo excedido ao preparar a imagem.')), 8000);
+            img.onload = () => { clearTimeout(timeout); resolve(); };
+            img.onerror = () => { clearTimeout(timeout); reject(new Error('Não foi possível abrir a imagem.')); };
+            img.src = url;
+          });
+        } catch (error) {
+          URL.revokeObjectURL(url);
+          throw error;
+        }
+
+        if (nonce !== state.playlistNonce) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        swapStageElement(stage, img, url);
+        const imageWait = await waitForChangeOrTimeout(nonce, Math.max(1, Number(item.duration_seconds || 10)) * 1000);
+        completed = imageWait !== 'changed';
+      } else if (item.media.type === 'video') {
+        const blob = await getCachedBlob(item);
+        if (!blob) throw new Error('Vídeo ainda não está disponível localmente.');
+        const url = URL.createObjectURL(blob);
+        const video = document.createElement('video');
+        video.muted = !state.audioEnabled;
+        video.src = url;
+        video.autoplay = true;
+        video.playsInline = true;
+        video.preload = 'auto';
+        video.style.width = '100%';
+        video.style.height = '100%';
+        video.style.objectFit = 'contain';
+        video.style.objectPosition = 'center';
+
+        await Promise.race([
+          new Promise(resolve => {
+            video.addEventListener('loadeddata', resolve, { once:true });
+            video.addEventListener('error', resolve, { once:true });
+            try { video.load(); } catch {}
+          }),
+          sleep(5000),
+        ]);
+
+        if (nonce !== state.playlistNonce) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        swapStageElement(stage, video, url);
+
+        let playbackStarted = false;
+        try {
+          await video.play();
+          playbackStarted = true;
+        } catch {
+          video.muted = true;
+          try {
+            await video.play();
+            playbackStarted = true;
+          } catch {
+            playbackStarted = false;
+          }
+        }
+        if (!playbackStarted) throw new Error('O navegador bloqueou a reprodução deste vídeo.');
+        const fallbackSeconds = Number(item.duration_seconds || 0);
+        const videoResult = await Promise.race([
+          new Promise(resolve => {
+            video.addEventListener('ended', () => resolve('ended'), { once: true });
+            video.addEventListener('error', () => resolve('error'), { once: true });
+          }),
+          waitForChangeOrTimeout(nonce, Math.max(15, fallbackSeconds ? fallbackSeconds + 15 : 4 * 60 * 60) * 1000),
+        ]);
+        if (videoResult === 'changed') video.pause();
+        completed = videoResult === 'ended' && !video.error;
+      } else if (item.media.type === 'url') {
+        if (!navigator.onLine) {
+          completed = false;
+          queueDeviceEvent('online_content_skipped', 'info', `Conteúdo online ignorado sem internet: ${item.media?.name || 'URL'}.`, {
+            media_id: item.media?.id || null,
+            media_name: item.media?.name || null,
+          }, 5 * 60_000);
+          return false;
+        }
+
+        const rawUrl = String(item.media.url || '').trim();
+        let parsedUrl;
+        try { parsedUrl = new URL(resolveOnlineMediaUrl(rawUrl)); }
+        catch { throw new Error('URL inválida.'); }
+        if (!['http:', 'https:'].includes(parsedUrl.protocol)) throw new Error('A URL precisa usar HTTP ou HTTPS.');
+
+        const iframe = document.createElement('iframe');
+        iframe.referrerPolicy = 'no-referrer';
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin allow-forms allow-popups allow-popups-to-escape-sandbox');
+        iframe.setAttribute('allow', 'autoplay; fullscreen');
+        iframe.style.width = '100%';
+        iframe.style.height = '100%';
+        iframe.style.border = '0';
+
+        if (!await prepareOnlineFrame(stage, iframe, parsedUrl.href, nonce)) return false;
+        const visibleAt = Date.now();
+        const durationMs = Math.max(5, Number(item.duration_seconds || 15)) * 1000;
+        const elapsedMs = Date.now() - visibleAt;
+        const urlWait = await Promise.race([
+          waitForChangeOrTimeout(nonce, Math.max(1, durationMs - elapsedMs)),
+          new Promise(resolve => {
+            const offline = () => resolve('offline');
+            window.addEventListener('offline', offline, { once:true });
+          }),
+        ]);
+        if (urlWait === 'offline') {
+          replaceNodeChildren(stage);
+          completed = false;
+          return false;
+        }
+        completed = urlWait !== 'changed';
+      } else {
+        throw new Error('Tipo de mídia não suportado.');
+      }
+    } catch (error) {
+      console.warn('Falha na mídia', item.media?.name, error);
+      state.playbackHadError = true;
+      queueDeviceEvent('playback_error', 'error', `Falha ao reproduzir ${item.media?.name || 'mídia'}.`, {
+        media_id: item.media?.id || null,
+        media_name: item.media?.name || null,
+        media_type: item.media?.type || null,
+        playlist_id: playlist?.id || null,
+        campaign_id: program?.campaign_id || null,
+        error: String(error?.message || error).slice(0, 300),
+      }, 2 * 60_000);
+      await sleep(1500);
+    } finally {
+      const endedAt = new Date();
+      if (state.deviceToken) {
+        queuePlayback({
+          client_event_id: clientId(),
+          campaign_id: program?.campaign_id || null,
+          playlist_id: playlist?.id || null,
+          media_id: item.media?.id || null,
+          started_at: startedAt.toISOString(),
+          ended_at: endedAt.toISOString(),
+          duration_seconds: Math.max(0, (endedAt - startedAt) / 1000),
+          completed,
+        });
+        // Batch playback proof on heartbeat; flush early only for large queues.
+        if (playbackQueue().length >= 40) flushPlaybackQueue().catch(() => {});
+        if (completed && state.playbackHadError) {
+          queueDeviceEvent('playback_recovered', 'info', 'Reprodução normal restabelecida após uma falha.', {
+            media_id: item.media?.id || null,
+            media_name: item.media?.name || null,
+          }, 60_000);
+          state.playbackHadError = false;
+          flushDeviceEventQueue().catch(() => {});
+        }
+      }
+      state.currentMediaId = null;
+      if (nonce !== state.playlistNonce) return;
+    }
+    return completed;
+  }
+
+  const LOCAL_WEEKDAY_INDEX = { Sun:0, Mon:1, Tue:2, Wed:3, Thu:4, Fri:5, Sat:6 };
+  function localClock(timeZone) {
+    let zone = timeZone || 'America/Sao_Paulo';
+    let formatter;
+    try { formatter = new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'}); }
+    catch { zone='America/Sao_Paulo'; formatter = new Intl.DateTimeFormat('en-US',{timeZone:zone,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',second:'2-digit',weekday:'short',hourCycle:'h23'}); }
+    const parts=Object.fromEntries(formatter.formatToParts(new Date()).filter(p=>p.type!=='literal').map(p=>[p.type,p.value]));
+    const year=Number(parts.year),month=Number(parts.month),day=Number(parts.day);
+    const calendar=new Date(Date.UTC(year,month-1,day));
+    const previous=new Date(calendar.getTime()-86400000);
+    return {dateKey:`${year}-${String(month).padStart(2,'0')}-${String(day).padStart(2,'0')}`,previousDateKey:`${previous.getUTCFullYear()}-${String(previous.getUTCMonth()+1).padStart(2,'0')}-${String(previous.getUTCDate()).padStart(2,'0')}`,weekday:LOCAL_WEEKDAY_INDEX[parts.weekday]??calendar.getUTCDay(),previousWeekday:previous.getUTCDay(),seconds:Number(parts.hour)*3600+Number(parts.minute)*60+Number(parts.second)};
+  }
+  function timeSeconds(value){if(!value)return null;const [h='0',m='0',sec='0']=String(value).split(':');const n=Number(h)*3600+Number(m)*60+Number(sec);return Number.isFinite(n)?n:null}
+  function itemScheduleActive(item, timeZone) {
+    const schedule=item?.schedule;
+    if(!schedule?.enabled)return true;
+    const clock=localClock(timeZone),start=timeSeconds(schedule.start_time),end=timeSeconds(schedule.end_time);
+    let dateKey=clock.dateKey,weekday=clock.weekday;
+    if(start!=null&&end!=null){if(start<end){if(clock.seconds<start||clock.seconds>=end)return false}else{if(clock.seconds>=start){}else if(clock.seconds<end){dateKey=clock.previousDateKey;weekday=clock.previousWeekday}else return false}}
+    if(schedule.start_date&&dateKey<schedule.start_date)return false;
+    if(schedule.end_date&&dateKey>schedule.end_date)return false;
+    const days=Array.isArray(schedule.weekdays)?schedule.weekdays.map(Number):[0,1,2,3,4,5,6];
+    return days.includes(weekday);
+  }
+
+  function blobToBase64(blob) {
+    return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(String(reader.result||'').split(',')[1]||'');reader.onerror=()=>reject(reader.error||new Error('Falha ao ler captura.'));reader.readAsDataURL(blob);});
+  }
+
+  async function captureCurrentFrame() {
+    const media = $('#media-stage img, #media-stage video');
+    if (!media) throw new Error('Nenhuma imagem ou vídeo está sendo exibido agora.');
+    let viewW=Math.max(1,innerWidth||screen.width||1920),viewH=Math.max(1,innerHeight||screen.height||1080);
+    const configuredOrientation=String(document.documentElement.dataset.playerOrientation||'auto');
+    const cssRotationActive=document.body.classList.contains('force-player-portrait')||document.body.classList.contains('force-player-landscape');
+    if(configuredOrientation==='landscape'&&viewH>viewW)[viewW,viewH]=[viewH,viewW];
+    if(configuredOrientation==='portrait'&&viewW>viewH)[viewW,viewH]=[viewH,viewW];
+    const scale=Math.min(1,1920/Math.max(viewW,viewH));
+    const width=Math.max(1,Math.round(viewW*scale)),height=Math.max(1,Math.round(viewH*scale));
+    const canvas=document.createElement('canvas');canvas.width=width;canvas.height=height;
+    const ctx=canvas.getContext('2d');if(!ctx)throw new Error('Canvas indisponível.');ctx.fillStyle='#000';ctx.fillRect(0,0,width,height);
+    const sourceW=media.tagName==='VIDEO'?(media.videoWidth||0):(media.naturalWidth||0),sourceH=media.tagName==='VIDEO'?(media.videoHeight||0):(media.naturalHeight||0);
+    if(!sourceW||!sourceH)throw new Error('A mídia ainda não está pronta para captura.');
+
+    if(cssRotationActive){
+      const rotatedW=sourceH,rotatedH=sourceW;
+      const contain=Math.min(width/rotatedW,height/rotatedH);
+      const drawW=sourceW*contain,drawH=sourceH*contain;
+      ctx.save();
+      ctx.translate(width/2,height/2);
+      ctx.rotate(Math.PI/2);
+      ctx.drawImage(media,-drawW/2,-drawH/2,drawW,drawH);
+      ctx.restore();
+    }else{
+      const contain=Math.min(width/sourceW,height/sourceH),drawW=sourceW*contain,drawH=sourceH*contain,x=(width-drawW)/2,y=(height-drawH)/2;
+      ctx.drawImage(media,x,y,drawW,drawH);
+    }
+
+    const blob=await new Promise(resolve=>canvas.toBlob(resolve,'image/jpeg',0.82));
+    if(!blob)throw new Error('Não foi possível gerar a captura.');
+    return {image_base64:await blobToBase64(blob),width,height,size_bytes:blob.size};
+  }
+
+  // The FCM payload is only a hint. Never trust a command from push data.
+  // A valid paired device always authenticates and loads durable commands.
+  async function registerFcmIfAvailable() {
+    if (!state.deviceToken || !navigator.onLine || !state.manifest?.device?.id) return;
+    // The native bridge never exposes the raw Firebase registration token.
+    let tokenMarker = '';
+    try { tokenMarker = String(window.VisionAndroid?.getFcmTokenMarker?.() || ''); } catch {}
+    if (!tokenMarker) return;
+    const registrationKey = state.manifest.device.id + ':' + tokenMarker;
+    if (state.pushRegisteredKey === registrationKey && Date.now() - state.pushRegisteredAt < 24 * 60 * 60_000) return;
+    if (Date.now() - state.pushLastAttemptAt < 60_000) return;
+    state.pushLastAttemptAt = Date.now();
+    try {
+      const response = await gateway({action:'register_push'});
+      if (!response?.ok) return;
+      state.pushReady = response.push_enabled === true;
+      state.pushRegisteredKey = registrationKey;
+      state.pushRegisteredAt = Date.now();
+    } catch (error) {
+      // The server or TV may lack FCM configuration. Legacy polling remains.
+      state.pushReady = false;
+    }
+  }
+
+  // Device-scoped acknowledgement ledger: bounded to 100 entries.
+  // Prevents repeating a completed side effect if the server accepted its
+  // result but the acknowledgement response was lost.
+  const COMMAND_ACK_LEDGER_KEY = 'vision_player_command_ack_v1';
+  function commandAckLedger() {
+    const saved = readJson(COMMAND_ACK_LEDGER_KEY);
+    return saved?.device_id === state.manifest?.device?.id &&
+      Array.isArray(saved.completed) ? saved.completed : [];
+  }
+  function rememberCommandEffect(command) {
+    const completed = commandAckLedger().filter(entry => entry.id !== command.id);
+    completed.push({id: command.id, type: command.command_type});
+    writeJson(COMMAND_ACK_LEDGER_KEY, {
+      device_id: state.manifest?.device?.id,
+      completed: completed.slice(-100),
+    });
+  }
+  // An intent is persisted before a non-repeatable native action.
+  // An interrupted intent is ambiguous: never automatically replay or
+  // acknowledge it as completed. It needs operator reconciliation.
+  const COMMAND_INTENT_KEY = 'vision_player_command_intent_v1';
+  function commandIntent(command) {
+    const saved = readJson(COMMAND_INTENT_KEY);
+    return saved?.device_id === state.manifest?.device?.id &&
+      saved?.id === command.id && saved?.type === command.command_type ? saved : null;
+  }
+  function recordCommandIntent(command) {
+    const deviceId = state.manifest?.device?.id;
+    if (!deviceId || !command?.id) throw new Error('command_intent_identity_missing');
+    const existing = readJson(COMMAND_INTENT_KEY);
+    if (existing && (existing.device_id !== deviceId ||
+        existing.id !== command.id || existing.type !== command.command_type)) {
+      throw new Error('command_intent_reconciliation_required');
+    }
+    const intent = {device_id:deviceId, id:command.id,
+      type:command.command_type, phase:'started'};
+    writeJson(COMMAND_INTENT_KEY, intent);
+    // localStorage can throw QuotaExceededError or silently fail in a
+    // mocked / restricted WebView. Never trigger the native effect unless
+    // the persisted record can be read back and matches exactly.
+    const verified = commandIntent(command);
+    if (!verified || verified.phase !== 'started')
+      throw new Error('command_intent_not_persisted');
+  }
+  function clearCommandIntent(command) {
+    if (commandIntent(command)) writeJson(COMMAND_INTENT_KEY, null);
+  }
+
+  // Reconciliation is observational. Never turn an ambiguous intent into
+  // permission to repeat a native operation.
+  async function inspectCommandIntent(command) {
+    const intent = commandIntent(command);
+    if (!intent) return 'absent';
+    // A single pending command must not cause a status request on every
+    // bundle cycle. Use monotonic time (the TV clock can boot in 1970).
+    const now = performance.now();
+    const probe = state.commandReconcileProbe;
+    if (probe?.deviceId === intent.device_id && probe?.commandId === intent.id &&
+        now >= probe.at && now - probe.at < 300000) return 'cooldown';
+    state.commandReconcileProbe = {deviceId:intent.device_id,commandId:intent.id,at:now};
+    let result;
+    try {
+      result = await gateway({action:'command_status',command_id:command.id});
+    } catch {
+      return 'unverified';
+    }
+    const server = result?.command;
+    if (server?.id !== command.id ||
+        server?.device_id !== intent.device_id ||
+        server?.command_type !== command.command_type) return 'unverified';
+    if (server.status === 'completed' || server.status === 'failed') {
+      // Preserve the original intent as evidence before releasing the slot.
+      const key = 'vision_player_command_intent_history_v1';
+      const existing = readJson(key);
+      const history = existing?.device_id === intent.device_id &&
+        Array.isArray(existing.entries) ? existing.entries : [];
+      const entries = [...history.filter(row => row.id !== intent.id),
+        {...intent,server_status:server.status}].slice(-100);
+      writeJson(key,{device_id:intent.device_id,entries});
+      const verified = readJson(key);
+      if (verified?.device_id !== intent.device_id ||
+          !verified.entries?.some(row => row.id === intent.id &&
+            row.server_status === server.status)) return 'unverified';
+      clearCommandIntent(command);
+      return 'terminal';
+    }
+    return 'pending';
+  }
+
+  async function acknowledgeCompletedCommand(command) {
+    await gateway({action:'command_result',command_id:command.id,status:'completed'});
+  }
+
+  async function pollDeviceCommands(preloadedCommands = null) {
+    if(!state.deviceToken||!navigator.onLine)return;
+    const result=preloadedCommands === null ? await gateway({action:'commands'}) : {commands:preloadedCommands};
+    for(const command of result?.commands||[]){
+      if(state.processingCommands.has(command.id))continue;
+      if(!['screenshot','restart_player','sync_now','clear_cache','reload_programming','update_apk'].includes(command.command_type))continue;
+      state.processingCommands.add(command.id);
+      try{
+        if (commandAckLedger().some(entry =>
+          entry.id === command.id && entry.type === command.command_type)) {
+          await acknowledgeCompletedCommand(command);
+          continue;
+        }
+        if (['restart_player','update_apk'].includes(command.command_type)) {
+          const history = readJson('vision_player_command_intent_history_v1');
+          if (history?.device_id === state.manifest?.device?.id &&
+              history.entries?.some(entry => entry.id === command.id &&
+                entry.type === command.command_type)) continue;
+        }
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            readJson(COMMAND_INTENT_KEY) && !commandIntent(command)) {
+          // Do not block a replacement TV with an old TV's intent. Keep
+          // the old record until explicit unpairing, rather than deleting
+          // evidence or silently reusing it.
+          const pendingIntent = readJson(COMMAND_INTENT_KEY);
+          if (pendingIntent?.device_id !== state.manifest?.device?.id) {
+            queueDeviceEvent('command_reconciliation_required','warning',
+              'Registro de outra TV detectado; desvincule com segurança para liberar comandos nativos.',
+              {command_id:command.id,command_type:command.command_type},30000);
+          }
+          continue;
+        }
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            commandIntent(command)) {
+          const outcome = await inspectCommandIntent(command);
+          // Even a terminal response never authorizes replay of this ID.
+          if (outcome !== 'terminal') {
+            queueDeviceEvent('command_reconciliation_required','warning',
+              'Comando interrompido; verificar manualmente antes de reenviar.',
+              {command_id:command.id,command_type:command.command_type},30000);
+          }
+          continue;
+        }
+        if(command.command_type==='screenshot'){
+          const capture=await captureCurrentFrame();
+          await gateway({action:'screenshot_result',command_id:command.id,...capture});
+          continue;
+        }
+
+        if(command.command_type==='restart_player'){
+          recordCommandIntent(command);
+          await acknowledgeCompletedCommand(command);
+          rememberCommandEffect(command);
+          clearCommandIntent(command);
+          queueDeviceEvent('player_restart_requested','info','Reinício remoto recebido do painel.',{command_id:command.id},30000);
+          setTimeout(restartPlayerRuntime,250);
+          continue;
+        }
+
+        if(command.command_type==='update_apk'){
+          if(typeof window.VisionAndroid?.requestApkUpdate!=='function')throw new Error('Atualizador indisponível neste APK');
+          recordCommandIntent(command);
+          const accepted=window.VisionAndroid.requestApkUpdate('https://vision-midia-digital.vercel.app/downloads/Vision-Player.apk');
+          if(accepted!==true) {
+            clearCommandIntent(command);
+            throw new Error('Download não iniciado');
+          }
+          rememberCommandEffect(command);
+          clearCommandIntent(command);
+          await acknowledgeCompletedCommand(command);
+          continue;
+        }
+        if(command.command_type==='sync_now'){
+          await syncManifest();
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
+          queueDeviceEvent('manual_sync_completed','info','Sincronização remota concluída.',{command_id:command.id},15000);
+          continue;
+        }
+
+        if(command.command_type==='clear_cache'){
+          await clearPlayerCache();
+          state.runtimeFallbackVersion=null;
+          state.playlistNonce++;
+          await syncManifest();
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
+          queueDeviceEvent('cache_cleared','info','Cache local limpo por comando remoto.',{command_id:command.id},15000);
+          continue;
+        }
+
+        if(command.command_type==='reload_programming'){
+          state.runtimeFallbackVersion=null;
+          state.playlistNonce++;
+          await syncManifest();
+          ensurePlaybackLoop();
+          rememberCommandEffect(command);
+          await acknowledgeCompletedCommand(command);
+          queueDeviceEvent('programming_reloaded','info','Programação recarregada por comando remoto.',{command_id:command.id},15000);
+        }
+      }catch(error){
+        // An uncertain native effect must not be marked failed or retried.
+        if (['restart_player','update_apk'].includes(command.command_type) &&
+            commandIntent(command)) continue;
+        // A failed acknowledgement does not mean a completed action failed.
+        // Keep the command pending on the server for a safe acknowledgement retry.
+        if (commandAckLedger().some(entry =>
+          entry.id === command.id && entry.type === command.command_type)) continue;
+        if(command.command_type==='screenshot'){
+          await gateway({action:'screenshot_error',command_id:command.id,error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+        }else{
+          await gateway({action:'command_result',command_id:command.id,status:'failed',error_message:String(error?.message||error).slice(0,400)}).catch(()=>{});
+          if(command.command_type==='clear_cache'){
+            queueDeviceEvent('cache_error','error','Falha ao limpar ou reconstruir o cache local.',{command_id:command.id,error:String(error?.message||error).slice(0,300)},30000);
+          }
+        }
+      }finally{state.processingCommands.delete(command.id)}
+    }
+  }
+
+  function acknowledgeQaBatch(storageKey, sent) {
+    if (!Array.isArray(sent) || !sent.length) return;
+    const confirmed = new Set(sent.map(event => event.client_event_id));
+    const latest = readJson(storageKey);
+    if (!Array.isArray(latest)) return;
+    const pending = latest.filter(event => !confirmed.has(event.client_event_id));
+    writeJson(storageKey, pending.length ? pending : null);
+  }
+
+  async function runQaBundle() {
+    if (!state.deviceToken || !navigator.onLine || !useQaBundle()) return;
+    const proofs = playbackQueue().slice(0, 50);
+    const events = deviceEventQueue().slice(0, 25);
+    const pushGenerationAtStart = state.pushSignalGeneration || 0;
+    const manifestDue = !state.qaLastManifestAt ||
+      performance.now() - state.qaLastManifestAt >= QA_BUNDLE_MANIFEST_INTERVAL_MS;
+    let response;
+    const isStable = nativeAppVersion() === STABLE_BUNDLE_VERSION;
+    const bundleRoute = isStable ? 'device-bundle-stable' : 'device-bundle-qa';
+    try {
+      if (isStable) countRequestAttempt('device-bundle-stable', 'cycle');
+      else countRequestAttempt('device-bundle-qa', 'cycle');
+      response = await functionRequest(bundleRoute, {
+        action: 'cycle',
+        heartbeat: await heartbeat(true),
+        proofs, events,
+        include_manifest: manifestDue,
+      }, state.deviceToken);
+    } catch (error) {
+      // If this opt-in endpoint has not yet been deployed, fall back to V35
+      // polling automatically, without touching any offline media or pairing.
+      if (Number(error?.status) === 401) {
+        resetPairing(false);
+        void startPairing(true);
+      } else if (Number(error?.status) === 403 && isAccessError(error)) {
+        state.serverAccessDenied = true;
+        showAccessBlocked(error);
+      }
+      if (Number(error?.status) === 404 ||
+          (Number(error?.status) === 403 &&
+            ['qa_only','wrong_qa_device','stable_only'].includes(String(error?.data?.error || '')))) {
+        state.qaBundleSupported = false;
+        if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+        if (state.accessTimer) clearInterval(state.accessTimer);
+        startLegacyPollingTimers();
+      }
+      throw error;
+    }
+    if (response?.device_id !== state.manifest?.device?.id || response?.ok !== true)
+      throw new Error('Resposta inválida do servidor QA: preservando filas locais.');
+    // Acknowledgements are independent; never lose cached proofs on a partial
+    // failure or a response interrupted after the database write.
+    if (response.proofs?.ok && response.proofs.data?.accepted === proofs.length)
+      acknowledgeQaBatch(PLAYBACK_QUEUE_KEY, proofs);
+    if (response.events?.ok && response.events.data?.accepted === events.length)
+      acknowledgeQaBatch(DEVICE_EVENT_QUEUE_KEY, events);
+
+    // Process authenticated Master commands before potentially slow cache
+    // work from a changed manifest; normal command latency stays near 58s.
+    if (response.commands?.ok && Array.isArray(response.commands.data?.commands))
+      await pollDeviceCommands(response.commands.data.commands);
+    else throw new Error('Comandos QA não confirmados; preservando comandos no servidor.');
+    if (response.heartbeat?.ok !== true)
+      throw new Error('Heartbeat QA não confirmado; retorno automático com backoff.');
+    if (manifestDue && response.manifest?.ok) {
+      await syncManifest(response.manifest.data);
+      state.qaLastManifestAt = performance.now();
+    }
+    // A new push received while this request was in flight must be retried.
+    // Clear only the generation already covered by this successful cycle.
+    if ((state.pushSignalGeneration || 0) === pushGenerationAtStart)
+      state.pushPending = false;
+  }
+
+  function shuffled(items) {
+    const copy = [...items];
+    for (let i = copy.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [copy[i], copy[j]] = [copy[j], copy[i]];
+    }
+    return copy;
+  }
+
+  async function playbackLoop() {
+    state.running = true;
+    try {
+      while (state.deviceToken) {
+        if (enforceLocalAccess()) { await sleep(1000); continue; }
+        const manifest = state.manifest;
+        const nonce = state.playlistNonce;
+        const playlist = manifest?.playlist;
+        const items = (manifest?.items || []).filter(item => itemScheduleActive(item, manifest?.program?.timezone));
+        const program = manifest?.program;
+
+        if (!playlist || !items.length) {
+          if (manifest?.playlist) {
+            replaceNodeChildren($('#media-stage'));
+            showIdle('Playlist sem mídia ativa neste horário', 'A playlist está atribuída, mas nenhuma mídia está disponível agora.');
+          } else {
+            showIdle('Vision Player conectado', 'Aguardando uma playlist com mídias ser atribuída a esta TV.');
+          }
+          await sleep(3000);
+          continue;
+        }
+
+        const queue = playlist.shuffle ? shuffled(items) : [...items];
+        if (state.priorityMediaId && playlist.repeat_mode !== 'single') {
+          const priorityIndex = queue.findIndex(item => item.media?.id === state.priorityMediaId);
+          if (priorityIndex > 0) queue.unshift(queue.splice(priorityIndex, 1)[0]);
+          state.priorityMediaId = null;
+        }
+        let completedCount = 0;
+
+        if (playlist.repeat_mode === 'single' && queue.length) {
+          if (await playItem(queue[0], playlist, program, nonce)) completedCount++;
+          if (nonce !== state.playlistNonce) continue;
+        } else {
+          for (const item of queue) {
+            if (nonce !== state.playlistNonce) break;
+            if (await playItem(item, playlist, program, nonce)) completedCount++;
+          }
+          if (nonce !== state.playlistNonce) continue;
+        }
+
+        if (playlist.repeat_mode === 'none') {
+          const completedVersion = manifest?.version;
+          showIdle('Playlist concluída', 'Aguardando uma alteração na programação.');
+          while (state.deviceToken && state.manifest?.version === completedVersion && nonce === state.playlistNonce) {
+            await sleep(3000);
+          }
+        }
+      }
+    } finally {
+      state.running = false;
+    }
+  }
+
+  function ensurePlaybackLoop() {
+    if (enforceLocalAccess()) return;
+    if (!state.running) playbackLoop().catch(error => console.error('playback loop', error));
+  }
+
+  async function startPlayer() {
+    if (!state.deviceToken) return startPairing();
+    // Apply the cached, device-scoped display configuration before the first
+    // frame, even if the TV Box boots with no internet and an invalid clock.
+    if (state.manifest?.device) await applyStartupPresentation(state.manifest);
+    const startupBlocked = enforceLocalAccess();
+    if (!startupBlocked) showPlayback();
+    setStatus(localAccessState() === 'clock-grace'
+      ? 'Relógio ainda não sincronizado • usando cache local'
+      : 'Conectando…');
+    if (state.manifest && !startupBlocked) ensurePlaybackLoop();
+
+    const watchdogRecovery = consumeNativeWatchdogRecovery();
+    if (watchdogRecovery) {
+      queueDeviceEvent('watchdog_restart','warning','Watchdog reiniciou o Vision Player após perda de resposta.',{recovered_at:watchdogRecovery,apk_version:nativeAppVersion()},15000);
+    }
+    queueDeviceEvent('player_started', 'info', 'Vision Player iniciado.', { app_version: APP_VERSION, player_version: APP_VERSION, apk_version: nativeAppVersion(), platform: detectPlatform() }, 60_000);
+    // Timers and offline playback must not wait for a blocked backend call.
+    if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+    if (state.syncTimer) {
+      clearInterval(state.syncTimer);
+      clearTimeout(state.syncTimer);
+    }
+    if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.pushTimer) clearInterval(state.pushTimer);
+    if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
+    // Only while the RTC is known to be behind: retry a few times during boot
+    // instead of relying on the 2-minute periodic sync or a manual button.
+    // Shared request/backoff gate prevents retry storms across TV Boxes.
+    state.clockRecoveryTimer = setInterval(() => {
+      if (state.clockAnchor || state.serverAccessDenied ||
+          performance.now() - state.startupClockStartedAt > 5 * 60_000) {
+        clearInterval(state.clockRecoveryTimer);
+        state.clockRecoveryTimer = null;
+        return;
+      }
+      if (localAccessState().startsWith('clock-')) void runBackgroundPoll(syncManifest);
+    }, 15_000);
+    if (useQaBundle()) {
+      // No FCM assumed. Online watchdog remains checked in each bundled
+      // heartbeat; playback continues offline independently of the network.
+      state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
+      state.heartbeatTimer = setInterval(() => {
+        void runBackgroundPoll(runQaBundle);
+      }, staggeredPollInterval(QA_BUNDLE_INTERVAL_MS));
+      // Only a previously authorized, fully cached player can defer its first
+      // network cycle. Unpaired, uncached, clock-grace and blocked devices
+      // retain immediate verification and recovery.
+      const startBundleImmediately = () => { void runBackgroundPoll(runQaBundle); };
+      // Native push and network recovery must bypass the optional cold-boot
+      // delay; do not wait for the next 58-second cycle.
+      state.pushTimer = setInterval(() => {
+        try {
+          if (window.VisionAndroid?.consumePushSignal?.() === true) {
+            state.pushPending = true;
+            state.pushSignalGeneration = (state.pushSignalGeneration || 0) + 1;
+          }
+        } catch {}
+        if (!state.deviceToken || !navigator.onLine || !state.pushPending) return;
+        if (state.syncTimer) {
+          clearTimeout(state.syncTimer);
+          state.syncTimer = null;
+        }
+        void runBackgroundPoll(runQaBundle);
+      }, 1000);
+      if (localAccessState() === 'valid' && !state.serverAccessDenied &&
+          state.manifest?.device?.id && Array.isArray(state.manifest.items) &&
+          state.manifest.items.length > 0 && !state.pushPending) {
+        const pairedToken = state.deviceToken;
+        const pairedDeviceId = state.manifest.device.id;
+        void (async () => {
+          try {
+            const media = state.manifest.items.filter(item =>
+              item?.media && ['image', 'video'].includes(item.media.type));
+            if (!media.length || media.length !== state.manifest.items.length) {
+              startBundleImmediately();
+              return;
+            }
+            const cache = await caches.open(MEDIA_CACHE);
+            const complete = (await Promise.all(media.map(item =>
+              cache.match(cacheKey(item))))).every(response =>
+                response && Number(response.headers.get('Content-Length')) > 0);
+            if (!complete || state.deviceToken !== pairedToken ||
+                state.manifest?.device?.id !== pairedDeviceId || state.pushPending) {
+              startBundleImmediately();
+              return;
+            }
+            const firstCycleDelayMs = Math.floor(Math.random() * 15_000);
+            state.syncTimer = setTimeout(() => {
+              state.syncTimer = null;
+              if (state.deviceToken === pairedToken &&
+                  state.manifest?.device?.id === pairedDeviceId) startBundleImmediately();
+            }, firstCycleDelayMs);
+          } catch {
+            startBundleImmediately();
+          }
+        })();
+      } else {
+        startBundleImmediately();
+      }
+      return;
+    }
+    startLegacyPollingTimers();
+  }
+
+  function startLegacyPollingTimers() {
+    state.heartbeatTimer = setInterval(() => {
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await registerFcmIfAvailable();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
+    }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.heartbeat));
+    state.syncTimer = setInterval(() => { void runBackgroundPoll(syncManifest); }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.manifest));
+    state.commandTimer = setInterval(() => {
+      // With verified push delivery: reconcile at most once per 15 minutes.
+      // Without FCM, preserve the existing 45-second commands fallback.
+      if (state.pushReady && performance.now() - state.lastCommandReconcileAt < 15 * 60_000) return;
+      void runBackgroundPoll(async () => {
+        await pollDeviceCommands();
+        state.lastCommandReconcileAt = performance.now();
+      });
+    }, staggeredPollInterval(BACKGROUND_POLL_INTERVALS.commands));
+    // Local SharedPreferences check only: NO network call until a push arrives.
+    state.pushTimer = setInterval(() => {
+      try { if (window.VisionAndroid?.consumePushSignal?.() === true) {
+            state.pushPending = true;
+            state.pushSignalGeneration = (state.pushSignalGeneration || 0) + 1;
+          } }
+      catch {}
+      if (!state.pushPending || !state.deviceToken || !navigator.onLine) return;
+      void runBackgroundPoll(async () => {
+        await pollDeviceCommands();
+        state.lastCommandReconcileAt = performance.now();
+      }).then(ok => { if (ok) state.pushPending = false; });
+    }, 2000);
+    // Payment expiry remains enforced locally every second, independent of network polling.
+    state.accessTimer = setInterval(() => enforceLocalAccess(), 1000);
+    void runBackgroundPoll(async () => {
+      await syncManifest();
+      await registerFcmIfAvailable();
+      await heartbeat();
+      await pollDeviceCommands();
+      state.lastCommandReconcileAt = performance.now();
+      await flushPlaybackQueue();
+      await flushDeviceEventQueue();
+    });
+  }
+
+  async function requestFullscreenAndWakeLock() {
+    try { if (!document.fullscreenElement) await document.documentElement.requestFullscreen(); }
+    catch { /* browser may not allow */ }
+    try {
+      if ('wakeLock' in navigator) state.wakeLock = await navigator.wakeLock.request('screen');
+    } catch { /* optional */ }
+  }
+
+  function resetPairing(clearManifest = true) {
+    if (state.heartbeatTimer) clearInterval(state.heartbeatTimer);
+    if (state.syncTimer) {
+      clearInterval(state.syncTimer);
+      clearTimeout(state.syncTimer);
+    }
+    if (state.commandTimer) clearInterval(state.commandTimer);
+    if (state.pushTimer) clearInterval(state.pushTimer);
+    if (state.accessTimer) clearInterval(state.accessTimer);
+    if (state.clockRecoveryTimer) clearInterval(state.clockRecoveryTimer);
+    state.clockRecoveryTimer = null;
+    state.clockAnchor = null;
+    state.clockVerificationPaused = false;
+    state.localExpiryBlocked = false;
+    state.serverAccessDenied = false;
+    backgroundPollState.failures = 0;
+    backgroundPollState.retryAt = 0;
+    state.heartbeatTimer = null;
+    state.syncTimer = null;
+    state.commandTimer = null;
+    state.pushTimer = null;
+    state.pushReady = false;
+    state.pushPending = false;
+    state.pushSignalGeneration = 0;
+    state.qaLastManifestAt = 0;
+    state.pushRegisteredKey = '';
+    state.pushRegisteredAt = 0;
+    state.lastCommandReconcileAt = 0;
+    state.commandReconcileProbe = null;
+    state.accessTimer = null;
+    state.processingCommands.clear();
+    backgroundPollState.failures = 0;
+    backgroundPollState.retryAt = 0;
+    localStorage.removeItem(DEVICE_TOKEN_KEY);
+    try { window.VisionAndroid?.clearDeviceToken?.(); } catch {}
+    localStorage.removeItem(PLAYBACK_QUEUE_KEY);
+    localStorage.removeItem(DEVICE_EVENT_QUEUE_KEY);
+    localStorage.removeItem(COMMAND_ACK_LEDGER_KEY);
+    localStorage.removeItem(COMMAND_INTENT_KEY);
+    // Retain historical evidence on unpair; entries are scoped by device ID
+    // and cannot authorize commands on a replacement TV.
+    localStorage.removeItem(REQUEST_METRICS_KEY);
+    writeJson(PAIRING_KEY, null);
+    state.deviceToken = null;
+    state.pairing = null;
+    state.playlistNonce++;
+    state.currentMediaId = null;
+    state.cacheItems = 0;
+    state.cacheBytes = 0;
+    state.lastSyncAt = null;
+    state.syncHadError = false;
+    state.playbackHadError = false;
+    if (clearManifest) {
+      writeJson(MANIFEST_KEY, null);
+      state.manifest = null;
+    }
+  }
+
+  window.addEventListener('resize', () => {
+    const mode = document.documentElement.dataset.playerOrientation || 'auto';
+    applyCssOrientationFallback(mode);
+    queueDeviceEvent('viewport_changed', 'info', 'Tamanho da tela recalculado.', {width:innerWidth,height:innerHeight,screen_width:screen.width,screen_height:screen.height,scale:window.visualViewport?.scale || 1,orientation:mode}, 1000);
+  });
+
+  setInterval(notifyNativePlayerAlive, 20_000);
+
+  async function bootstrap() {
+    if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('./sw.js').catch(() => {});
+    $('#new-code-button').addEventListener('click', () => { state.pairing = null; writeJson(PAIRING_KEY, null); startPairing(true); });
+    $('#access-retry-button').addEventListener('click', async () => {
+      const button = $('#access-retry-button');
+      button.disabled = true;
+      button.textContent = 'Verificando...';
+      $('#access-status').textContent = 'Consultando autorização no servidor…';
+      try {
+        await syncManifest();
+        $('#access-status').textContent = 'Autorização liberada.';
+      } catch (error) {
+        if (!isAccessError(error)) $('#access-status').textContent = navigator.onLine ? 'Não foi possível consultar agora.' : 'Sem internet. Tentaremos novamente automaticamente.';
+      } finally {
+        button.disabled = false;
+        button.textContent = 'Verificar autorização';
+      }
+    });
+    $('#fullscreen-button').addEventListener('click', requestFullscreenAndWakeLock);
+    $('#repair-button').addEventListener('click', async () => {
+      if (!confirm('Parear esta tela novamente? A playlist atual será desvinculada desta TV.')) return;
+      if (!navigator.onLine) {
+        alert('Conecte esta TV à internet antes de parear novamente. Isso evita deixar um dispositivo antigo no painel.');
+        return;
+      }
+      $('#repair-button').disabled = true;
+      try {
+        await gateway({ action: 'unpair' });
+        resetPairing(true);
+        await startPairing(true);
+      } catch (error) {
+        alert(`Não foi possível desvincular esta TV: ${error.message}`);
+      } finally {
+        $('#repair-button').disabled = false;
+      }
+    });
+    const resumeSync = () => {
+      if (!state.deviceToken) return;
+      // Stable 1.5.24 uses one consolidated call. Never trigger legacy
+      // heartbeat/manifest writes on reconnect or window focus.
+      if (useQaBundle()) {
+        if (state.syncTimer) {
+          clearTimeout(state.syncTimer);
+          state.syncTimer = null;
+        }
+        void runBackgroundPoll(runQaBundle);
+        return;
+      }
+      void runBackgroundPoll(async () => {
+        await heartbeat();
+        await syncManifest();
+        await flushPlaybackQueue();
+        await flushDeviceEventQueue();
+      });
+    };
+    window.addEventListener('online', resumeSync);
+    window.addEventListener('focus', resumeSync);
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') resumeSync();
+    });
+
+    if (state.deviceToken) await startPlayer();
+    else await startPairing();
+  }
+
+  bootstrap().catch(error => {
+    console.error(error);
+    showPairing();
+    $('#pairing-status').textContent = `Falha ao iniciar: ${error.message}`;
+    $('#new-code-button').classList.remove('hidden');
+  });
+})();
