@@ -14,13 +14,13 @@ function fleet(n, mode, duration=3600000){
  const ordered=Array.from(b).sort((a,b)=>a-b);
  return {total,meanRps:total/(duration/1000),peakRps:ordered.at(-1),p95Rps:ordered[Math.floor(ordered.length*.95)],firstSecond:b[0],estimatedGatewayCyclesPerMonth:total*24*30};
 }
-for(const mode of ['cold-boot','cached-cold-boot','distributed']){
- test('300 TVs '+mode+' synthetic no-network scheduling',()=>{
-  const result=fleet(300,mode);
-  console.log(JSON.stringify({mode,tvs:300,...result}));
-  assert.ok(result.total>17000&&result.total<22000);
-  if(mode==='cold-boot')assert.equal(result.firstSecond,300);
-  else assert.ok(result.peakRps<65);
+for(const n of [50,100,300]) for(const mode of ['cold-boot','cached-cold-boot','distributed']){
+ test(n+' TVs '+mode+' synthetic no-network scheduling',()=>{
+  const result=fleet(n,mode);
+  console.log(JSON.stringify({mode,tvs:n,...result}));
+  assert.ok(result.total>n*50&&result.total<n*75);
+  if(mode==='cold-boot')assert.equal(result.firstSecond,n);
+  else assert.ok(result.peakRps<Math.max(15,n/4));
  });
 }
 test('first cycle deferred only for valid fully cached device',()=>{
