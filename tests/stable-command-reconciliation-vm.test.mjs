@@ -30,7 +30,7 @@ for(const status of ['completed','failed']){
   assert.equal(h.effects.apk,0);
   assert.equal(h.store.has('vision_player_command_intent_v1'),false);
   const history=JSON.parse(h.store.get('vision_player_command_intent_history_v1'));
-  assert.equal(history.entries[0].server_status,status);
+  assert.equal(history.entries[0].server_status,status);\n  assert.equal(history.entries[0].device_id,'tv');
  });
 }
 test('old device identity cannot be reconciled using new TV token',async()=>{
@@ -66,4 +66,17 @@ test('terminal archive is not overwritten by stale command replay',async()=>{
  await h.run();
  assert.equal(h.effects.apk,0);
  assert.equal(h.store.get('vision_player_command_intent_history_v1'),history);
+});
+
+test('legacy history migration preserves old TV and new TV evidence',async()=>{
+ const h=fixture('completed');
+ h.store.set('vision_player_command_intent_history_v1',JSON.stringify({
+   device_id:'previous-tv',entries:[{id:'old',type:'restart_player',server_status:'failed'}]
+ }));
+ await h.run();
+ const history=JSON.parse(h.store.get('vision_player_command_intent_history_v1'));
+ assert.equal(history.version,2);
+ assert.equal(history.entries.length,2);
+ assert.equal(history.entries[0].device_id,'previous-tv');
+ assert.equal(history.entries[1].device_id,'tv');
 });
