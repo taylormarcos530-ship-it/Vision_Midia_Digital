@@ -20,3 +20,7 @@ jobs:
           node-version: '22'
       - name: Validate authentication and playback source contracts
         run: node --test tests/credential-hourly-write-guard.test.mjs tests/device-auth-source-contract.test.mjs tests/playback-batch-dedup.test.mjs tests/playback-gateway-mock-integration.test.mjs
+      - name: Validate SQL guard and playback uniqueness in isolated PostgreSQL
+        run: |
+          sudo systemctl start postgresql.service
+          sudo -u postgres psql -X -v ON_ERROR_STOP=1 -f tests/sql/vision-auth-playback-isolated-fixture.sql
