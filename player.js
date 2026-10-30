@@ -1563,8 +1563,15 @@
         }
         if (['restart_player','update_apk'].includes(command.command_type) &&
             readJson(COMMAND_INTENT_KEY) && !commandIntent(command)) {
-          // Another command/device has an unresolved intent. Do not
-          // overwrite it; unrelated playback and commands remain available.
+          // Do not block a replacement TV with an old TV's intent. Keep
+          // the old record until explicit unpairing, rather than deleting
+          // evidence or silently reusing it.
+          const pendingIntent = readJson(COMMAND_INTENT_KEY);
+          if (pendingIntent?.device_id !== state.manifest?.device?.id) {
+            queueDeviceEvent('command_reconciliation_required','warning',
+              'Registro de outra TV detectado; desvincule com segurança para liberar comandos nativos.',
+              {command_id:command.id,command_type:command.command_type},30000);
+          }
           continue;
         }
         if (['restart_player','update_apk'].includes(command.command_type) &&
