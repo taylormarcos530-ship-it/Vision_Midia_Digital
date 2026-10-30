@@ -170,3 +170,32 @@ test('commands: concurrent polling preserves sent state without reverting',async
   assert.equal(store.commands[0].status,'sent')
   assert.ok([a,b].every(x=>x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length<=1))
 })
+
+test('commands lifecycle: network interruption after delivery keeps sent command available',async()=>{
+  const store={commands:[{id,command_type:'reload',status:'pending',requested_at:'2026-10-30T12:00:00Z'}]}
+  const first=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(first.status,200)
+  assert.equal(store.commands[0].status,'sent')
+  // The first HTTP response is lost: the TV retries the same request.
+  const retry=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(retry.status,200)
+  assert.equal(retry.data.commands[0].id,id)
+  assert.equal(retry.data.commands[0].status,'sent')
+  assert.equal(retry.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,0)
+})
+test('commands lifecycle: failed delivery write remains pending for next poll',async()=>{
+  const store={commands:[{id,command_type:'reload',status:'pending'}]}
+  const failure=await invoke({body:{action:'commands'},sharedStore:store,commandUpdateError:true})
+  assert.equal(failure.status,500)
+  assert.equal(store.commands[0].status,'pending')
+  const retry=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(retry.status,200)
+  assert.equal(store.commands[0].status,'sent')
+})
+test('commands lifecycle: sent commands do not become completed without a device acknowledgment',async()=>{
+  const store={commands:[{id,command_type:'reload',status:'sent'}]}
+  const x=await invoke({body:{action:'commands'},sharedStore:store})
+  assert.equal(x.status,200)
+  assert.equal(store.commands[0].status,'sent')
+  assert.equal(x.calls.filter(c=>c.table==='device_commands'&&c.kind==='update').length,0)
+})
