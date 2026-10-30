@@ -17,7 +17,7 @@ for (const path of ['supabase/functions/device-gateway/index.ts','supabase/funct
     const credential={device_id:id,revoked_at:revoked?'2026-01-01':null,last_used_at:lastUsedAt}
     const device={id,company_id:id,status:'online',access_status:blocked?'blocked':'active'}
     const values={device_credentials:credential,devices:device,companies:{status:companyStatus},company_subscriptions:{status:subscriptionStatus}}
-    const admin={from(table){const q={select(){return q},eq(){return q},or(){return q},update(value){calls.push({table,value});return q},maybeSingle:async()=>({data:values[table],error:null})};return q}}
+    const admin={from(table){const q={select(){return q},eq(){return q},or(){return q},not(...args){calls.push({table,filter:args});return q},update(value){calls.push({table,value});return q},maybeSingle:async()=>({data:values[table],error:null})};return q}}
     const req={headers:{get:()=> 'x'.repeat(40)}}
     return {admin,req,calls}
   }
@@ -44,3 +44,8 @@ for (const path of ['supabase/functions/device-gateway/index.ts','supabase/funct
     assert.equal(x.calls.filter(c=>c.table==='device_credentials').length,1)
   })
 }
+
+test('gateway: pairing cleanup filters out already-null tokens',async()=>{
+  const source=readFileSync(new URL('../supabase/functions/device-gateway/index.ts',import.meta.url),'utf8')
+  assert.match(source,/\.from\('device_pairing_requests'\)[\s\S]*?\.update\(\{ issued_token: null \}\)[\s\S]*?\.eq\('status', 'issued'\)[\s\S]*?\.not\('issued_token', 'is', null\)/)
+})
