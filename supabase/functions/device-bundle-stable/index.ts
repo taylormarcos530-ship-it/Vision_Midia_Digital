@@ -808,10 +808,16 @@ async function runExistingGatewayAction(req, injected = null) {
       const uuidPattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
       const parsedEvents = []
       for (const event of events) {
-        const clientEventId = String(event?.client_event_id || '').slice(0, 120)
+        const rawClientEventId = event?.client_event_id
+        const clientEventId = typeof rawClientEventId === 'string' ? rawClientEventId : ''
         const startedAt = new Date(event?.started_at || Date.now())
         const endedAt = event?.ended_at ? new Date(event.ended_at) : null
-        if (!clientEventId || Number.isNaN(startedAt.getTime()) || (endedAt && Number.isNaN(endedAt.getTime()))) continue
+        if (!clientEventId || clientEventId.length > 120 ||
+            Number.isNaN(startedAt.getTime()) || (endedAt && Number.isNaN(endedAt.getTime()))) {
+          // Never acknowledge a partially stored batch: Player removes ALL queued
+          // IDs only after a successful response to playback_batch.
+          return json({ error: 'invalid_playback_event' }, 400)
+        }
         parsedEvents.push({
           client_event_id: clientEventId,
           campaign_id: uuidPattern.test(String(event?.campaign_id || '')) ? event.campaign_id : null,
@@ -823,7 +829,9 @@ async function runExistingGatewayAction(req, injected = null) {
           completed: Boolean(event?.completed),
         })
       }
-      if (!parsedEvents.length) return json({ error: 'invalid_playback_event' }, 400)
+      if (parsedEvents.length !== events.length) {
+        return json({ error: 'invalid_playback_event' }, 400)
+      }
 
       const campaignIds = [...new Set(parsedEvents.map(item => item.campaign_id).filter(Boolean))]
       const playlistIds = [...new Set(parsedEvents.map(item => item.playlist_id).filter(Boolean))]
