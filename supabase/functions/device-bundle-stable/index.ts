@@ -882,17 +882,37 @@ function safeUuid(value) {
 
 // Unmodified operations from device-monitoring. They execute inside the
 // same authenticated QA request, reusing its Supabase admin client and device.
+// Warm-isolate, per-company state; cold isolates may each run a sweep.
+const lastOfflineSweepByCompany = new Map()
+const offlineSweepInFlight = new Set()
+
 async function runExistingMonitoringAction(admin, device, body) {
     const action = body?.action
     if (action === 'heartbeat') {
-      const staleBefore = new Date(Date.now() - 90_000).toISOString()
-      const { error: staleSweepError } = await admin.from('devices')
-        .update({ status: 'offline' })
-        .eq('company_id', device.company_id)
-        .eq('status', 'online')
-        .lt('last_seen_at', staleBefore)
-        .is('retired_at', null)
-      if (staleSweepError) console.warn('device-monitoring stale sweep', staleSweepError.message || staleSweepError)
+      // At most one stale-device sweep per company per 30s on each warm isolate.
+      // Keep the 90s stale threshold; a cold isolate always performs the sweep.
+      const companyKey = String(device.company_id)
+      const sweepNow = Date.now()
+      const previousSweep = lastOfflineSweepByCompany.get(companyKey) || 0
+      if (sweepNow - previousSweep >= 30_000 && !offlineSweepInFlight.has(companyKey)) {
+        offlineSweepInFlight.add(companyKey)
+        try {
+          const staleBefore = new Date(Date.now() - 90_000).toISOString()
+          const { error: staleSweepError } = await admin.from('devices')
+            .update({ status: 'offline' })
+            .eq('company_id', device.company_id)
+            .eq('status', 'online')
+            .lt('last_seen_at', staleBefore)
+            .is('retired_at', null)
+          if (staleSweepError) console.warn('device-monitoring stale sweep', staleSweepError.message || staleSweepError)
+          else {
+            if (lastOfflineSweepByCompany.size > 256) lastOfflineSweepByCompany.clear()
+            lastOfflineSweepByCompany.set(companyKey, Date.now())
+          }
+        } finally {
+          offlineSweepInFlight.delete(companyKey)
+        }
+      }
 
       const now = new Date().toISOString()
       const screenWidth = safeNumber(body?.screen_width, 1, 100000)
