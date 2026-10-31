@@ -500,13 +500,20 @@ async function authenticateDevice(admin, req) {
       .eq('device_id', device.id)
       .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
     if (touchError) throw touchError
+
+    // Clear the issued pairing token on first use and on periodic credential touch.
+    // Do not issue a redundant PATCH for every player request.
+    const shouldCleanupPairing = !Number.isFinite(lastUsedAtMs) ||
+      Math.floor(lastUsedAtMs / (5 * 60_000)) !== Math.floor(nowMs / (5 * 60_000))
+    if (shouldCleanupPairing) {
+      const { error: pairingCleanupError } = await admin.from('device_pairing_requests')
+        .update({ issued_token: null })
+      .eq('device_id', device.id)
+      .eq('status', 'issued')
+        .not('issued_token', 'is', 'null')
+      if (pairingCleanupError) console.error('pairing_token_cleanup_failed', pairingCleanupError)
+    }
   }
-  // Token cleanup remains idempotent and does not change pairing semantics.
-  await admin.from('device_pairing_requests')
-    .update({ issued_token: null })
-    .eq('device_id', device.id)
-    .eq('status', 'issued')
-    .not('issued_token', 'is', 'null')
 
   return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
