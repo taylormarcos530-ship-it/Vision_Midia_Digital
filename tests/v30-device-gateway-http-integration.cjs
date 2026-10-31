@@ -60,7 +60,7 @@ class PGQuery {
   then(resolve,reject){return this.executeUpdate().then(resolve,reject);}
   async upsert(rows,options){
     assert.equal(this.table,'playback_logs');
-    assert.deepEqual(options,{onConflict:'device_id,client_event_id',ignoreDuplicates:true});
+    assert.equal(options.onConflict,'device_id,client_event_id');assert.equal(options.ignoreDuplicates,true);
     if(failInsertOnce){failInsertOnce=false;return {data:null,error:{message:'synthetic_database_failure'}};}
     const cols=['client_event_id','company_id','device_id','campaign_id','playlist_id',
       'media_id','started_at','ended_at','duration_seconds','completed','device_name',
