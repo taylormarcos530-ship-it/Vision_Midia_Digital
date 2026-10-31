@@ -189,7 +189,7 @@ def shadow_archive(tv_count):
     assert archived==source and len(archived)==manifest[0]==1000
     actual=hashlib.sha256()
     for seq,digest_value in source:
-        actual.update(f"{seq}:{digest_value}\\n".encode())
+        actual.update((f"{seq}:{digest_value}"+chr(10)).encode())
     assert actual.hexdigest()==manifest[1],"manifest does not match source"
     # Fault mid-archive-copy must roll back all new archive rows, without
     # touching originals. 1001 is a receipt not yet shadow archived.
