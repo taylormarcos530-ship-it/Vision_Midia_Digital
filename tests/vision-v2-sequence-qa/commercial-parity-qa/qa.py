@@ -112,7 +112,7 @@ def fixture():
                   (company_id,device_id,seq,client_event_id,campaign_id,playlist_id,media_id,
                    device_name,campaign_name,playlist_name,media_name,started_at,play_day,
                    seconds,completed,hash_sha256)
-                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                  VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
                   ON CONFLICT (device_id,seq) DO NOTHING""",a)
         assert scalar(c,"SELECT count(*) FROM qa_commercial.playback")==count
         return count
