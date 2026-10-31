@@ -2,7 +2,10 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const sql = fs.readFileSync(path.join(__dirname,'..','vision_playback_compaction_v30.sql'),'utf8');
+const sqlFile = fs.existsSync(path.join(__dirname,'..','supabase','qa-migrations','v30_playback_compaction_staged.sql'))
+  ? path.join(__dirname,'..','supabase','qa-migrations','v30_playback_compaction_staged.sql')
+  : path.join(__dirname,'..','vision_playback_compaction_v30.sql');
+const sql = fs.readFileSync(sqlFile,'utf8');
 
 test('Starts disabled, with 7-day receipt retention', () => {
   assert.match(sql,/raw_days integer NOT NULL DEFAULT 7 CHECK/);
