@@ -23,7 +23,7 @@ test('only approved scanner block differs from original', () => {
   assert.equal(source, original.replace(oldBlock, newBlock))
 })
 test('unchanged state skips write; each field change writes exactly once', () => {
-  const expr = /const stateChanged = ([\\s\\S]*?)\\n    if \\(stateChanged\\)/.exec(source)
+  const expr = /const stateChanged = ([\s\S]*?)\n    if \(stateChanged\)/.exec(source)
   assert.ok(expr)
   const predicate = new Function('previous', 'connected', 'activeError', 'outdated', 'return (' + expr[1].trim() + ')')
   const base = { connected: true, active_error_key: null, outdated_apk_key: null }
@@ -45,9 +45,9 @@ test('unchanged state skips write; each field change writes exactly once', () =>
   }
 })
 test('first-scan quiet baseline and notification queue are unchanged', () => {
-  assert.match(source, /if \\(!previous\\) \\{/)
+  assert.match(source, /if \(!previous\) \{/)
   assert.match(source, /ignoreDuplicates: true/)
-  assert.match(source, /const delivery = await flushQueue\\(admin\\)/)
+  assert.match(source, /const delivery = await flushQueue\(admin\)/)
   assert.match(source, /const MAX_DEVICES = 500/)
-  assert.match(source, /const OFFLINE_AFTER_MS = 3 \\* 60 \\* 1000/)
+  assert.match(source, /const OFFLINE_AFTER_MS = 3 \* 60 \* 1000/)
 })
