@@ -65,6 +65,8 @@ async function main(){
  pg('UPDATE public.device_credentials SET revoked_at=NULL WHERE device_id='+q(TA));
  pg('UPDATE public.companies SET status='+q('suspended')+' WHERE id='+q(A));
  expected(await request(token),403);
- console.log('PASS_BUNDLE_BLOCKS revoked 401 suspended 403');
+ pg("UPDATE public.companies SET status='active' WHERE id="+q(A));
+ assert.equal(pg('SELECT status FROM public.companies WHERE id='+q(A)),'active');
+ console.log('PASS_BUNDLE_BLOCKS revoked 401 suspended 403 restored active');
 }
 main().catch(e=>{console.error('FAIL_BUNDLE_NATIVE',e.stack||e.message);process.exitCode=1});
