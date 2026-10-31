@@ -1,0 +1,22 @@
+name: Vision V30 playback quarantine isolated QA
+on:
+  push:
+    branches:
+      - fix/playback-daily-retention-safe-20261030
+    paths:
+      - 'player.js'
+      - 'tests/v30-playback-quarantine.test.cjs'
+      - '.github/workflows/playback-v30-quarantine-isolated.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  proof-queue-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test real Player queue in sandbox without network or Supabase
+        run: node --test tests/v30-playback-quarantine.test.cjs
