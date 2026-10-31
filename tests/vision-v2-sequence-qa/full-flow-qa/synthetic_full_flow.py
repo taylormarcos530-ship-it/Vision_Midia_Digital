@@ -340,6 +340,27 @@ def send_command(client,base,seconds,forced=False):
 
 def read_model(tvcount):
     with conn() as db:
+        # Inject a real PostgreSQL projection failure, then prove its cursor and
+        # count are unchanged before processing the backlog normally.
+        db.execute("""CREATE FUNCTION v2_flow_qa.fail_projection() RETURNS trigger
+           LANGUAGE plpgsql AS 'BEGIN RAISE EXCEPTION ''qa_projection_failure''; END'""")
+        db.execute("""CREATE TRIGGER fail_first_projection
+           BEFORE INSERT ON v2_flow_qa.daily_read
+           FOR EACH ROW EXECUTE FUNCTION v2_flow_qa.fail_projection()""")
+        try:
+            try:
+                with db.transaction():
+                    db.execute("""INSERT INTO v2_flow_qa.daily_read
+                        (company,device,received_day,pending_without_time)
+                        VALUES('tenant-00','tv-000',%s,1)""",(DAY,))
+                    db.execute("UPDATE v2_flow_qa.projection_cursor SET through_seq=1 WHERE device='tv-000'")
+            except psycopg.Error:
+                pass
+            else:raise AssertionError("projection_failure_should_rollback")
+            assert scalar(db,"SELECT through_seq FROM v2_flow_qa.projection_cursor WHERE device='tv-000'")==0
+            assert scalar(db,"SELECT count(*) FROM v2_flow_qa.daily_read")==0
+        finally:
+            db.execute("DROP TRIGGER fail_first_projection ON v2_flow_qa.daily_read")
         # Derive daily read model on the server, with one cursor per device.
         for i in range(tvcount):
             device=f"tv-{i:03d}"
@@ -481,6 +502,9 @@ def run(tvs):
                     command_all(seconds,True)
                     before=gateway.counters()["gets"]
                     if not all(c.rev==1 for c in clients):raise AssertionError("revision_not_received")
+                    # Duplicate push notice for same revision must not force GET.
+                    list(worker.map(lambda c:send_command(c,base,seconds,True)
+                                    if c.rev<1 else None,clients))
                     assert gateway.counters()["gets"]==before
                 if seconds==900:
                     command_all(seconds,False)
@@ -488,6 +512,12 @@ def run(tvs):
                     upload_all(seconds,False)
             upload_all(DURATION,True)
             command_all(DURATION,False)
+            # A quiet period with NO notification must still periodically
+            # reconcile command state: fallback after the configured TTL.
+            before_fallback=gateway.counters()["gets"]
+            command_all(DURATION+FALLBACK,False)
+            assert gateway.counters()["gets"]==before_fallback+len(clients)
+            assert all(c.rev==1 for c in clients)
             assert all(c.ack()==PER_TV for c in clients)
             # Explicit independent anti-replay/tenant tests (HTTP, real PG).
             first=clients[0]
