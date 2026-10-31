@@ -11,13 +11,14 @@ const QUEUE='queue',QUARANTINE='quarantine';
 function runtime(initial,opts={}){
  const store={queue:initial.map(e=>structuredClone(e))};
  const calls=[];
+ const network={onLine:opts.online!==false};
  const api=vm.runInNewContext('(function(){'+source+
   '\nreturn {queuePlayback,flushPlaybackQueue,isolateInvalidPlaybackEvents,recoverQuarantinedPlaybackEvent};})()',{
   Date,Array,Set,Promise,
   PLAYBACK_QUEUE_KEY:QUEUE,
   PLAYBACK_QUARANTINE_KEY:QUARANTINE,
   state:{deviceToken:'synthetic-only'},
-  navigator:{onLine:opts.online!==false},
+  navigator:network,
   localStorage:{getItem(key){
     if (opts.corruptQueue && key===QUEUE) return '{invalid queue JSON';
     if (opts.corruptQuarantine && key===QUARANTINE) return '{invalid quarantine JSON';
@@ -34,7 +35,7 @@ function runtime(initial,opts={}){
    return {ok:true,accepted:request.events.length};
   },
  },{timeout:2000});
- return {api,store,calls};
+ return {api,store,calls,network};
 }
 const valid=id=>({client_event_id:id,started_at:'2026-10-30T10:00:00Z',completed:true});
 test('invalid and valid events: quarantine full proof, flush only valid, no extra request',async()=>{
@@ -136,4 +137,20 @@ test('malformed quarantine JSON blocks writes and preserves pending queue',async
  await assert.rejects(v.api.flushPlaybackQueue(),/playback_storage_corrupt/);
  assert.equal(v.calls.length,0);
  assert.deepEqual(v.store.queue,[bad]);
+});
+
+test('T06 offline to online resume retains and uploads each pending proof once',async()=>{
+ const one=valid('qa-t06-one'),two=valid('qa-t06-two');
+ const v=runtime([one,two],{online:false});
+ await v.api.flushPlaybackQueue();
+ assert.equal(v.calls.length,0,'no upload offline');
+ assert.deepEqual(v.store.queue,[one,two],'queue durable offline');
+ v.network.onLine=true;
+ await v.api.flushPlaybackQueue();
+ assert.equal(v.calls.length,1,'single upload on reconnect');
+ assert.deepEqual(v.calls[0].events.map(e=>e.client_event_id),['qa-t06-one','qa-t06-two']);
+ assert.equal(v.store.queue,null,'remove only after ACK');
+ await v.api.flushPlaybackQueue();
+ assert.equal(v.calls.length,1,'no duplicate upload');
+ console.log('PASS_T06 offline_pending=2 reconnect_uploads=1 duplicate_uploads=0');
 });
