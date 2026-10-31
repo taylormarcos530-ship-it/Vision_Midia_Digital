@@ -122,3 +122,26 @@ test('bundle v30 preserves v3 command acknowledgement concurrency protection',()
    source.indexOf("if (action === 'playback'"));
  assert.match(snippet,/\.in\('status', \['pending', 'sent'\]\)/);
 });
+
+test('T04 attempted zero-row offline PATCH is counted even without changed rows',async()=>{
+ const x=updates(),map=new Map(),flight=new Set(),device={company_id:'qa-zero-row'};
+ let attempted=0,changed=0;
+ x.setOfflinePromise(()=>{attempted++;return Promise.resolve({data:[],count:0,error:null})});
+ await doSweep(x.admin,device,{action:'heartbeat'},Clock(nowBase),console,map,flight);
+ assert.equal(attempted,1,'HTTP-like PATCH attempted once');
+ assert.equal(changed,0,'no matching offline rows updated');
+ assert.equal(x.stats.offline,1,'update builder called despite zero rows');
+ console.log('PASS_T04 attempted_patch=1 affected_rows=0');
+});
+test('T05 independent isolates cause separate sweep PATCH attempts',async()=>{
+ const x=updates(),device={company_id:'qa-multi-isolate'};
+ let attempts=0;
+ x.setOfflinePromise(()=>{attempts++;return Promise.resolve({data:[],count:0,error:null})});
+ await Promise.all([
+  doSweep(x.admin,device,{action:'heartbeat'},Clock(nowBase),console,new Map(),new Set()),
+  doSweep(x.admin,device,{action:'heartbeat'},Clock(nowBase),console,new Map(),new Set())
+ ]);
+ assert.equal(attempts,2,'per-isolate throttle cannot suppress global duplicate');
+ assert.equal(x.stats.offline,2);
+ console.log('PASS_T05 independent_isolates=2 patch_attempts=2');
+});
