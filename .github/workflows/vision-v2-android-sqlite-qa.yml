@@ -38,8 +38,12 @@ jobs:
         run: |
           set -euo pipefail
           echo "ANDROID_HOME=$ANDROID_HOME"
-          test -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
-          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
+          find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print || true
+          SDKM="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager -print -quit)"
+          test -n "$SDKM"
+          echo "USING_SDKMANAGER=$SDKM"
+          (yes | "$SDKM" --licenses >/dev/null) || true
+          "$SDKM" --install "platforms;android-35" "build-tools;35.0.0"
       - name: Gradle 8.10.2 (only unit tests)
         uses: gradle/actions/setup-gradle@v4
         with:
