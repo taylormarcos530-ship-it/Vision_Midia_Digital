@@ -321,7 +321,7 @@ def stats(tvs,days,per_tv,cadence,queues,server,projection_lag_max,
         assert one(db,"SELECT count(*) FROM v2_soak_qa.devices WHERE watermark=%s",(per_tv,))==tvs
         assert one(db,"SELECT count(*) FROM v2_soak_qa.projectors WHERE through_seq=%s",(per_tv,))==tvs
         assert one(db,"SELECT COALESCE(sum(pending_time),0) FROM v2_soak_qa.daily_read")==tvs*per_tv
-        assert one(db,"SELECT count(*) FROM v2_soak_qa.receipts WHERE boot_id LIKE 'qa-boot-%'")==tvs*per_tv
+        assert one(db,"SELECT count(*) FROM v2_soak_qa.receipts WHERE boot_id LIKE %s",("qa-boot-%",))==tvs*per_tv
         assert one(db,"SELECT count(*) FROM v2_soak_qa.receipts_oct")>0
         if days==7:assert one(db,"SELECT count(*) FROM v2_soak_qa.receipts_nov")>0
         table=one(db,"SELECT pg_total_relation_size('v2_soak_qa.receipts_oct')")+one(db,"SELECT pg_total_relation_size('v2_soak_qa.receipts_nov')")
