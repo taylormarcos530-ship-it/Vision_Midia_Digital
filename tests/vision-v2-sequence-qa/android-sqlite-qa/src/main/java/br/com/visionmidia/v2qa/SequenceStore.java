@@ -107,6 +107,16 @@ public final class SequenceStore extends SQLiteOpenHelper {
             return s;
         }
     }
+    // SQLITE_FULL can automatically rollback a native transaction. Some Robolectric
+    // SQLite versions then throw a secondary "no transaction is active" from
+    // endTransaction(), masking the original disk-full exception. Never hide it.
+    private static void endTransactionPreservingOriginal(SQLiteDatabase db,RuntimeException original) {
+        try {db.endTransaction();}
+        catch(android.database.sqlite.SQLiteException cleanup) {
+            if(original==null)throw cleanup;
+            original.addSuppressed(cleanup);
+        }
+    }
     private static long scalar(SQLiteDatabase db,String sql,String[] args) {
         try (Cursor c=db.rawQuery(sql,args)) { if(!c.moveToFirst()) throw new IllegalStateException("missing_count"); return c.getLong(0); }
     }
@@ -125,6 +135,7 @@ public final class SequenceStore extends SQLiteOpenHelper {
         validIdentity(device,stream);
         if (!serverIssuedNewStream) throw new SecurityException("server_stream_required");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        RuntimeException originalFailure=null;
         try {
             if (scalar(db,"SELECT COUNT(*) FROM stream_state",null)!=0)
                 throw new IllegalStateException("already_provisioned_no_reset");
@@ -134,7 +145,8 @@ public final class SequenceStore extends SQLiteOpenHelper {
             v.put("next_seq",1);v.put("confirmed",0);v.put("sent_through",0);
             db.insertOrThrow("stream_state",null,v);
             db.setTransactionSuccessful();
-        } finally {db.endTransaction();}
+        } catch(RuntimeException ex) {originalFailure=ex;throw ex;}
+        finally {endTransactionPreservingOriginal(db,originalFailure);}
     }
 
     private static Resolved resolved(State s,Sample sample) {
@@ -153,6 +165,7 @@ public final class SequenceStore extends SQLiteOpenHelper {
     /** Return event sequence after committed durable insert, or reject without incrementing. */
     public long append(Playback event,Sample sample,boolean injectFailureAfterInsert) {
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        RuntimeException originalFailure=null;
         try {
             State s=state(db);integrity(db,s);
             try(Cursor c=db.rawQuery("SELECT seq,media,completed,seconds FROM pending WHERE event_id=?",new String[]{event.eventId})) {
@@ -175,7 +188,8 @@ public final class SequenceStore extends SQLiteOpenHelper {
             if(injectFailureAfterInsert)throw new IllegalStateException("simulated_power_loss");
             db.execSQL("UPDATE stream_state SET next_seq=next_seq+1 WHERE id=1");
             db.setTransactionSuccessful();return s.next;
-        } finally {db.endTransaction();}
+        } catch(RuntimeException ex) {originalFailure=ex;throw ex;}
+        finally {endTransactionPreservingOriginal(db,originalFailure);}
     }
     // Time interpretation must be locale-independent, never default Android timezone.
     private static class DateParser {
@@ -194,6 +208,7 @@ public final class SequenceStore extends SQLiteOpenHelper {
         if(!verifiedAuthenticated)throw new SecurityException("unverified_server_time");
         if(serverUtcMs<MIN_UTC || serverUtcMs>=MAX_UTC)throw new IllegalArgumentException("untrusted_time");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        RuntimeException originalFailure=null;
         try {
             State s=state(db);integrity(db,s);
             ContentValues m=new ContentValues();m.put("anchor_boot",anchor.bootId);
@@ -210,7 +225,8 @@ public final class SequenceStore extends SQLiteOpenHelper {
                 }
             }
             db.setTransactionSuccessful();return corrected;
-        }finally{db.endTransaction();}
+        } catch(RuntimeException ex) {originalFailure=ex;throw ex;}
+        finally {endTransactionPreservingOriginal(db,originalFailure);}
     }
     public Snapshot snapshot() {
         SQLiteDatabase db=getReadableDatabase();State s=state(db);integrity(db,s);
@@ -222,6 +238,7 @@ public final class SequenceStore extends SQLiteOpenHelper {
         if(!online)return new ArrayList<>();
         if(limit<1 || limit>50)throw new IllegalArgumentException("batch_limit");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        RuntimeException originalFailure=null;
         try {
             State s=state(db);integrity(db,s);
             ArrayList<Event> out=new ArrayList<>();
@@ -240,18 +257,21 @@ public final class SequenceStore extends SQLiteOpenHelper {
                 db.execSQL("UPDATE stream_state SET sent_through=MAX(sent_through,?) WHERE id=1",new Object[]{last});
             }
             db.setTransactionSuccessful();return out;
-        }finally{db.endTransaction();}
+        } catch(RuntimeException ex) {originalFailure=ex;throw ex;}
+        finally {endTransactionPreservingOriginal(db,originalFailure);}
     }
     /** Only a verified ACK for this stream may call this. Does not accept un-sent sequences. */
     public void acknowledge(long ack,boolean verifiedServerAck) {
         if(!verifiedServerAck)throw new SecurityException("unverified_ack");
         SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        RuntimeException originalFailure=null;
         try {
             State s=state(db);integrity(db,s);
             if(ack<s.confirmed || ack>s.sent)throw new IllegalArgumentException("ack_out_of_range");
             db.delete("pending","seq<=?",new String[]{Long.toString(ack)});
             db.execSQL("UPDATE stream_state SET confirmed=? WHERE id=1",new Object[]{ack});
             db.setTransactionSuccessful();
-        }finally{db.endTransaction();}
+        } catch(RuntimeException ex) {originalFailure=ex;throw ex;}
+        finally {endTransactionPreservingOriginal(db,originalFailure);}
     }
 }
