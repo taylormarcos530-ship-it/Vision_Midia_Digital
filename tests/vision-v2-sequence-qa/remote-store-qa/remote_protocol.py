@@ -42,7 +42,9 @@ def request(method,route,data=None,admin=False):
                 return resp.status,response
             return resp.status,json.loads(response)
     except urllib.error.HTTPError as err:
-        payload=json.loads(err.read())
+        raw_error=err.read()
+        try:payload=json.loads(raw_error)
+        except (ValueError,UnicodeDecodeError):payload={"error":"http_error"}
         return err.code,payload
     except (urllib.error.URLError,TimeoutError,OSError) as err:
         raise StorageOffline("independent_store_unreachable") from err
