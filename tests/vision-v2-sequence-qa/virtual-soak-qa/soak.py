@@ -427,7 +427,15 @@ def run(tvs,days):
                 left=cuts[phase]+1
                 right=cuts[phase+1]
                 boot="qa-boot-A" if phase<2 else "qa-boot-B"
-                for q in clients:q.append(left,right,boot)
+                if days==7 and phase==0:
+                    # A first-day send proves October is used, while later
+                    # offline/backlog delivery is classified by November's
+                    # trusted server receive date (NOT guessed playback day).
+                    for q in clients:q.append(left,50,boot)
+                    round_upload(BEGIN_DAY)
+                    for q in clients:q.append(51,right,boot)
+                else:
+                    for q in clients:q.append(left,right,boot)
                 if phase==2:
                     for q in clients:q.reopen()
                 server_day=BEGIN_DAY+timedelta(days=min(days-1,((right-1)*cadence)//86400))
