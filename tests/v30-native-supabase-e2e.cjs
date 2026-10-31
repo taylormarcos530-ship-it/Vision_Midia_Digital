@@ -116,8 +116,13 @@ async function main(){
  pg("UPDATE private.vision_playback_compaction_control_v30 SET enabled=true,raw_days=7,"+
  "archive_verified_at=now(),reporting_verified_at=now(),"+
  "offline_replay_verified_at=now(),dedupe_verified_at=now() WHERE id=1");
- const archived=pg('SELECT raw_removed FROM private.vision_playback_compact_batch_v30(250)');
- assert.equal(Number(archived),3);
+ let archived=0;
+ for(let cycle=0;cycle<10;cycle++){
+   const moved=Number(pg('SELECT raw_removed FROM private.vision_playback_compact_batch_v30(250)'));
+   archived+=moved;
+   if(moved===0)break;
+ }
+ assert.equal(archived,3,'Every TV must eventually be archived; one call may process one TV');
  ra=await getReport(userA.client,A);rb=await getReport(userB.client,B);
  assert.equal(ra.summary.started,2);assert.equal(rb.summary.started,1);
  a=assertNoError(await userA.client.from('vision_playback_daily_archive_v30').select('company_id,started'),'archive A');
