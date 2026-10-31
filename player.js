@@ -321,6 +321,33 @@
     writeJson(PLAYBACK_QUEUE_KEY, queue);
   }
 
+  // Manual QA recovery only: a corrected event is durably requeued first,
+  // then the FULL original proof is marked recovered in quarantine for audit.
+  // Nothing is replayed automatically, avoiding runaway Supabase calls.
+  function recoverQuarantinedPlaybackEvent(index, correctedEvent) {
+    const archived = readJson(PLAYBACK_QUARANTINE_KEY);
+    if (!Number.isInteger(index) || index < 0 || !Array.isArray(archived) ||
+        !archived[index] || archived[index].recovered_at) return false;
+    const validationError = playbackEventValidationError(correctedEvent);
+    if (validationError) throw new Error('invalid_recovery_event:' + validationError);
+    const exists = playbackQueue().some(event =>
+      event.client_event_id === correctedEvent.client_event_id);
+    if (!exists) queuePlayback(correctedEvent);
+    // If marking recovery fails, both the original proof AND the corrected
+    // event remain stored. Never delete the original audit record.
+    const latest = readJson(PLAYBACK_QUARANTINE_KEY);
+    if (!Array.isArray(latest) || !latest[index]) {
+      throw new Error('quarantine_changed_during_recovery');
+    }
+    latest[index] = {
+      ...latest[index],
+      recovered_at: new Date().toISOString(),
+      recovered_client_event_id: correctedEvent.client_event_id,
+    };
+    writeJson(PLAYBACK_QUARANTINE_KEY, latest);
+    return true;
+  }
+
   let playbackFlushInFlight = null;
   async function flushPlaybackQueue() {
     if (playbackFlushInFlight) return playbackFlushInFlight;
