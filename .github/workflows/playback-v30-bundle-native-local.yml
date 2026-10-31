@@ -95,6 +95,11 @@ jobs:
           cd "$QA_DIR" || exit 0
           supabase status || true
           docker ps --format '{{.Names}} {{.Status}}' | grep supabase || true
+          EDGE_CONTAINER="$(docker ps --format '{{.Names}}' | grep '^supabase_edge_runtime_' | head -n 1 || true)"
+          if [[ -n "$EDGE_CONTAINER" ]]; then
+            echo 'Local Deno Edge runtime error diagnostics (synthetic data only):'
+            docker logs --tail 100 "$EDGE_CONTAINER" 2>&1 | grep -E 'ERROR|error|device-bundle|[45][0-9][0-9]|PGRST|column|permission' | tail -n 45 || true
+          fi
       - name: Stop disposable local stack
         if: always()
         run: |
