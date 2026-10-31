@@ -1,6 +1,6 @@
 # Vision V2 — SQLite FULL, integridade, fila 2.000 e auditoria offline (31/10/2026)
 
-**Resultado final: PASS 47/47, FAIL 0, skipped 0, errors 0.** Somente homologaçao em PostgreSQL? **Não.** Esta etapa executou testes **Android Robolectric JVM + SQLite NATIVE** em runner descartável do GitHub Actions. **Não usar em produção / não instalar APK.**
+**Resultado final: PASS 47/47, FAIL 0, skipped 0, errors 0.** Esta etapa executou somente testes **Android Robolectric JVM + SQLite NATIVE** em runner descartável do GitHub Actions, sem acesso ao PostgreSQL/Supabase. **Não usar em produção / não instalar APK.**
 
 ## Evidências verificadas
 - Branch: `experiment/vision-v2-sequence-watermark-qa-20261031`.
