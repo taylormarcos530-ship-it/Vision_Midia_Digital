@@ -26,8 +26,13 @@ test('IN03 gateway rejects mixed invalid proof batches before upsert',()=>{
 });
 test('IN04 bundle playback rejects invalid proof batches atomically',()=>{
  assert.match(playback,/invalid_playback_event/);
- const validation=playback.indexOf('invalid_playback_event'),upsert=playback.indexOf(".from('playback_logs')");
- assert.ok(validation>=0&&upsert>validation,'validation must precede write');
+ assert.match(playback,/const rawClientEventId = event\?\.client_event_id/);
+ assert.match(playback,/clientEventId\.length > 120/);
+ assert.match(playback,/return json\(\{ error: 'invalid_playback_event' \}, 400\)/);
+ assert.doesNotMatch(playback,/if \(!clientEventId[^\n]*\) continue/,'must never skip invalid proof');
+ assert.match(playback,/parsedEvents\.length !== events\.length/);
+ const validation=playback.indexOf("return json({ error: 'invalid_playback_event' }, 400)"),upsert=playback.indexOf(".from('playback_logs')");
+ assert.ok(validation>=0&&upsert>validation,'atomic rejection must precede write');
 });
 test('IN05 offline queue retains unacknowledged events on transport failure',()=>{
  const flush=segment(player,'async function flushPlaybackQueue()','function deviceEventQueue()');
