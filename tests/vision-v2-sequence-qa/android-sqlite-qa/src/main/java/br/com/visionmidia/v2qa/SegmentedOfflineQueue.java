@@ -34,9 +34,14 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
     private static final long MAX_MONO_DELTA=30L*86400000;
     public static final String DB_NAME="vision_v2_seven_day_qa_only.db";
     private RuntimeException previousFailure;
-    public SegmentedOfflineQueue(Context context) {
+    public SegmentedOfflineQueue(Context context) { this(context,true); }
+    /** QA-only rollback journal to test SQLite native SQLITE_FULL with PRAGMA.
+     * Normal usage remains WAL. WAL + low max_page_count requires separate
+     * physical-disk-quota testing; never infer WAL safety from DELETE journal.
+     */
+    SegmentedOfflineQueue(Context context,boolean enableWal) {
         super(context,DB_NAME,null,1);
-        setWriteAheadLoggingEnabled(true);
+        if(enableWal)setWriteAheadLoggingEnabled(true);
     }
     @Override public void onConfigure(SQLiteDatabase db) {
         super.onConfigure(db);
