@@ -133,7 +133,7 @@ BEGIN
  IF n<>0 THEN RAISE EXCEPTION 'Old retry accepted after archive'; END IF;
  -- A fresh identical client ID is valid on two distinct TVs.
  INSERT INTO public.playback_logs(client_event_id,company_id,device_id,started_at,completed)
- SELECT 'fresh-shared-event',company_id,id,now(),true FROM qa_tvs WHERE n IN (1,2);
+ SELECT 'fresh-shared-event',company_id,id,now(),true FROM qa_tvs WHERE qa_tvs.n IN (1,2);
  IF (SELECT count(*) FROM public.playback_logs WHERE client_event_id='fresh-shared-event')<>2
  THEN RAISE EXCEPTION 'Cross-TV suppression'; END IF;
  t0:=clock_timestamp();
