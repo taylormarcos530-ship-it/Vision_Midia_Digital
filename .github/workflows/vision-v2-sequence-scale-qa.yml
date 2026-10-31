@@ -1,0 +1,37 @@
+name: Vision V2 PostgreSQL 100TV Storage Simulation - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/postgres-scale-100tv.sql'
+      - '.github/workflows/vision-v2-sequence-scale-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Synthetic PostgreSQL 17 storage measurement
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'NO_SUPABASE=true NO_DEPLOY=true SYNTHETIC_ONLY=true'
+          docker run --rm -d --name visionv2scale -e POSTGRES_PASSWORD=localtestonly \
+             -e POSTGRES_DB=vision_v2_qa_disposable postgres:17-alpine
+          trap 'docker rm -f visionv2scale >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 40); do
+             if docker exec visionv2scale pg_isready -U postgres -d vision_v2_qa_disposable >/dev/null 2>&1; then break; fi
+             sleep 1
+          done
+          docker exec -i visionv2scale psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable \
+             < tests/vision-v2-sequence-qa/postgres-schema.sql
+          docker exec -i visionv2scale psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable \
+             < tests/vision-v2-sequence-qa/postgres-scale-100tv.sql
+          echo 'SCALE_100TV_DISPOSABLE=PASS'
