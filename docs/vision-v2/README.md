@@ -58,3 +58,39 @@ A V2 não é uma instalação operacional ainda: o painel e o APK atual ainda ap
 - NO-GO — conectar clientes ou trocar domínio/site oficial, migrar banco real, apagar histórico ou anunciar que V2 já está pronta.
 
 **Links:** [projeto Supabase V2](https://supabase.com/dashboard/project/yuwvgpvwgeowhgtxssvr) · [runbooks V30](../vision-v30-final-storage-age-casa-qa-20261031.md).
+
+
+## F1 — RPC e endpoint QA (31/10/2026)
+
+**Implementado SOMENTE em `yuwvgpvwgeowhgtxssvr`**, com as migrações
+`vision_v2_qa_device_api_20261031`,
+`vision_v2_qa_device_api_date_guard_fix_20261031` e
+`vision_v2_qa_device_api_aggregate_fix_20261031`.
+Fonte: [qa-device-api.sql](qa-device-api.sql) e
+[`vision-v2-qa-device/index.ts`](../../supabase/functions/vision-v2-qa-device/index.ts).
+
+**O que existe:** 
+- Tabela privada `device_tokens`, com hash SHA-256 de credenciais de TV, sem token em texto puro no banco; zero credenciais cadastradas agora.
+- RPC `public.vision_v2_qa_device_api` executável **somente por `service_role`**. `anon` e `authenticated` NÃO possuem permissão EXECUTE.
+- `action=sync` lê a revisão do manifesto, retorna o documento só quando mudou; uma TV não pode receber o manifesto de outra pelo token.
+- `action=playback_batch` valida 1–50 eventos, deduplica por TV/ID com `ON CONFLICT DO NOTHING` e atualiza resumo diário no mesmo commit.
+- Edge Function `vision-v2-qa-device` **v2**, implantada no projeto QA com `verify_jwt=true`, além da verificação interna do token da TV. Este modo necessita credencial de autenticação na camada da plataforma; ainda não foi preparado para o APK de produção.
+- Não foram cadastradas TVs, usuários ou empresas reais. Sem pareamento aberto, sem painel conectado, sem alteração da produção.
+
+**Testes SQL efetivamente executados com transação descartável** — PASS:
+token inválido rejeitado; sincronização com revisão alterada fornece manifesto; revisão igual não fornece manifesto; empresa B não recebe manifesto da empresa A; lote de dois comprovantes recebe ACK 2 aceitos/0 duplicados; reenvio recebe ACK 0 aceitos/2 duplicados; relatório consolida dois eventos e uma conclusão; lote contendo evento inválido reverte também o evento válido anterior; zero dispositivos, tokens, recibos e resumos restantes após o teste.
+
+**Defeitos identificados e corrigidos antes do PASS:**
+1. validação de data com escape de regex incompatível, substituída por classes de dígitos;
+2. `pg_catalog.least` e `pg_catalog.greatest` inválidos para construções especiais de SQL, corrigidos para `least`/`greatest`. O primeiro ensaio SQL falhou, e a repetição após a correção passou.
+
+**Pendências / NO-GO:**
+- **Não foi possível testar HTTP real ponta a ponta** pela rede deste ambiente. Deploy `ACTIVE` é confirmação de publicação, NÃO confirmação de invocação funcional, inicialização da dependência npm ou de fluxo real com JSON de TV.
+- Ainda faltam provisionamento de credenciais QA com segurança, teste Edge real com token, proteção contra abuso/cotas, onboarding e política de rotação/revogação, autenticação Master, integração das playlists reais, cache/downloads, painel e APK.
+- O formato de eventos na F1 é **protótipo**, não garante compatibilidade com o atual `player.js`.
+- Índices faltantes de duas FKs continuam como avisos `INFO`; avaliar `EXPLAIN` com massa de dados antes de adicionar.
+- Todas as 7 tabelas privadas têm RLS ligada e nenhuma policy de usuário (alerta INFO intencional, não habilitar consulta cliente neste estágio).
+- A ledger `playback_event_keys` ainda cresce com cada evento único; projetar retenção controlada de recibos e ledger segmentada sem write amplification, comprovada em carga e backup antes de anunciar escalabilidade.
+- **Não conectar TV real nem direcionar site oficial ao projeto QA**. Não habilitar compactação, cron ou apagamento de registros.
+
+**Próximo gate:** registrar/testar contrato do painel QA (Auth e multiempresa), e executar teste autenticado HTTP/Deno com duas TVs sintéticas; depois simular 7/12/20/50/100 TVs e medir Edge invocations, bytes e escrita. GO apenas depois de testes, proteção de cotas e validação em bancada.
