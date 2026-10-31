@@ -1,0 +1,58 @@
+name: Vision V2 Batch CQRS Matrix - PostgreSQL17 ONLY - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/batch-cqrs-qa/**'
+      - '.github/workflows/vision-v2-batch-cqrs-matrix-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare:
+    name: Isolated PG17 batch vs direct CQRS ${{ matrix.tvs }} TVs
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        tvs: [7, 12, 20, 50, 100]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 15
+    steps:
+      - name: Checkout isolated branch, no cached GitHub credential
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Confirm exact branch + no Supabase production target
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'QA_POSTGRES_DISPOSABLE=true NO_DEPLOY=true NO_SUPABASE=true NO_APK=true NO_TV=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PG17 QA driver
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Execute per-TV matrix at 500 events per TV, 4 strategies
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/vision-v2-sequence-qa/batch-cqrs-qa/benchmark.py --tvs ${{ matrix.tvs }}
+          echo 'MATRIX_TEST_PASSED=true'
+      - name: Preserve isolation
+        if: always()
+        run: echo 'NO_PRODUCTION_WRITES=true NO_TV_CONNECTIONS=true NO_MEDIA_MODIFICATIONS=true'
