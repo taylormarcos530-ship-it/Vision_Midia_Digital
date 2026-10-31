@@ -1,0 +1,116 @@
+name: Vision V2 Independent Simulated External Storage - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/remote-store-qa/**'
+      - '.github/workflows/vision-v2-external-storage-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  external-storage-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    env:
+      VISION_V2_QA_POSTGRES_DSN: postgresql://postgres:qa-only-local-password@127.0.0.1:5432/vision_v2_quarantine_disposable
+      V2_OBJECTSTORE_BASE_URL: http://127.0.0.1:18881
+      PYTHONPATH: tests/vision-v2-sequence-qa/remote-store-qa:tests/vision-v2-sequence-qa/archive-replay-qa:tests/vision-v2-sequence-qa/quarantine-qa
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Read-only checkout, no credentials retained
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard experimental branch and fake database
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'NO_SUPABASE=true NO_APK=true NO_DEPLOY=true NO_TV=true NO_ORIGINAL_DELETE=true'
+      - name: Python 3.12 and pinned QA dependencies
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install QA-only libraries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m pip install --disable-pip-version-check 'cryptography==44.0.3' 'psycopg[binary]==3.2.6'
+      - name: Generate one-run masked encryption and storage test tokens
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os,secrets
+          values={
+              'VISION_V2_QA_ARCHIVE_KEY_HEX':secrets.token_hex(32),
+              'QA_STORE_RECEIPT_KEY_HEX':secrets.token_hex(32),
+              'QA_STORE_TOKEN':secrets.token_urlsafe(32),
+              'QA_STORE_ADMIN_TOKEN':secrets.token_urlsafe(32)
+          }
+          with open(os.environ['GITHUB_ENV'],'a') as f:
+              for name,value in values.items():
+                  print('::add-mask::'+value)
+                  f.write(name+'='+value+'\n')
+          print('EPHEMERAL_QA_KEYS_GENERATED=PASS; values never logged')
+          PY
+      - name: Start separate Docker storage service with its own writable volume
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/v2-independent-store"
+          docker run -d --name vision-v2-qa-store \
+            --restart=no \
+            -e QA_STORE_TOKEN -e QA_STORE_ADMIN_TOKEN -e QA_STORE_RECEIPT_KEY_HEX \
+            -e QA_STORE_DIR=/data \
+            -p 127.0.0.1:18881:8080 \
+            -v "$GITHUB_WORKSPACE/tests/vision-v2-sequence-qa/remote-store-qa:/srv:ro" \
+            -v "$RUNNER_TEMP/v2-independent-store:/data" \
+            python:3.12-slim python /srv/object_store.py
+          for n in {1..40}; do
+            if curl -fsS "http://127.0.0.1:18881/health" >/dev/null; then break; fi
+            sleep 0.4
+          done
+          curl -fsS "http://127.0.0.1:18881/health" >/dev/null
+          echo 'ISOLATED_DOCKER_STORE_READY=true'
+      - name: Apply schema only in fresh local PG17 database
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          root=Path('tests/vision-v2-sequence-qa')
+          with psycopg.connect(os.environ['VISION_V2_QA_POSTGRES_DSN']) as db:
+              assert db.execute('SELECT current_database()').fetchone()[0]=='vision_v2_quarantine_disposable'
+              db.execute((root/'quarantine-qa/schema.sql').read_text())
+              db.execute((root/'archive-replay-qa/archive_schema.sql').read_text())
+          print('DISPOSABLE_POSTGRES17=PASS')
+          PY
+      - name: Cryptographic remote archive, failure injection, and independent container restart
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m unittest discover -s tests/vision-v2-sequence-qa/remote-store-qa -p 'test_*.py' -v
+          echo 'REMOTE_STORAGE_CRYPTO_AND_REPLAY=PASS'
+      - name: No deploy, no deletion, no persistent credentials
+        if: always()
+        shell: bash
+        run: |
+          echo 'NO_DEPLOY=true NO_SUPABASE=true NO_ORIGINAL_DELETE=true'
+          docker rm -f vision-v2-qa-store >/dev/null 2>&1 || true
