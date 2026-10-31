@@ -39,10 +39,6 @@ BEGIN
  IF shard<>42 THEN RAISE EXCEPTION 'Shard mismatch'; END IF;
  IF private.vision_playback_segment_add_v30(d,shard,first64)<>64
  THEN RAISE EXCEPTION 'Wrong result for first 64 IDs'; END IF;
- SELECT count(*),sum(fingerprint_count) INTO a,v_count
- FROM private.vision_playback_seen_segments_v30
- WHERE device_id=d AND shard=shard;
- -- Avoid ambiguous PL/pgSQL shard variable in SQL by qualifying as key.
  SELECT count(*),sum(s.fingerprint_count) INTO a,v_count
  FROM private.vision_playback_seen_segments_v30 s
  WHERE s.device_id=d AND s.shard=42;
@@ -135,10 +131,10 @@ BEGIN
   ON CONFLICT(device_id,client_event_id) DO NOTHING RETURNING 1
  ) SELECT count(*) INTO n FROM accepted;
  IF n<>0 THEN RAISE EXCEPTION 'Old retry accepted after archive'; END IF;
- -- Same ID remains valid for another TV.
+ -- A fresh identical client ID is valid on two distinct TVs.
  INSERT INTO public.playback_logs(client_event_id,company_id,device_id,started_at,completed)
- SELECT 'multi-1',company_id,id,now(),true FROM qa_tvs WHERE n=2;
- IF (SELECT count(*) FROM public.playback_logs WHERE device_id=(SELECT id FROM qa_tvs WHERE n=2))<>1
+ SELECT 'fresh-shared-event',company_id,id,now(),true FROM qa_tvs WHERE n IN (1,2);
+ IF (SELECT count(*) FROM public.playback_logs WHERE client_event_id='fresh-shared-event')<>2
  THEN RAISE EXCEPTION 'Cross-TV suppression'; END IF;
  t0:=clock_timestamp();
  WITH attempted AS (
