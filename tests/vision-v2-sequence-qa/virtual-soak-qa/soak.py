@@ -42,8 +42,13 @@ def one(db,sql,args=()):return db.execute(sql,args).fetchone()[0]
 def p95(values):
     values=sorted(values)
     return round(values[max(0,math.ceil(len(values)*.95)-1)],3) if values else 0
+BOOT_SWITCH=1
+CADENCE=300
 def body_for(seq,boot_id):
-    return {"seq":seq,"id":f"evt-{seq:08d}","boot":boot_id,"mono":(seq%500)*900000}
+    base=BOOT_SWITCH if boot_id=='qa-boot-B' else 1
+    assert seq>=base
+    return {"seq":seq,"id":f"evt-{seq:08d}","boot":boot_id,
+            "mono":(seq-base)*CADENCE*1000}
 def expected_digest(record):return sha(canonical(record))
 def values_for_total(tvs,days):
     seconds=days*86400
@@ -377,7 +382,10 @@ def quota_check(root):
     return True
 
 def run(tvs,days):
+    global BOOT_SWITCH,CADENCE
     per_tv,cadence=values_for_total(tvs,days)
+    CADENCE=cadence
+    BOOT_SWITCH=2*per_tv//5+1
     with con() as db:
         assert one(db,"SELECT current_database()")=="vision_v2_quarantine_disposable"
         db.execute(Path(__file__).with_name("schema.sql").read_text())
