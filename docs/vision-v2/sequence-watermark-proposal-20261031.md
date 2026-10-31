@@ -46,3 +46,14 @@ Em 100 TVs, sincronização a cada 5 minutos + envio otimista de lotes completos
 5. Plano de rotação de stream (reinstalação/repareamento) com reconciliação de fila pendente e rollback ensaiado.
 
 **Nenhuma migração, cron, compactação ou exclusão de eventos reais foi executada.**
+
+
+## Evidência de CI executada (GitHub Actions, 31/10/2026)
+
+**Contrato Node (mock, sem rede):** [execução 41221447094](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41221447094), 19 PASS, 0 FAIL e 3 TODO (relógio/UTC/horário local, persistência Android, integração PostgreSQL de escala).
+
+**SQL PostgreSQL 17 real, descartável:** [execução 41221673625](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41221673625), PASS para rejeição de token/stream incorretos, lacuna, repetição, hora 1970, atomicidade de lote; 6 processos concorrentes gravaram somente os 2 eventos inéditos de uma TV. A transação usa SELECT FOR UPDATE e resume por dia/mídia dentro do lote. Isso NÃO substitui RLS/JWT ou avaliação de execução real da API.
+
+**Carga sintética real no PostgreSQL 17 (não Supabase):** [execução 41221775323](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41221775323), 100 TVs × 1000 eventos = **100.000 eventos**, dez mídias por TV e **1.000 linhas de resumo**; soma dos watermarks = 100.000. Dados medidos no log: **devices = 212.992 bytes**, **daily = 1.703.936 bytes**, **total = 1.916.928 bytes (aproximadamente 1,92 MB decimais)** incluindo apenas tabelas+índices dessas duas relações, após 2.000 chamadas de lote. **Tempo interno de carga: ~1.596 ms**, não latência de HTTP/Edge e não throughput sustentado de produção. WAL, espaço de projeto, mídia, backups, autenticação e monitoramento NÃO entram nesse tamanho.
+
+O experimento ainda não tem proteção completa de prazo/campanha, autenticação multiempresa com JWT, intervalo de relógio offline no APK, re-pareamento com fila pendente, armazenamento persistente real e política comercial de auditoria. **NO-GO** para uso com TVs reais, migração ou substituição da V2 atual.
