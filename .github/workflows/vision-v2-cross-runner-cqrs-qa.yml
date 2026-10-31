@@ -1,0 +1,139 @@
+name: Vision V2 Cross-Runner Restore + CQRS Partition QA - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/cross-runner-qa/**'
+      - 'tests/vision-v2-sequence-qa/cqrs-partitions-qa/**'
+      - '.github/workflows/vision-v2-cross-runner-cqrs-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  recipient:
+    name: Create QA-only recipient keypair on runner A
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard exact experimental branch
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'NO_PRODUCTION=true NO_SUPABASE=true NO_APK=true NO_DEPLOY=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'cryptography==44.0.3'
+      - name: Generate random recipient RSA key for this run
+        run: python tests/vision-v2-sequence-qa/cross-runner-qa/archive_across_runners.py recipient --root "$RUNNER_TEMP/recipient"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2qa-public
+          path: ${{ runner.temp }}/recipient/recipient-public.pem
+          retention-days: 1
+          if-no-files-found: error
+      - name: Upload ephemeral private test key for independent restore job
+        uses: actions/upload-artifact@v4
+        with:
+          name: v2qa-private-test-key
+          path: ${{ runner.temp }}/recipient/recipient-private.pem
+          retention-days: 1
+          if-no-files-found: error
+  package:
+    name: Encrypt on runner B, upload ciphertext+signed manifest
+    needs: recipient
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'cryptography==44.0.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: v2qa-public
+          path: ${{ runner.temp }}/public
+      - name: Encrypt AES-GCM archive; wrap AES key to RSA recipient
+        run: python tests/vision-v2-sequence-qa/cross-runner-qa/archive_across_runners.py pack --public "$RUNNER_TEMP/public/recipient-public.pem" --root "$RUNNER_TEMP/encrypted"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: v2qa-encrypted-proofs
+          path: |
+            ${{ runner.temp }}/encrypted/manifest.json
+            ${{ runner.temp }}/encrypted/archive.v2qa
+          retention-days: 1
+          if-no-files-found: error
+  independent-restore:
+    name: Download from platform artifact storage, restore on runner C
+    needs: [recipient,package]
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'cryptography==44.0.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: v2qa-private-test-key
+          path: ${{ runner.temp }}/key
+      - uses: actions/download-artifact@v4
+        with:
+          name: v2qa-encrypted-proofs
+          path: ${{ runner.temp }}/downloaded
+      - name: Restore independently without touching source
+        run: python tests/vision-v2-sequence-qa/cross-runner-qa/archive_across_runners.py restore --private "$RUNNER_TEMP/key/recipient-private.pem" --root "$RUNNER_TEMP/downloaded" --output "$RUNNER_TEMP/restored-from-other-runner.sqlite"
+      - name: Simulate truncated, tampered, missing archive, forged signature and wrong key
+        run: python tests/vision-v2-sequence-qa/cross-runner-qa/archive_across_runners.py faults --private "$RUNNER_TEMP/key/recipient-private.pem" --root "$RUNNER_TEMP/downloaded"
+      - name: Verify no source files, no release, and restored QA database intact
+        shell: bash
+        run: |
+          test -f "$RUNNER_TEMP/restored-from-other-runner.sqlite"
+          test ! -e "$RUNNER_TEMP/downloaded/recipient-private.pem"
+          echo 'CROSS_RUNNER_INDEPENDENT_RECOVERY=PASS'
+          echo 'NO_SOURCE_DELETION=true NO_SUPABASE=true NO_DEPLOY=true'
+  cqrs-partition-qa:
+    name: PG17 transactional event writes vs partitioned CQRS read projection
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    env:
+      VISION_V2_QA_POSTGRES_DSN: postgresql://postgres:qa-only-local-password@127.0.0.1:5432/vision_v2_quarantine_disposable
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard isolated DB and exact branch
+        shell: bash
+        run: |
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'CQRS_QA_ONLY=true NO_DEPLOY=true NO_SUPABASE=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'psycopg[binary]==3.2.6'
+      - name: Partition pruning, independent read model and rollback
+        run: python tests/vision-v2-sequence-qa/cqrs-partitions-qa/cqrs_partition_qa.py
+      - name: No production writes
+        run: echo 'CQRS_PG17_ISOLATED_ONLY=true'
