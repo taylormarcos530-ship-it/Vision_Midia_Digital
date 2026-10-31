@@ -18,6 +18,11 @@ function runtime(initial,opts={}){
   PLAYBACK_QUARANTINE_KEY:QUARANTINE,
   state:{deviceToken:'synthetic-only'},
   navigator:{onLine:opts.online!==false},
+  localStorage:{getItem(key){
+    if (opts.corruptQueue && key===QUEUE) return '{invalid queue JSON';
+    if (opts.corruptQuarantine && key===QUARANTINE) return '{invalid quarantine JSON';
+    return store[key]==null ? null : JSON.stringify(store[key]);
+  }},
   readJson:key=>store[key]??null,
   writeJson:(key,value)=>{
     if(key===QUARANTINE&&opts.failQuarantine)throw Error('simulated storage quota');
@@ -114,4 +119,21 @@ test('refuses to requeue invalid correction without erasing original',async()=>{
  assert.equal(v.store.queue,null);
  assert.equal(v.store.quarantine.length,1);
  assert.equal(v.store.quarantine[0].recovered_at,undefined);
+});
+
+test('malformed queue JSON fails closed, never resets or uploads original proof',async()=>{
+ const old=valid('only-local-proof');
+ const v=runtime([old],{corruptQueue:true});
+ await assert.rejects(v.api.flushPlaybackQueue(),/playback_storage_corrupt/);
+ assert.equal(v.calls.length,0);
+ assert.deepEqual(v.store.queue,[old]);
+ assert.throws(()=>v.api.queuePlayback(valid('new')),/playback_storage_corrupt/);
+ assert.deepEqual(v.store.queue,[old]);
+});
+test('malformed quarantine JSON blocks writes and preserves pending queue',async()=>{
+ const bad={client_event_id:'',started_at:'bad'};
+ const v=runtime([bad],{corruptQuarantine:true});
+ await assert.rejects(v.api.flushPlaybackQueue(),/playback_storage_corrupt/);
+ assert.equal(v.calls.length,0);
+ assert.deepEqual(v.store.queue,[bad]);
 });
