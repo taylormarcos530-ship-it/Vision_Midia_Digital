@@ -31,6 +31,7 @@ async function main(){
  pg('INSERT INTO public.device_commands(id,company_id,device_id,command_type,status) VALUES '+
  '('+q(CMD)+','+q(A)+','+q(TA)+",'sync_now','pending'),"+
  '('+q(CROSS)+','+q(B)+','+q(TB)+",'sync_now','pending')");
+ pg('TRUNCATE private.v30_bundle_write_audit RESTART IDENTITY');
  expected(await request('wrong-token'),401);
  expected(await request(token,undefined,'LegacyClient/1'),403);
  expected(await request(token,{action:'command_status',command_id:CMD}),400);
