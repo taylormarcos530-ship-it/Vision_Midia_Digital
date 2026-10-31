@@ -155,9 +155,15 @@ async function scanDevices(admin: any) {
         name + ' usa o APK ' + clip(device.apk_version, 45) + '. Versão oficial disponível: ' + target + '.')
       queued++
     }
-    const { error: stateError } = await admin.from('device_health_push_state')
-      .upsert(next, { onConflict: 'device_id' })
-    if (stateError) throw stateError
+    // Stage A: avoid an unchanged-state UPSERT; keep all alert decisions above intact.
+    const stateChanged = previous.connected !== connected ||
+      previous.active_error_key !== activeError ||
+      previous.outdated_apk_key !== outdated
+    if (stateChanged) {
+      const { error: stateError } = await admin.from('device_health_push_state')
+        .upsert(next, { onConflict: 'device_id' })
+      if (stateError) throw stateError
+    }
   }
   return { scanned: devices.length, queued, initialized, latest_apk: target || 'not_verified' }
 }
