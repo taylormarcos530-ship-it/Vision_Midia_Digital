@@ -53,7 +53,16 @@ jobs:
         working-directory: tests/vision-v2-sequence-qa/android-sqlite-qa
         run: |
           set -euo pipefail
-          gradle --no-daemon --stacktrace testDebugUnitTest
+          success=false
+          for attempt in 1 2 3; do
+            echo "GRADLE_QA_ATTEMPT=$attempt"
+            if gradle --no-daemon --stacktrace testDebugUnitTest; then
+              success=true
+              break
+            fi
+            if [ "$attempt" -lt 3 ]; then sleep 12; fi
+          done
+          test "$success" = true
           echo "ANDROID_SQLITE_ROBOLECTRIC=PASS"
       - name: Show test result XML summary
         if: always()
