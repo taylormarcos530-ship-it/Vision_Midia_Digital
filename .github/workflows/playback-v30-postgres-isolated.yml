@@ -1,0 +1,49 @@
+name: Vision V30 isolated PostgreSQL 17 verification
+on:
+  push:
+    branches:
+      - fix/playback-daily-retention-safe-20261030
+    paths:
+      - 'supabase/qa-migrations/v30_playback_compaction_staged.sql'
+      - 'tests/playback-compaction-v30.test.cjs'
+      - 'tests/v30-postgres-fixture.sql'
+      - 'tests/v30-postgres-assertions.sql'
+      - '.github/workflows/playback-v30-postgres-isolated.yml'
+  workflow_dispatch:
+jobs:
+  synthetic-sql-test:
+    runs-on: ubuntu-latest
+    services:
+      db:
+        image: postgres:17
+        env:
+          POSTGRES_DB: vision_v30_disposable_ci
+          POSTGRES_PASSWORD: local_only_test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v30_disposable_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: localhost
+      PGPORT: 5432
+      PGUSER: postgres
+      PGDATABASE: vision_v30_disposable_ci
+      PGPASSWORD: local_only_test_password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: JavaScript unit tests
+        run: node --test tests/playback-compaction-v30.test.cjs
+      - name: Install PostgreSQL client on disposable runner
+        run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
+      - name: Load exclusively synthetic schema and staged V30 migration
+        run: |
+          psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+      - name: SQL assertions against synthetic data only
+        run: psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-assertions.sql
