@@ -10,6 +10,7 @@ test('Starts disabled, with 7-day receipt retention', () => {
   assert.match(sql,/archive_verified_at IS NOT NULL/);
   assert.match(sql,/reporting_verified_at IS NOT NULL/);
   assert.match(sql,/offline_replay_verified_at IS NOT NULL/);
+  assert.match(sql,/dedupe_verified_at IS NOT NULL/);
   assert.match(sql,/COALESCE\(v_ok,false\)/);
 });
 
@@ -44,6 +45,13 @@ test('Archive report has RLS, authorization and original JSON keys', () => {
   for (const x of ["'timezone'","'summary'","'campaigns'","'devices'","'media'","'events'", "'completion_rate'"]) {
     assert.ok(sql.includes(x),x);
   }
+});
+
+test('No dangerous dedupe assumption: deletion requires explicit idempotency verification', () => {
+  assert.match(sql,/dedupe_verified_at timestamptz/);
+  assert.match(sql,/dedupe_verified_at IS NOT NULL/);
+  assert.match(sql,/No trigger or ledger is installed/);
+  assert.doesNotMatch(sql,/GRANT (?:UPDATE|ALL) ON TABLE private\.vision_playback_compaction_control_v30 TO authenticated/i);
 });
 
 test('SQL dollar quote delimiters balanced', () => {
