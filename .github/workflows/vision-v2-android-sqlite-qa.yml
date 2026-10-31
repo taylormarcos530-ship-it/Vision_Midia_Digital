@@ -33,13 +33,13 @@ jobs:
         with:
           distribution: temurin
           java-version: '17'
-      - name: Android SDK setup
-        uses: android-actions/setup-android@v3
-      - name: Android SDK 35 (test library only)
+      - name: Android SDK 35 (runner preinstalled command-line tools)
         shell: bash
         run: |
           set -euo pipefail
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+          test -x "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager"
+          "$ANDROID_HOME/cmdline-tools/16.0/bin/sdkmanager" --install "platforms;android-35" "build-tools;35.0.0"
       - name: Gradle 8.10.2 (only unit tests)
         uses: gradle/actions/setup-gradle@v4
         with:
