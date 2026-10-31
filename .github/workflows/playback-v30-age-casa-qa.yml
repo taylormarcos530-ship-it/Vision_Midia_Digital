@@ -48,7 +48,7 @@ jobs:
       - name: Prepare isolated PostgreSQL 17 and staged V30 fixtures
         run: |
           set -euo pipefail
-          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-fixture.sql
           psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
           psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
           psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
