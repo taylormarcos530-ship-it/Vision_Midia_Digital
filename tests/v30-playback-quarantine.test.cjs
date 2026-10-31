@@ -12,7 +12,7 @@ function runtime(initial,opts={}){
  const store={queue:initial.map(e=>structuredClone(e))};
  const calls=[];
  const api=vm.runInNewContext('(function(){'+source+
-  '\nreturn {queuePlayback,flushPlaybackQueue,isolateInvalidPlaybackEvents};})()',{
+  '\nreturn {queuePlayback,flushPlaybackQueue,isolateInvalidPlaybackEvents,recoverQuarantinedPlaybackEvent};})()',{
   Date,Array,Set,Promise,
   PLAYBACK_QUEUE_KEY:QUEUE,
   PLAYBACK_QUARANTINE_KEY:QUARANTINE,
@@ -86,4 +86,32 @@ test('offline: neither upload nor discard anything',async()=>{
  await v.api.flushPlaybackQueue();
  assert.equal(v.calls.length,0);
  assert.deepEqual(v.store.queue,[e]);
+});
+
+test('manual recovery retains entire original payload and requeues corrected event',async()=>{
+ const original={client_event_id:'',started_at:'wrong',notes:'receipt-id-original'};
+ const v=runtime([original]);
+ await v.api.flushPlaybackQueue();
+ assert.equal(v.store.quarantine.length,1);
+ assert.equal(v.store.queue,null);
+ const fixed={...original,client_event_id:'repaired-unique-id',started_at:'2026-10-30T10:00:00Z'};
+ assert.equal(v.api.recoverQuarantinedPlaybackEvent(0,fixed),true);
+ assert.equal(v.store.queue.length,1);
+ assert.equal(v.store.queue[0].client_event_id,'repaired-unique-id');
+ assert.equal(v.store.quarantine[0].event.notes,'receipt-id-original');
+ assert.equal(v.store.quarantine[0].recovered_client_event_id,'repaired-unique-id');
+ assert.ok(v.store.quarantine[0].recovered_at);
+ assert.equal(v.api.recoverQuarantinedPlaybackEvent(0,fixed),false);
+ await v.api.flushPlaybackQueue();
+ assert.equal(v.calls.length,1);
+ assert.equal(v.store.queue,null);
+ assert.equal(v.store.quarantine.length,1);
+});
+test('refuses to requeue invalid correction without erasing original',async()=>{
+ const v=runtime([{client_event_id:'',started_at:'wrong'}]);
+ await v.api.flushPlaybackQueue();
+ assert.throws(()=>v.api.recoverQuarantinedPlaybackEvent(0,{client_event_id:'',started_at:'bad'}),/invalid_recovery_event/);
+ assert.equal(v.store.queue,null);
+ assert.equal(v.store.quarantine.length,1);
+ assert.equal(v.store.quarantine[0].recovered_at,undefined);
 });
