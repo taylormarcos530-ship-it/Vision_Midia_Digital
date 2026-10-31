@@ -36,6 +36,6 @@ CREATE TABLE v2_quarantine_qa.receipts(
  FOREIGN KEY(company_id,device_id) REFERENCES v2_quarantine_qa.devices(company_id,device_id)
 );
 CREATE INDEX receipts_pending_by_company ON v2_quarantine_qa.receipts(company_id,device_id,sequence);
-REVOKE ALL ON ALL TABLES IN SCHEMA v2_quarantine_qa FROM PUBLIC,anon,authenticated;
+REVOKE ALL ON ALL TABLES IN SCHEMA v2_quarantine_qa FROM PUBLIC;
 -- DB user in this workflow is synthetic postgres superuser; no real roles,
 -- credentials, URL, schema deployment or Supabase calls.
