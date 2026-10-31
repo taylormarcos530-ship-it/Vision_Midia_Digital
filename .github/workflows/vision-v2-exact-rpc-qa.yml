@@ -1,0 +1,56 @@
+name: Vision V2 Exact GitHub RPC JSON CQRS RLS Restore QA - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/exact-rpc-qa/**'
+      - '.github/workflows/vision-v2-exact-rpc-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  original-rpc:
+    name: PG17 original report/export SQL vs CQRS, São Paulo timezone, JWT/RLS and restore
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - name: Read-only checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert branch isolated and no production access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          test -f supabase/migrations/20260908025620_add_playback_report_rpc.sql
+          test -f supabase/migrations/20260908025854_add_playback_export_rpc.sql
+          echo 'QA_DISPOSABLE_POSTGRES17=true NO_SUPABASE=true NO_DEPLOY=true NO_MAIN=true'
+          echo 'NO_APK=true NO_PANEL=true NO_SITE=true NO_TVS=true NO_DELETE_SOURCE=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PG17 driver only
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Real original GitHub SQL RPC with full JSON, CQRS, RLS and restore
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/exact-rpc-qa/verify.py
+          echo 'V2_EXACT_RPC_QA_PASS=true'
+      - name: Safety
+        if: always()
+        run: echo 'NO_PRODUCTION_SQL=true NO_MERGE=true NO_DEPLOY=true NO_APK=true NO_TVS=true'
