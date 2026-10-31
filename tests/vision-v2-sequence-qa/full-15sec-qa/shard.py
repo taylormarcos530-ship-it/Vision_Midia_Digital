@@ -281,7 +281,7 @@ def bench(shard):
                         # Lost ACK after successful database commit: retry as
                         # read-only proof equality, no duplication.
                         duplicate+=verify_replay(pg,device,rows)
-                    total+=BATCH
+                    total+=len(rows)
                     batches+=1
                     if batches%1200==0:
                         size,wal=gated(pg,start_wal,started,f"{i}-batch{batches}",True)
