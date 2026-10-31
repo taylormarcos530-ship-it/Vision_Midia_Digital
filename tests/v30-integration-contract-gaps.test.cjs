@@ -18,7 +18,10 @@ test('IN02 player independently acknowledges only successful full-length batches
  assert.match(qa,/response\.events\?\.ok\s*&&\s*response\.events\.data\?\.accepted\s*===\s*events\.length/);
 });
 test('IN03 gateway rejects mixed invalid proof batches before upsert',()=>{
- const block=segment(gateway,"if (action === 'playback' || action === 'playback_batch')","if (action === '");
+ const start=gateway.indexOf("if (action === 'playback' || action === 'playback_batch')");
+ const end=gateway.indexOf(".from('playback_logs')",start);
+ assert.ok(start>=0&&end>start,'gateway playback validation and storage missing');
+ const block=gateway.slice(start,end+".from('playback_logs')".length);
  assert.match(block,/invalid_playback_event/);assert.match(block,/playback_logs/);
 });
 test('IN04 bundle playback rejects invalid proof batches atomically',()=>{
