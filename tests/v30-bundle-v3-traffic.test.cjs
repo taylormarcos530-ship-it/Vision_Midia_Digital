@@ -22,7 +22,7 @@ const doTouch=new AsyncFunction('credential','admin','device','Date','console',
  touch+'\nreturn true;');
 const doSweep=new AsyncFunction('admin','device','body','Date','console',
  'lastOfflineSweepByCompany','offlineSweepInFlight',
- sweep+'\nreturn true;\n}');
+ 'const action = body?.action;\n'+sweep+'\nreturn true;\n}');
 const nowBase=Date.parse('2026-10-31T10:07:00.000Z');
 function Clock(epoch) {
  return class FrozenDate extends Date {
