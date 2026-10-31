@@ -1,0 +1,62 @@
+name: Vision V2 PostgreSQL 17 Watermark QA - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/postgres-*.sql'
+      - '.github/workflows/vision-v2-sequence-postgres-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  postgres-v2:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout read only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert isolated branch and no real credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'POSTGRESQL_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true'
+      - name: Run PostgreSQL 17 synthetic SQL and concurrency
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm -d --name visionv2pg \
+            -e POSTGRES_PASSWORD=localtestonly \
+            -e POSTGRES_DB=vision_v2_qa_disposable \
+            postgres:17-alpine
+          trap 'docker rm -f visionv2pg >/dev/null 2>&1 || true' EXIT
+          for i in $(seq 1 40); do
+            if docker exec visionv2pg pg_isready -U postgres -d vision_v2_qa_disposable >/dev/null 2>&1; then break; fi
+            sleep 1
+          done
+          docker exec -i visionv2pg psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable \
+            < tests/vision-v2-sequence-qa/postgres-schema.sql
+          docker exec -i visionv2pg psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable \
+            < tests/vision-v2-sequence-qa/postgres-assertions.sql
+          pids=()
+          for i in $(seq 1 6); do
+            docker exec visionv2pg psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable -Atc \
+              "SELECT qa_sequence.accept_batch('tv-concurrent','stream-c','test-c',jsonb_build_array(jsonb_build_object('sequence',1,'media','CONCURRENT','played_at',now()::text,'completed',true,'seconds',15),jsonb_build_object('sequence',2,'media','CONCURRENT','played_at',now()::text,'completed',true,'seconds',15)));" \
+              >> "$RUNNER_TEMP/vision-v2-concurrent.log" &
+            pids+=("$!")
+          done
+          for pid in "${pids[@]}"; do wait "$pid"; done
+          cat "$RUNNER_TEMP/vision-v2-concurrent.log"
+          docker exec -i visionv2pg psql -v ON_ERROR_STOP=1 -U postgres -d vision_v2_qa_disposable <<'SQL'
+          DO $qa$
+          DECLARE w bigint; n bigint;
+          BEGIN
+            SELECT watermark INTO w FROM qa_sequence.devices WHERE id='tv-concurrent';
+            SELECT coalesce(sum(starts),0) INTO n FROM qa_sequence.daily WHERE device_id='tv-concurrent';
+            IF w<>2 OR n<>2 THEN RAISE EXCEPTION 'FAIL_CONCURRENT: watermark=%,starts=%',w,n; END IF;
+            RAISE NOTICE 'PASS_CONCURRENT: 6 writers, 2 accepted events, 0 duplicate counts';
+          END $qa$;
+          SQL
+          echo 'POSTGRES_17_SQL_AND_CONCURRENCY=PASS'
