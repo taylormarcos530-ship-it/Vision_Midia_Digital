@@ -61,4 +61,6 @@ CREATE TRIGGER audit_bundle_heartbeats AFTER INSERT ON public.device_heartbeats
  FOR EACH ROW EXECUTE FUNCTION private.v30_bundle_write_audit_fn();
 GRANT SELECT,INSERT,UPDATE,DELETE ON public.device_commands,public.device_heartbeats TO service_role;
 GRANT SELECT ON private.v30_bundle_write_audit TO service_role;
+GRANT INSERT ON private.v30_bundle_write_audit TO service_role;
+GRANT USAGE ON SEQUENCE private.v30_bundle_write_audit_id_seq TO service_role;
 -- Never add these QA-only audit objects to production.
