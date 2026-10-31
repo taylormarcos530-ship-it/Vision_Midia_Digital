@@ -14,6 +14,7 @@
   const MANIFEST_KEY = 'vision_player_manifest_v1';
   const MEDIA_CACHE = 'vision-player-media-v1';
   const PLAYBACK_QUEUE_KEY = 'vision_player_playback_queue_v1';
+  const PLAYBACK_QUARANTINE_KEY = 'vision_player_playback_quarantine_v30';
   const DEVICE_EVENT_QUEUE_KEY = 'vision_player_device_event_queue_v1';
   // QA telemetry uses the existing heartbeat; it does not create API calls.
   // Counts are cumulative attempts, not official Supabase billable invocations.
@@ -268,10 +269,55 @@
     return Array.isArray(queue) ? queue : [];
   }
 
+  function appendPlaybackQuarantine(entries) {
+    // Preserve complete original event payloads locally BEFORE reducing the
+    // active queue. A storage/quota error must abort the operation, never
+    // silently discard proofs. No additional network request is generated.
+    if (!entries.length) return;
+    const existing = readJson(PLAYBACK_QUARANTINE_KEY);
+    const prior = Array.isArray(existing) ? existing : [];
+    const quarantined = prior.concat(entries.map(({ event, reason }) => ({
+      event, reason, quarantined_at: new Date().toISOString(),
+    })));
+    writeJson(PLAYBACK_QUARANTINE_KEY, quarantined);
+  }
+
+  function playbackEventValidationError(event) {
+    const id = event && typeof event === 'object' ? event.client_event_id : null;
+    if (typeof id !== 'string' || !id || id.length > 120) return 'invalid_client_event_id';
+    const startedAt = new Date(event.started_at || Date.now());
+    if (Number.isNaN(startedAt.getTime())) return 'invalid_started_at';
+    if (event.ended_at && Number.isNaN(new Date(event.ended_at).getTime())) return 'invalid_ended_at';
+    return null;
+  }
+
+  function isolateInvalidPlaybackEvents() {
+    const existing = playbackQueue();
+    const bad = [], good = [];
+    for (const event of existing) {
+      const reason = playbackEventValidationError(event);
+      if (reason) bad.push({ event, reason });
+      else good.push(event);
+    }
+    if (!bad.length) return good;
+    appendPlaybackQuarantine(bad);
+    // No async pause between the read and write: events added to the queue
+    // during a network request are handled on the next iteration.
+    writeJson(PLAYBACK_QUEUE_KEY, good.length ? good : null);
+    return good;
+  }
+
   function queuePlayback(event) {
     const queue = playbackQueue();
     queue.push(event);
-    if (queue.length > 2000) queue.splice(0, queue.length - 2000);
+    if (queue.length > 2000) {
+      const excess = queue.splice(0, queue.length - 2000);
+      // Archive excess first, then persist the trimmed active queue.
+      // If local storage is full, throw rather than silently discard originals.
+      appendPlaybackQuarantine(excess.map(event => ({
+        event, reason: 'active_queue_capacity',
+      })));
+    }
     writeJson(PLAYBACK_QUEUE_KEY, queue);
   }
 
@@ -282,7 +328,7 @@
     // Only one uploader is allowed to read and acknowledge queued events.
     // Concurrent automatic + forced uploads used to resend the same records.
     playbackFlushInFlight = (async () => {
-      let queue = playbackQueue();
+      let queue = isolateInvalidPlaybackEvents();
       while (queue.length && state.deviceToken && navigator.onLine) {
         const batch = queue.slice(0, 50);
         await gateway({ action: 'playback_batch', events: batch });
@@ -292,7 +338,7 @@
         const latest = playbackQueue();
         const remainder = latest.filter(event => !confirmed.has(event.client_event_id));
         writeJson(PLAYBACK_QUEUE_KEY, remainder.length ? remainder : null);
-        queue = remainder;
+        queue = isolateInvalidPlaybackEvents();
       }
     })();
     try { await playbackFlushInFlight; }
