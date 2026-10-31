@@ -5,6 +5,7 @@ on:
     paths:
       - 'tests/v30-native-supabase-rls.sql'
       - 'tests/v30-native-supabase-e2e.cjs'
+      - 'supabase/functions/device-gateway/index.ts'
       - '.github/workflows/playback-v30-native-supabase-local.yml'
   workflow_dispatch:
 
