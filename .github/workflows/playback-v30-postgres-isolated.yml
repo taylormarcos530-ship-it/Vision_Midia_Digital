@@ -8,6 +8,10 @@ on:
       - 'tests/playback-compaction-v30.test.cjs'
       - 'tests/v30-postgres-fixture.sql'
       - 'tests/v30-postgres-assertions.sql'
+      - 'supabase/qa-migrations/v30_playback_dedupe_guard.sql'
+      - 'tests/v30-dedupe-static.test.cjs'
+      - 'tests/v30-postgres-dedupe-assertions.sql'
+      - 'tests/v30-postgres-concurrency.sh'
       - '.github/workflows/playback-v30-postgres-isolated.yml'
   workflow_dispatch:
 jobs:
@@ -38,7 +42,9 @@ jobs:
         with:
           node-version: '22'
       - name: JavaScript unit tests
-        run: node --test tests/playback-compaction-v30.test.cjs
+        run: |
+          node --test tests/playback-compaction-v30.test.cjs
+          node --test tests/v30-dedupe-static.test.cjs
       - name: Install PostgreSQL client on disposable runner
         run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
       - name: Load exclusively synthetic schema and staged V30 migration
@@ -47,3 +53,15 @@ jobs:
           psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
       - name: SQL assertions against synthetic data only
         run: psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-assertions.sql
+
+      - name: Dedupe V30 in separate disposable PostgreSQL 17 database
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_dedupe_ci'
+          PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-fixture.sql
+          PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-dedupe-assertions.sql
+      - name: Real concurrent PostgreSQL sessions: archive vs late replay
+        env:
+          PGDATABASE: vision_v30_dedupe_ci
+        run: bash tests/v30-postgres-concurrency.sh
