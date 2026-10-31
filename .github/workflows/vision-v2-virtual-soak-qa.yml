@@ -1,0 +1,65 @@
+name: Vision V2 Virtual 24h-7d Soak 100-300 TV - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/virtual-soak-qa/**'
+      - '.github/workflows/vision-v2-virtual-soak-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  virtual-soak:
+    name: PostgreSQL 17 SQLite HTTP ${{ matrix.days }}d ${{ matrix.tv }} TVs
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        include:
+          - {days: 1, tv: 100}
+          - {days: 1, tv: 300}
+          - {days: 7, tv: 100}
+          - {days: 7, tv: 300}
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - name: Checkout isolated branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Safety guard and synthetic cadence disclosure
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_TVS=true'
+          echo 'VIRTUAL_CLOCK=true SAMPLE_RATE_24H=1_PER_300S SAMPLE_RATE_7D=1_PER_900S'
+          echo 'NOT_A_15S_7DAY_STRESS_BENCHMARK=true'
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install PostgreSQL test driver only
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Run real local SQLite/HTTP/PG17 backed virtual-time matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/vision-v2-sequence-qa/virtual-soak-qa/soak.py --tvs ${{ matrix.tv }} --days ${{ matrix.days }}
+          echo 'V2_SOAK_MATRIX_PASS=true'
+      - name: Final no production access
+        if: always()
+        run: echo 'NO_PRODUCTION_DATABASE=true NO_SUPABASE=true NO_DEPLOY=true NO_TV_INSTALL=true'
