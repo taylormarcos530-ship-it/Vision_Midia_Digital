@@ -89,7 +89,7 @@ begin
       v_event_id := v_event->>'event_id';
       if length(v_event_id) not between 8 and 128 or v_event_id !~ '^[A-Za-z0-9_-]+$'
         or (v_event->>'media_id') !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-        or (v_event->>'played_at') !~ '^\\d{4}-\\d{2}-\\d{2}T'
+        or (v_event->>'played_at') !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T'
       then
         raise exception using errcode='22023', message='invalid_playback_event';
       end if;
