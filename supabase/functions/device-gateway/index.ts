@@ -529,7 +529,7 @@ Deno.serve(async (req) => {
       // Only a fully authenticated/authorized TV can register its own token.
       // Never return the raw registration token to the dashboard or logs.
       const token = String(body?.fcm_token || '').trim()
-      if (token.length < 50 || token.length > 4096 || !/^[A-Za-z0-9_:\\-=.]+$/.test(token)) {
+      if (token.length < 50 || token.length > 4096 || !/^[A-Za-z0-9_:=.-]+$/.test(token)) {
         return json({ error:'invalid_push_token' }, 400)
       }
       const { error: registrationError } = await admin.from('device_push_tokens').upsert({
