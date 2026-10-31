@@ -112,19 +112,21 @@ class Client:
             CREATE TABLE IF NOT EXISTS receipt (
               seq bigint PRIMARY KEY,event_id text UNIQUE NOT NULL,
               media text NOT NULL,boot text NOT NULL,mono bigint NOT NULL,
+              rtc_epoch_ms bigint NOT NULL CHECK(rtc_epoch_ms=0),
               played_at text NULL CHECK(played_at IS NULL));""")
     def reboot(self):
         self.db.close()
         self._open()
         assert self.db.execute("PRAGMA integrity_check").fetchone()[0]=="ok"
+        assert self.db.execute("SELECT count(*) FROM receipt WHERE rtc_epoch_ms<>0 OR played_at IS NOT NULL").fetchone()[0]==0
     def ack(self):return self.db.execute("SELECT ack FROM state WHERE singleton=1").fetchone()[0]
     def append(self,seq,seconds):
         boot="boot-A" if seconds<900 else "boot-B"
         # RTC is 1970 in both boots. Wall clock never used for receipt time.
         mono=seconds*1000 if boot=="boot-A" else (seconds-900)*1000
         with self.db:
-            self.db.execute("""INSERT INTO receipt(seq,event_id,media,boot,mono,played_at)
-                VALUES(?,?,?,?,?,NULL)""",
+            self.db.execute("""INSERT INTO receipt(seq,event_id,media,boot,mono,rtc_epoch_ms,played_at)
+                VALUES(?,?,?,?,?,0,NULL)""",
                (seq,f"event-{seq:08d}",f"ad-{seq%8}",boot,mono))
     def pending(self):
         ack=self.ack()
@@ -435,6 +437,11 @@ def get_metrics(server,tvs,clients,wal_start):
     assert counts["gets"]<=tvs*5,counts
     assert observed_requests<theoretical_baseline
     assert all(c.ack()==PER_TV and c.pending_count()==0 and c.rev==1 for c in clients)
+    # Explicit RTC=1970 fixture persists across boot and does not create playback timestamps.
+    for client in clients:
+        assert client.db.execute("SELECT count(*) FROM receipt WHERE rtc_epoch_ms<>0 OR played_at IS NOT NULL").fetchone()[0]==0
+        assert client.db.execute("SELECT count(DISTINCT boot) FROM receipt").fetchone()[0]==2
+        assert client.db.execute("SELECT count(*) FROM receipt").fetchone()[0]==PER_TV
     lengths=[len(c.latencies) for c in clients]
     latencies=[v for c in clients for v in c.latencies]
     diskbytes=sum(c.path.stat().st_size+c.path.with_suffix(".sqlite-wal").stat().st_size
