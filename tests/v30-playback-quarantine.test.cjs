@@ -79,7 +79,7 @@ test('bad start and end dates isolated without sending them',async()=>{
  assert.equal(v.calls.length,1);
  assert.equal(v.calls[0].events.length,1);
  assert.equal(v.store.quarantine.length,2);
- assert.deepEqual(v.store.quarantine.map(e=>e.reason),['invalid_started_at','invalid_ended_at']);
+ assert.deepEqual(Array.from(v.store.quarantine,e=>e.reason),['invalid_started_at','invalid_ended_at']);
 });
 test('offline: neither upload nor discard anything',async()=>{
  const e=valid('offline-pending');const v=runtime([e],{online:false});
