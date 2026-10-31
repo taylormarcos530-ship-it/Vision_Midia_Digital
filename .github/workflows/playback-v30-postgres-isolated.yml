@@ -19,6 +19,10 @@ on:
       - 'tests/v30-packed-ledger-scale.sql'
       - 'tests/v30-backup-restore-disposable.sh'
       - 'tests/v30-ledger-baseline-scale.sql'
+      - 'supabase/qa-migrations/v30_playback_segmented_ledger_qa.sql'
+      - 'tests/v30-segmented-ledger-scale.sql'
+      - 'tests/v30-segmented-backup-restore-disposable.sh'
+      - 'tests/v30-segmented-concurrency.sh'
       - '.github/workflows/playback-v30-postgres-isolated.yml'
   workflow_dispatch:
 jobs:
@@ -100,3 +104,23 @@ jobs:
         env:
           PGDATABASE: vision_v30_scale_ci
         run: bash tests/v30-backup-restore-disposable.sh
+
+      - name: Segmented V30 ledgers, 7-day retention, 300k keys and baseline comparison
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_segmented_ci'
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_segmented_ledger_qa.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f tests/v30-seven-day-retention-scale.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f tests/v30-segmented-ledger-scale.sql
+          PGDATABASE=vision_v30_segmented_ci psql -v ON_ERROR_STOP=1 -f tests/v30-ledger-baseline-scale.sql
+      - name: Segmented archive versus retry - two PostgreSQL sessions
+        env:
+          PGDATABASE: vision_v30_segmented_ci
+        run: bash tests/v30-segmented-concurrency.sh
+      - name: Full segmented synthetic pg_dump/pg_restore and replay check
+        env:
+          PGDATABASE: vision_v30_segmented_ci
+        run: bash tests/v30-segmented-backup-restore-disposable.sh
