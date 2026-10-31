@@ -75,6 +75,7 @@ public final class SequenceStoreCapacityTest {
         long accepted=number("PRAGMA max_page_count="+goal);
         assertEquals("page limit not applied",goal,accepted);
         boolean gotRealFull=false;
+        boolean androidSubclassObserved=false;
         long before=0;
         int faultAt=-1;
         // Fail with SQLITE_FULL via physical database page quota, not a trigger.
@@ -82,10 +83,26 @@ public final class SequenceStoreCapacityTest {
             for(int i=1;i<=500;i++){
                 before=queue.snapshot().nextSequence;
                 try { queue.append(event(i),time(i),false); }
-                catch(SQLiteFullException full){ gotRealFull=true;faultAt=i;break; }
-                catch(SQLiteException other){throw new AssertionError("expected SQLiteFullException, got "+other,other);}
+                catch(SQLiteFullException full){
+                    gotRealFull=true;androidSubclassObserved=true;faultAt=i;
+                    System.out.println("QA_SQLITE_FULL_CLASS="+full.getClass().getName());
+                    System.out.println("QA_SQLITE_FULL_MESSAGE="+full.getMessage());break;
+                }
+                catch(SQLiteException other){
+                    String details=other.toString().toLowerCase(Locale.ROOT);
+                    System.out.println("QA_SQLITE_FULL_CLASS="+other.getClass().getName());
+                    System.out.println("QA_SQLITE_FULL_MESSAGE="+other.getMessage());
+                    // Robolectric JVM sometimes maps native SQLITE_FULL (code 13)
+                    // to SQLiteException rather than Android SQLiteFullException.
+                    assertTrue("not a verifiable native SQLITE_FULL: "+other,
+                        details.contains("sqlite_full") || details.contains("code 13") ||
+                        details.contains("database or disk is full") || details.contains("database full"));
+                    gotRealFull=true;faultAt=i;break;
+                }
             }
             assertTrue("SQLite never hit SQLITE_FULL under max_page_count="+goal,gotRealFull);
+            System.out.println("QA_NATIVE_SQLITE_FULL_CONFIRMED=true");
+            System.out.println("QA_ANDROID_SQLITEFULL_SUBCLASS_OBSERVED="+androidSubclassObserved);
             assertEquals("counter advanced after failed insert",before,queue.snapshot().nextSequence);
             assertEquals(before-1,queue.snapshot().pending);
         } finally {
