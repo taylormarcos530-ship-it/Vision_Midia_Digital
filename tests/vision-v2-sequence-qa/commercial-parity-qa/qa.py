@@ -165,8 +165,13 @@ def raw_vs_cqrs(c,company,first,last,campaign=None,device=None,media=None):
                 val="count(*),count(*) FILTER(WHERE completed),sum(seconds),min(started_at),max(started_at)"
             else:
                 val="sum(started),sum(completed),sum(total_seconds),min(first_play),max(last_play)"
-            return sorted(map(repr,c.execute(f"""SELECT {cols}{val}
-                    FROM qa_commercial.{table} WHERE {condition} GROUP BY {group}""",args).fetchall()))
+            fetched=c.execute(f"""SELECT {cols}{val}
+                    FROM qa_commercial.{table} WHERE {condition} GROUP BY {group}""",args).fetchall()
+            # SUM(bigint) is NUMERIC in PostgreSQL; compare semantic values,
+            # not Python's int-vs-Decimal representation.
+            def norm(row):
+                return tuple(int(v) if isinstance(v,Decimal) and v==v.to_integral_value() else v for v in row)
+            return sorted(map(repr,(norm(row) for row in fetched)))
         assert agg("playback")==agg("daily"),(company,group,first,last,campaign,device,media)
 def parity():
     checked=0
