@@ -23,6 +23,9 @@ on:
       - 'tests/v30-segmented-ledger-scale.sql'
       - 'tests/v30-segmented-backup-restore-disposable.sh'
       - 'tests/v30-segmented-concurrency.sh'
+      - 'tests/v30-playback-gateway-ack.test.cjs'
+      - 'tests/v30-gateway-segmented-integration.sql'
+      - 'supabase/functions/device-gateway/index.ts'
       - '.github/workflows/playback-v30-postgres-isolated.yml'
   workflow_dispatch:
 jobs:
@@ -56,6 +59,7 @@ jobs:
         run: |
           node --test tests/playback-compaction-v30.test.cjs
           node --test tests/v30-dedupe-static.test.cjs
+          node --test tests/v30-playback-gateway-ack.test.cjs
       - name: Install PostgreSQL client on disposable runner
         run: sudo apt-get update -qq && sudo apt-get install -y postgresql-client
       - name: Load exclusively synthetic schema and staged V30 migration
@@ -124,3 +128,13 @@ jobs:
         env:
           PGDATABASE: vision_v30_segmented_ci
         run: bash tests/v30-segmented-backup-restore-disposable.sh
+
+      - name: Gateway idempotent ACK + 64-65 segments, 20 TVs and tenant isolation
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_gateway_ci'
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1
+          PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_segmented_ledger_qa.sql
+          PGDATABASE=vision_v30_gateway_ci psql -v ON_ERROR_STOP=1 -f tests/v30-gateway-segmented-integration.sql
