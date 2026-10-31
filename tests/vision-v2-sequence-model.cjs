@@ -121,7 +121,8 @@ class DurableJournal {
     this.events.push(e);this.lastIssued++;return e;
   }
   ack(response) {
-    if(!response||response.ok!==true||!Number.isSafeInteger(response.committedThrough))
+    if(!response||response.ok!==true||!Number.isSafeInteger(response.committedThrough)
+      || response.committedThrough<0 || response.committedThrough>this.lastIssued)
       throw Error('ack_invalid');
     // O ACK precisa vir da conexão autenticada/TLS na implementação real.
     this.events=this.events.filter(e=>e.seq>response.committedThrough);
