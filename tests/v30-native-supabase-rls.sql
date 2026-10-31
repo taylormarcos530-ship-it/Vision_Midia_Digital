@@ -35,19 +35,8 @@ GRANT ALL ON public.device_credentials, public.company_subscriptions,
 GRANT SELECT,UPDATE ON private.vision_playback_compaction_control_v30 TO service_role;
 GRANT SELECT,INSERT,UPDATE ON private.vision_playback_seen_segments_v30 TO service_role;
 
--- If pg 17 and real PostgREST are in use, service-role ingestion must be
--- executable without touching unrelated Company/Devices APIs.
-INSERT INTO public.companies(id,timezone,status) VALUES
- ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','America/Sao_Paulo','active'),
- ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','America/Sao_Paulo','active');
-INSERT INTO public.devices(id,company_id,name) VALUES
- ('10000000-0000-4000-8000-000000000001','aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','TV Alpha QA'),
- ('10000000-0000-4000-8000-000000000002','bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','TV Beta QA');
-INSERT INTO public.company_subscriptions(company_id,status,payment_status) VALUES
- ('aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa','active','waived'),
- ('bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb','active','waived');
-
--- No automatic compaction; all flags stay off.
+-- The two companies/devices/subscriptions are seeded once by
+-- tests/v30-http-qa-fixture.sql, not repeated here.
 DO $qa$
 BEGIN
  IF (SELECT enabled FROM private.vision_playback_compaction_control_v30 WHERE id=1)
