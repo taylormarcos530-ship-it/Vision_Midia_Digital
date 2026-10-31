@@ -4,5 +4,3 @@ dependencyResolutionManagement {
   repositories { google(); mavenCentral() }
 }
 rootProject.name = 'VisionV2AndroidSqliteQA'
-include ':library'
-project(':library').projectDir = file('.')
