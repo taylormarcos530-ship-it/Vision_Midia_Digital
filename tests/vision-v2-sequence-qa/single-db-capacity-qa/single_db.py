@@ -307,6 +307,7 @@ def concurrent_http(count,loaded):
             n=one(c,"SELECT count(*) FROM qa_single.proofs")
             assert n==loaded+50*count
             assert one(c,"SELECT count(*) FROM qa_single.proofs WHERE billable OR played_at IS NOT NULL")==0
+            lock_wait_sample=one(c,"SELECT count(*) FROM pg_stat_activity WHERE datname=current_database() AND wait_event_type='Lock'")
         return {"clients_concurrent":count,"actual_http_posts":service.posts,
                 "http_successful_clients":len(outcomes),"http_error_attempts":service.failed,
                 "p95_http_ms":p95(durations),"wall_seconds":round(time.perf_counter()-begin,2),
@@ -314,7 +315,7 @@ def concurrent_http(count,loaded):
                 "duplicate_receipts":service.duplicates,
                 "retry_attempts":sum(o["retries"] for o in outcomes),
                 "source_rows_verified":n,
-                "db_pool_permits":16,"pg_lock_waiters_sample":metrics(c,c.execute("SELECT pg_current_wal_insert_lsn()").fetchone()[0])["pg_lock_waiters_sample"]}
+                "db_pool_permits":16,"pg_lock_waiters_sample":lock_wait_sample}
     finally:service.shutdown();service.server_close();t.join(4)
 def main(target):
     started=time.monotonic()
