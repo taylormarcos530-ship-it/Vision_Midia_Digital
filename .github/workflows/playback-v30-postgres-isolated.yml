@@ -12,6 +12,9 @@ on:
       - 'tests/v30-dedupe-static.test.cjs'
       - 'tests/v30-postgres-dedupe-assertions.sql'
       - 'tests/v30-postgres-concurrency.sh'
+      - 'supabase/qa-migrations/v30_playback_packed_ledger_qa.sql'
+      - 'tests/v30-postgres-packed-assertions.sql'
+      - 'tests/v30-postgres-packed-concurrency.sh'
       - '.github/workflows/playback-v30-postgres-isolated.yml'
   workflow_dispatch:
 jobs:
@@ -65,3 +68,16 @@ jobs:
         env:
           PGDATABASE: vision_v30_dedupe_ci
         run: bash tests/v30-postgres-concurrency.sh
+
+      - name: Packed dedupe V30 in third disposable PostgreSQL 17 database
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_packed_ci'
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | PGDATABASE=vision_v30_packed_ci psql -v ON_ERROR_STOP=1
+          PGDATABASE=vision_v30_packed_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          PGDATABASE=vision_v30_packed_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          PGDATABASE=vision_v30_packed_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          PGDATABASE=vision_v30_packed_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-packed-assertions.sql
+      - name: 'Real concurrent PostgreSQL sessions - packed archive versus late replay'
+        env:
+          PGDATABASE: vision_v30_packed_ci
+        run: bash tests/v30-postgres-packed-concurrency.sh
