@@ -6,7 +6,7 @@ const vm=require('node:vm');
 const src=fs.readFileSync('player.js','utf8');
 const readStart=src.indexOf('  function readJson(key) {');
 const readEnd=src.indexOf('  const TRAFFIC_ACTIONS',readStart);
-const queueStart=src.indexOf('  function playbackQueue() {');
+const queueStart=src.indexOf('  function strictPlaybackStoredArray(key) {');
 const queueEnd=src.indexOf('\n  function deviceEventQueue()',queueStart);
 assert.ok(readStart>0 && readEnd>readStart && queueStart>readEnd && queueEnd>queueStart);
 const snippet=src.slice(readStart,readEnd)+'\n'+src.slice(queueStart,queueEnd);
