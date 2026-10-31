@@ -100,7 +100,7 @@ class Service(ThreadingHTTPServer):
         with self.mu:
             if key in self.network_fail:return False
             self.network_fail.add(key)
-            self.errors_503+=1
+            # Handler accounts the single 503 response; do not double count.
         return True
     def ingest(self,payload,token):
         if not isinstance(payload,dict) or set(payload)!={"device","company","events"}:
@@ -299,6 +299,11 @@ def cohort(n):
                      "requests":status["posts"],"accepted_rows":n*WAVES*BATCH,
                      "transient_errors_503":status["errors_503"],
                      "retries":sum(attempts),"duplicate_events":status["replayed"],
+                     "network_failures_injected":status["network_fail"],
+                     "lost_ack_after_commit_injected":status["after_commit_fail"],
+                     "atomic_sql_rollback_injected":status["rollback_fail"],
+                     "cross_tenant_auth_rejections":status["unauth"],
+                     "payload_or_gap_conflicts":status["conflicts"],
                      "max_batch":status["max_batch"],"max_pg_lock_waiters_sample":sampler.max_lock,
                      "max_pg_backends_seen":sampler.max_backend,
                      "max_python_rss_kib":sampler.max_rss,
@@ -312,6 +317,8 @@ def cohort(n):
             assert status["after_commit_fail"]==n
             assert status["network_fail"]==n*2
             assert status["rollback_fail"]==1
+            assert status["errors_503"]==3*n+1
+            assert sum(attempts)==3*n+1
             assert len(lat)>=n*WAVES
             return metrics
     finally:
