@@ -89,6 +89,8 @@ class Client:
         self.token=f"qa-token-{index:03d}-only-example-string"
         self.path=Path(root)/(self.device+".sqlite")
         self.db=None
+        # Each TV has one connection; accesses are phase-serialized in QA.
+        # Cross-thread access is enabled only for the worker per-TV upload phase.
         self._open()
         self.rev=0
         self.last_check=-9999
@@ -100,7 +102,7 @@ class Client:
         self.http_errors=0
         self.commands_updated=0
     def _open(self):
-        self.db=sqlite3.connect(self.path,timeout=5)
+        self.db=sqlite3.connect(self.path,timeout=5,check_same_thread=False)
         self.db.execute("PRAGMA journal_mode=WAL")
         self.db.execute("PRAGMA synchronous=FULL")
         self.db.executescript("""CREATE TABLE IF NOT EXISTS state (
