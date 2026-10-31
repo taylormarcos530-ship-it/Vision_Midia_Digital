@@ -204,12 +204,8 @@ class ExternalStoreQATests(unittest.TestCase):
     def test_pg_manifest_commit_failure_creates_verified_orphan_no_ack(self):
         with psycopg.connect(rp.DSN) as db:
             db.execute("""CREATE OR REPLACE FUNCTION v2_replay_qa.fail_manifest_remote()
-                 RETURNS trigger LANGUAGE plpgsql AS $$
-                 BEGIN IF NEW.device_id=%s THEN RAISE EXCEPTION 'qa_manifest_failed'; END IF;
-                 RETURN NEW; END $$""",(self.device,))
-        # Database functions cannot bind identifiers/PLpgSQL body safely with
-        # psycopg server parameters. Use trigger on test database instead.
-        # If earlier CREATE fails, test must fail and make the issue visible.
+                 RETURNS trigger LANGUAGE plpgsql AS $
+                 BEGIN RAISE EXCEPTION 'qa_manifest_failed'; END $""")
         with psycopg.connect(rp.DSN) as db:
             db.execute("""CREATE TRIGGER qa_remote_manifest_fault
                 BEFORE INSERT ON v2_replay_qa.segment_manifests
