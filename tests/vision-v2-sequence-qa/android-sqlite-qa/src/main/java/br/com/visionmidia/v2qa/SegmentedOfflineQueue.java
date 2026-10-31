@@ -6,6 +6,7 @@ import android.database.sqlite.SQLiteDatabase;
 import android.database.sqlite.SQLiteException;
 import android.database.sqlite.SQLiteOpenHelper;
 import android.database.sqlite.SQLiteStatement;
+import java.io.File;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -27,13 +28,21 @@ import java.util.TimeZone;
  */
 public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
     public static final int SEGMENT_SIZE=1024;
-    public static final int MAX_PENDING=50000;             // > 40320 for 7d @15s
+    public static final int MAX_PENDING=50000;
+    public static final int MAX_AUDIT_PROOFS=4096;
+    public static final int MAX_AUDIT_REVIEWS=8192;
+    public static final int AUDIT_STAGE_BATCH=128;
+    public static final long WAL_SOFT_BYTES=256L*1024;
+    public static final long WAL_HARD_BYTES=2L*1024*1024;             // > 40320 for 7d @15s
     public static final long MAX_DATABASE_BYTES=64L*1024*1024; // per TV, QA limit
     private static final long MIN_UTC=1577836800000L;
     private static final long MAX_UTC=4102444800000L;
     private static final long MAX_MONO_DELTA=30L*86400000;
     public static final String DB_NAME="vision_v2_seven_day_qa_only.db";
-    private RuntimeException previousFailure;
+    private final File walFile;
+    private long checkpointCount;
+    public long checkpointCount(){return checkpointCount;}
+    public long walBytes(){return walFile.exists()?walFile.length():0;}
     public SegmentedOfflineQueue(Context context) { this(context,true); }
     /** QA-only rollback journal to test SQLite native SQLITE_FULL with PRAGMA.
      * Normal usage remains WAL. WAL + low max_page_count requires separate
@@ -41,6 +50,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
      */
     SegmentedOfflineQueue(Context context,boolean enableWal) {
         super(context,DB_NAME,null,1);
+        walFile=new File(context.getDatabasePath(DB_NAME).getPath()+"-wal");
         if(enableWal)setWriteAheadLoggingEnabled(true);
     }
     @Override public void onConfigure(SQLiteDatabase db) {
@@ -121,12 +131,39 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
             original.addSuppressed(cleanup); // SQLITE_FULL may auto-rollback
         }
     }
+    /** Checkpoint only OUTSIDE transactions; if busy, block writes without deleting a receipt. */
+    public long enforceWalBudget() {
+        SQLiteDatabase db=getWritableDatabase();
+        long observed=walBytes();
+        if(observed<=WAL_SOFT_BYTES)return observed;
+        int busy;
+        try(Cursor c=db.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)",null)) {
+            if(!c.moveToFirst())throw new IllegalStateException("wal_checkpoint_missing");
+            busy=c.getInt(0);
+        }catch(SQLiteException ex){
+            throw new IllegalStateException("wal_backpressure_retry_later",ex);
+        }
+        long after=walBytes();
+        checkpointCount++;
+        if(busy!=0 || after>WAL_SOFT_BYTES || after>WAL_HARD_BYTES)
+            throw new IllegalStateException("wal_backpressure_retry_later");
+        return after;
+    }
+    private static long sqlCount(SQLiteDatabase db,String table) {
+        return scalar(db,"SELECT count(*) FROM "+table);
+    }
+    public String capacityStatus(){
+        SQLiteDatabase db=getReadableDatabase();
+        return "pending="+read(db).count+",audit_proofs="+sqlCount(db,"audit_proofs")+
+            ",audit_reviews="+sqlCount(db,"audit_reviews")+",wal="+walBytes();
+    }
+
     public void provision(String device,String stream,boolean grantedByServer) {
         if(!grantedByServer)throw new SecurityException("server_grant_required");
         if(device==null || !device.matches("[a-zA-Z0-9_-]{3,100}") ||
            stream==null || !stream.matches("[a-zA-Z0-9_-]{3,100}"))
             throw new IllegalArgumentException("invalid_identity");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             if(scalar(db,"SELECT count(*) FROM state")!=0)
@@ -188,7 +225,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
     public long appendBatch(List<Entry> batch) {
         if(batch==null || batch.isEmpty() || batch.size()>SEGMENT_SIZE)
             throw new IllegalArgumentException("batch_size");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             State s=read(db);
@@ -237,7 +274,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         if(boot==null || !boot.matches("[A-Za-z0-9_-]{8,100}") ||
            elapsed<0 || utc<MIN_UTC || utc>=MAX_UTC)
             throw new IllegalArgumentException("invalid_clock_anchor");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             read(db);
@@ -268,7 +305,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         ArrayList<Outgoing> out=new ArrayList<>();
         if(!online)return out;
         if(limit<1 || limit>50)throw new IllegalArgumentException("invalid_send_limit");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             State s=read(db);
@@ -288,7 +325,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
     }
     public void ack(long through,boolean serverVerified){
         if(!serverVerified)throw new SecurityException("unverified_ack");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             State s=read(db);
@@ -309,15 +346,21 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         finally{end(db,failure);}
     }
     public int stageUnresolved() {
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             State s=read(db);
+            long count=sqlCount(db,"audit_proofs");
+            long reviews=sqlCount(db,"audit_reviews");
+            if(count>=MAX_AUDIT_PROOFS || reviews>=MAX_AUDIT_REVIEWS)
+                throw new IllegalStateException("audit_capacity_export_required");
             int n=0;
-            try(Cursor c=db.rawQuery("SELECT seq,event_id,media,completed,seconds,boot,mono FROM receipts WHERE utc IS NULL ORDER BY seq",null)){
+            try(Cursor c=db.rawQuery("SELECT seq,event_id,media,completed,seconds,boot,mono FROM receipts "+
+                "WHERE utc IS NULL AND seq NOT IN (SELECT seq FROM audit_proofs) ORDER BY seq LIMIT "+AUDIT_STAGE_BATCH,null)){
                 while(c.moveToNext()){
                     long seq=c.getLong(0);
-                    if(scalar(db,"SELECT count(*) FROM audit_proofs WHERE seq="+seq)!=0)continue;
+                    if(count+n>=MAX_AUDIT_PROOFS || reviews+n>=MAX_AUDIT_REVIEWS)
+                        throw new IllegalStateException("audit_capacity_export_required");
                     String id=c.getString(1),media=c.getString(2),boot=c.getString(5);
                     boolean completed=c.getInt(3)!=0;
                     double seconds=c.getDouble(4);
@@ -338,7 +381,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
     public void annotateUnverifiable(long seq,String evidence){
         if(evidence==null || !evidence.matches("[A-Za-z0-9_-]{8,120}"))
             throw new IllegalArgumentException("invalid_evidence");
-        SQLiteDatabase db=getWritableDatabase();db.beginTransaction();
+        SQLiteDatabase db=getWritableDatabase();enforceWalBudget();db.beginTransaction();
         RuntimeException failure=null;
         try{
             State s=read(db);
@@ -350,6 +393,8 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
                 String saved=str(db,"SELECT proof_sha FROM audit_proofs WHERE seq="+seq);
                 if(!actual.equals(saved))throw new IllegalStateException("audit_proof_mismatch");
             }
+            if(sqlCount(db,"audit_reviews")>=MAX_AUDIT_REVIEWS)
+                throw new IllegalStateException("audit_capacity_export_required");
             db.execSQL("INSERT INTO audit_reviews(seq,code,evidence) VALUES(?,'OLD_BOOT_UNVERIFIABLE',?)",
                 new Object[]{seq,evidence});
             db.setTransactionSuccessful();
