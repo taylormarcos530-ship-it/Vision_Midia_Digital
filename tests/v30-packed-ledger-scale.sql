@@ -18,7 +18,7 @@ BEGIN
    DO UPDATE SET fingerprints=private.vision_playback_merge_packed_v30(dest.fingerprints,EXCLUDED.fingerprints)
    RETURNING 1
  )
- SELECT (SELECT sum(n) FROM shards) INTO n;
+ SELECT (SELECT sum(shards.n) FROM shards) INTO n;
  RETURN n;
 END $fn$;
 
