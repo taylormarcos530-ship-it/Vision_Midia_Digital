@@ -1,0 +1,34 @@
+name: Vision V2 Capacity Guardrails - ISOLATED NO DEPLOY
+
+on:
+  push:
+    branches:
+      - feature/vision-v2-isolated-foundation-20261031
+    paths:
+      - 'tests/vision-v2-capacity-guardrails.test.cjs'
+      - 'docs/vision-v2/qa-foundation.sql'
+      - 'docs/vision-v2/qa-device-api.sql'
+      - 'supabase/functions/vision-v2-qa-device/index.ts'
+      - '.github/workflows/vision-v2-capacity-guardrails.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v2-traffic-model:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Safety and branch guard
+        run: |
+          test "$GITHUB_REF" = "refs/heads/feature/vision-v2-isolated-foundation-20261031"
+          echo "NO_DEPLOY=true NO_SECRETS=true SYNTHETIC_ONLY=true"
+      - name: Model Edge invocation limits and assert NO-GO until storage retention
+        run: node --test tests/vision-v2-capacity-guardrails.test.cjs
