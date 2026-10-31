@@ -1,0 +1,58 @@
+name: Vision V2 Android SQLite Robolectric QA - NO APK NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/android-sqlite-qa/**'
+      - '.github/workflows/vision-v2-android-sqlite-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sqlite-android-qa:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    env:
+      JAVA_TOOL_OPTIONS: -Djava.awt.headless=true
+    steps:
+      - name: Checkout isolated branch no credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assert no production and no APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo "NO_APK=true NO_INSTALL=true NO_DEPLOY=true NO_SUPABASE=true NO_SECRETS=true"
+          test -f tests/vision-v2-sequence-qa/android-sqlite-qa/src/main/java/br/com/visionmidia/v2qa/SequenceStore.java
+          test -f tests/vision-v2-sequence-qa/android-sqlite-qa/src/test/java/br/com/visionmidia/v2qa/SequenceStoreTest.java
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Android SDK setup
+        uses: android-actions/setup-android@v3
+      - name: Android SDK 35 (test library only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+      - name: Gradle 8.10.2 (only unit tests)
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.10.2
+      - name: Robolectric + native SQLite test
+        shell: bash
+        working-directory: tests/vision-v2-sequence-qa/android-sqlite-qa
+        run: |
+          set -euo pipefail
+          gradle --no-daemon --stacktrace testDebugUnitTest
+          echo "ANDROID_SQLITE_ROBOLECTRIC=PASS"
+      - name: Show test result XML summary
+        if: always()
+        shell: bash
+        run: |
+          find tests/vision-v2-sequence-qa/android-sqlite-qa/build/test-results -name 'TEST-*.xml' -type f -print -exec grep -m1 '<testsuite ' {} \; || true
