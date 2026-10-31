@@ -1,6 +1,7 @@
 -- Disposable QA ONLY. Extends already-created v30-http-qa-fixture.sql.
 ALTER TABLE public.devices
  ADD COLUMN IF NOT EXISTS status text DEFAULT 'online',
+ ADD COLUMN IF NOT EXISTS retired_at timestamptz,
  ADD COLUMN IF NOT EXISTS last_seen_at timestamptz DEFAULT now(),
  ADD COLUMN IF NOT EXISTS app_version text,
  ADD COLUMN IF NOT EXISTS player_version text,
