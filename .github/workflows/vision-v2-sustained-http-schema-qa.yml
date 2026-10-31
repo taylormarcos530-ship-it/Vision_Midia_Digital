@@ -1,0 +1,53 @@
+name: Vision V2 Sustained HTTP 100-300 + GitHub Schema Index QA - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/sustained-http-qa/**'
+      - '.github/workflows/vision-v2-sustained-http-schema-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sustained-qa:
+    name: PostgreSQL17 local 100 and 300 concurrent HTTP, 12 waves each
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Deny production use; immutable QA reference 
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'POSTGRES_QA_DISPOSABLE=true NO_SUPABASE=true NO_SQL_ON_PRODUCTION=true'
+          echo 'NO_MAIN=true NO_DEPLOY=true NO_APK=true NO_PANEL=true NO_SITE=true NO_TVS=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable PostgreSQL test driver only
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: 100 then 300 concurrent clients, real loopback HTTP, CQRS, index comparison
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/sustained-http-qa/sustained.py
+          echo 'VISION_V2_SUSTAINED_HTTP_AND_INDEX_QA=PASS'
+      - name: Final production safety marker
+        if: always()
+        run: echo 'NO_PRODUCTION_DB=true NO_DEPLOY=true NO_APK=true NO_DELETE_ORIGINALS=true'
