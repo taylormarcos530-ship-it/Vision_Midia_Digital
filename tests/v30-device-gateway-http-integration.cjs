@@ -180,6 +180,35 @@ async function main(){
   assert.equal(scalar("SELECT count(*) FROM public.playback_logs WHERE client_event_id='first'"),2);
   notice('CROSS_TV_SAME_ID','two TV scoped identities');
 
+  // Execute the actual Player 1.5.24 queue implementation against HTTP gateway.
+  const playerSource=fs.readFileSync('player.js','utf8');
+  const playerStart=playerSource.indexOf('  function playbackQueue() {');
+  const playerEnd=playerSource.indexOf('\n  function deviceEventQueue()',playerStart);
+  assert.ok(playerStart>=0 && playerEnd>playerStart,'Player queue source missing');
+  const localQueue={queue:[event('actual-player-valid'),event('')]};
+  const actualPlayer=vm.runInNewContext('(function(){'+playerSource.slice(playerStart,playerEnd)+
+    '\nreturn {flushPlaybackQueue};})()',{
+      PLAYBACK_QUEUE_KEY:'queue',
+      state:{deviceToken:'synthetic-device-token'},
+      navigator:{onLine:true},
+      readJson:key=>localQueue[key]??null,
+      writeJson:(key,value)=>{localQueue[key]=value},
+      gateway:async({action,events})=>{
+        assert.equal(action,'playback_batch');
+        const out=await post(tokenA,events);
+        if(out.status!==200 || !out.data.ok)throw new Error('HTTP '+out.status);
+        return out.data;
+      },
+    });
+  await assert.rejects(actualPlayer.flushPlaybackQueue());
+  assert.equal(localQueue.queue.length,2);
+  assert.equal(scalar("SELECT count(*) FROM public.playback_logs WHERE client_event_id='actual-player-valid'"),0);
+  localQueue.queue=[event('actual-player-valid')]; // QA-only repair, NOT automatic deletion.
+  await actualPlayer.flushPlaybackQueue();
+  assert.equal(localQueue.queue,null);
+  assert.equal(scalar("SELECT count(*) FROM public.playback_logs WHERE client_event_id='actual-player-valid'"),1);
+  notice('ACTUAL_PLAYER_QUEUE','mixed_invalid_retained=2 recovered_valid=1');
+
   const old=event('archived-old');
   result=await post(tokenA,[old]);assert.equal(result.status,200);
   const before=rawCount();
