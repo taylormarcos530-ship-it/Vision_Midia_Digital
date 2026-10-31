@@ -22,7 +22,7 @@ CREATE INDEX qa_playback_company_day ON qa_commercial.playback(company_id,play_d
 CREATE INDEX qa_playback_company_device_day ON qa_commercial.playback(company_id,device_id,play_day);
 CREATE TABLE qa_commercial.pending_time(
  company_id text NOT NULL,device_id text NOT NULL,
- seq bigint NOT NULL,client_event_id text NOT NULL,
+ seq bigint NOT NULL,client_event_id text NOT NULL,hash_sha256 text NOT NULL,
  received_at timestamptz NOT NULL DEFAULT clock_timestamp(),
  started_at timestamptz NULL CHECK(started_at IS NULL),
  billable bool NOT NULL DEFAULT false CHECK(billable=false),
