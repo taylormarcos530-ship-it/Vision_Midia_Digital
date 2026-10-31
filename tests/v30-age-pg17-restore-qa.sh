@@ -56,7 +56,7 @@ for query_name in ledger archive raw; do
   echo "PASS_RESTORE_$query_name $after"
 done
 [[ "$(query vision_v30_age_restored_ci \
- "SELECT enabled::text FROM private.vision_playback_compaction_control_v30 WHERE id=1")" == f ]] \
+ "SELECT enabled::text FROM private.vision_playback_compaction_control_v30 WHERE id=1")" == false ]] \
   || { echo 'FAIL restored compaction not stopped'; exit 87; }
 accepted="$(query vision_v30_age_restored_ci "
  WITH attempted AS (
