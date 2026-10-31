@@ -149,5 +149,26 @@ class EncryptedAuditQATests(unittest.TestCase):
         self.assert_source_intact()
         self.assertFalse(self.restore.exists())
 
+
+    def test_full_audit_quota_restoration_without_touching_ack(self):
+        with sqlite3.connect(self.source) as con:
+            for seq in range(22,4106):
+                con.execute("INSERT INTO audit_proofs VALUES(?,?,?,?,?,?,?,?)",
+                    (seq,f"event-{seq:08d}","ad-A",1,15.0,"qa-boot-0001",seq*15000,
+                     sha(f"proof{seq}".encode())))
+            for idx in range(8192-12):
+                con.execute("INSERT INTO audit_reviews(seq,code,evidence) VALUES(?,?,?)",
+                    (10+idx%4096,"QA_REVIEW","qa-evidence-bulk"))
+        self.original=state(self.source)
+        report=export_audit(self.source,self.backup,PASS)
+        self.assertEqual(report["counts"],{"audit_proofs":4096,"audit_reviews":8192})
+        restored=restore_audit_only(self.backup,self.restore,PASS)
+        self.assertEqual(restored,report["counts"])
+        with sqlite3.connect(self.restore) as con:
+            self.assertEqual(con.execute("PRAGMA integrity_check").fetchone()[0],"ok")
+        self.assert_source_intact()
+        print("PASS_LARGE_AUDIT_RESTORE encrypted_bytes="+str(self.backup.stat().st_size)+
+              " proofs=4096 reviews=8192 source_ack=9")
+
 if __name__=="__main__":
     unittest.main(verbosity=2)
