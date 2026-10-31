@@ -125,8 +125,8 @@ begin
         starts=vision_v2_qa.playback_daily.starts+1,
         completes=vision_v2_qa.playback_daily.completes+excluded.completes,
         total_seconds=vision_v2_qa.playback_daily.total_seconds+excluded.total_seconds,
-        first_play=pg_catalog.least(vision_v2_qa.playback_daily.first_play,excluded.first_play),
-        last_play=pg_catalog.greatest(vision_v2_qa.playback_daily.last_play,excluded.last_play);
+        first_play=least(vision_v2_qa.playback_daily.first_play,excluded.first_play),
+        last_play=greatest(vision_v2_qa.playback_daily.last_play,excluded.last_play);
       v_accepted := v_accepted+1;
     end loop;
     return jsonb_build_object('ok',true,'action','playback_batch',
