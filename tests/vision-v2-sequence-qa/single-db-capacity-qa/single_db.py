@@ -83,15 +83,15 @@ REVOKE ALL ON ALL TABLES IN SCHEMA qa_single FROM PUBLIC;
 # in one database. SQL SHA-256 identical to Python event(). 
 BULK_SQL="""
 WITH source AS (
- SELECT ((g-1) % 300)::int AS tv,
+ SELECT ((g-1) %% 300)::int AS tv,
         ((g-1) / 300 + 1)::bigint AS seq
  FROM generate_series(%s::bigint,%s::bigint) AS g
 ), ids AS (
  SELECT ('tv-' || lpad(tv::text,3,'0')) AS device,
-        ('tenant-' || lpad((tv%30)::text,2,'0')) AS company,
+        ('tenant-' || lpad((tv%%30)::text,2,'0')) AS company,
         seq,
         ('proof-' || lpad(seq::text,8,'0')) AS event_id,
-        ('media-' || lpad((seq%19)::text,2,'0')) AS media,
+        ('media-' || lpad((seq%%19)::text,2,'0')) AS media,
         CASE WHEN seq<=17280 THEN 'qa-A' ELSE 'qa-B' END AS boot,
         (seq-CASE WHEN seq<=17280 THEN 1 ELSE 17281 END)*15000 AS mono,
         ('2026-10-31'::date + ((seq-1)/5760)::int) AS received_day
