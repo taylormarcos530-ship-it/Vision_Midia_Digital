@@ -264,9 +264,21 @@
     } catch { /* monitoring failure must never affect playback */ }
   }
 
+  function strictPlaybackStoredArray(key) {
+    // Generic readJson() intentionally tolerates malformed UI preferences.
+    // Reproduction receipts are different: silently treating damaged data as
+    // an empty queue would overwrite the only local copy of a proof.
+    const raw = localStorage.getItem(key);
+    if (raw == null) return [];
+    let items;
+    try { items = JSON.parse(raw); }
+    catch { throw new Error('playback_storage_corrupt:' + key); }
+    if (!Array.isArray(items)) throw new Error('playback_storage_invalid:' + key);
+    return items;
+  }
+
   function playbackQueue() {
-    const queue = readJson(PLAYBACK_QUEUE_KEY);
-    return Array.isArray(queue) ? queue : [];
+    return strictPlaybackStoredArray(PLAYBACK_QUEUE_KEY);
   }
 
   function appendPlaybackQuarantine(entries) {
@@ -274,8 +286,7 @@
     // active queue. A storage/quota error must abort the operation, never
     // silently discard proofs. No additional network request is generated.
     if (!entries.length) return;
-    const existing = readJson(PLAYBACK_QUARANTINE_KEY);
-    const prior = Array.isArray(existing) ? existing : [];
+    const prior = strictPlaybackStoredArray(PLAYBACK_QUARANTINE_KEY);
     const quarantined = prior.concat(entries.map(({ event, reason }) => ({
       event, reason, quarantined_at: new Date().toISOString(),
     })));
@@ -325,7 +336,7 @@
   // then the FULL original proof is marked recovered in quarantine for audit.
   // Nothing is replayed automatically, avoiding runaway Supabase calls.
   function recoverQuarantinedPlaybackEvent(index, correctedEvent) {
-    const archived = readJson(PLAYBACK_QUARANTINE_KEY);
+    const archived = strictPlaybackStoredArray(PLAYBACK_QUARANTINE_KEY);
     if (!Number.isInteger(index) || index < 0 || !Array.isArray(archived) ||
         !archived[index] || archived[index].recovered_at) return false;
     const validationError = playbackEventValidationError(correctedEvent);
@@ -335,7 +346,7 @@
     if (!exists) queuePlayback(correctedEvent);
     // If marking recovery fails, both the original proof AND the corrected
     // event remain stored. Never delete the original audit record.
-    const latest = readJson(PLAYBACK_QUARANTINE_KEY);
+    const latest = strictPlaybackStoredArray(PLAYBACK_QUARANTINE_KEY);
     if (!Array.isArray(latest) || !latest[index]) {
       throw new Error('quarantine_changed_during_recovery');
     }
