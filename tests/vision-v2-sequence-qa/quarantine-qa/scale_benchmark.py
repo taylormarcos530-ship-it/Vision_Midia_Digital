@@ -176,6 +176,52 @@ def shadow_archive(tv_count):
          (SELECT * FROM v2_quarantine_qa.receipts)) q""")==0, "archive deviates from source"
     assert sqlone("SELECT count(*) FROM v2_quarantine_qa.receipts")==before_rows
     assert sqlone("SELECT watermark FROM v2_quarantine_qa.devices WHERE device_id=%s",(device,))==before_ack
+    # Independently recheck the saved SHA-256 manifest against the original
+    # payload hashes after the transaction committed.
+    with conn() as db:
+        archived=db.execute("""SELECT sequence,payload_sha256 FROM v2_archive_shadow_qa.proofs
+            WHERE device_id=%s ORDER BY sequence""",(device,)).fetchall()
+        source=db.execute("""SELECT sequence,payload_sha256 FROM v2_quarantine_qa.receipts
+            WHERE device_id=%s AND sequence<=1000 ORDER BY sequence""",(device,)).fetchall()
+        manifest=db.execute("""SELECT proofs_count,digest_sha256 FROM v2_archive_shadow_qa.manifests
+            WHERE device_id=%s AND stream_id=%s AND first_seq=1 AND last_seq=1000""",
+            (device,stream)).fetchone()
+    assert archived==source and len(archived)==manifest[0]==1000
+    actual=hashlib.sha256()
+    for seq,digest_value in source:
+        actual.update(f"{seq}:{digest_value}\\n".encode())
+    assert actual.hexdigest()==manifest[1],"manifest does not match source"
+    # Fault mid-archive-copy must roll back all new archive rows, without
+    # touching originals. 1001 is a receipt not yet shadow archived.
+    failed=False
+    try:
+        with conn() as db:
+            db.execute("""INSERT INTO v2_archive_shadow_qa.proofs SELECT *
+                FROM v2_quarantine_qa.receipts
+                WHERE device_id=%s AND sequence=1001""",(device,))
+            db.execute("""INSERT INTO v2_archive_shadow_qa.proofs SELECT *
+                FROM v2_quarantine_qa.receipts
+                WHERE device_id=%s AND sequence=1001""",(device,))
+    except psycopg.errors.UniqueViolation:
+        failed=True
+    assert failed,"expected archive copy conflict"
+    assert sqlone("SELECT count(*) FROM v2_archive_shadow_qa.proofs")==1000
+    assert sqlone("SELECT count(*) FROM v2_quarantine_qa.receipts")==before_rows
+    # Replay AFTER archiving must remain a duplicate, with no ACK change.
+    replay_server,replay_thread=start_test_server()
+    try:
+        url=f"http://127.0.0.1:{replay_server.server_address[1]}/qa/quarantine"
+        s,reply,_=post(url,first,[event(j) for j in range(1001,1051)])
+        assert s==200 and reply["ack"]==1050
+        assert reply["accepted"]==0 and reply["duplicates"]==50
+    finally:
+        replay_server.shutdown()
+        replay_server.server_close()
+        replay_thread.join(3)
+    assert sqlone("SELECT count(*) FROM v2_quarantine_qa.receipts")==before_rows
+    assert sqlone("SELECT watermark FROM v2_quarantine_qa.devices WHERE device_id=%s",(device,))==before_ack
+    print("QA_ARCHIVE_REPLAY_ROLLBACK_PASS manifest_sha256_verified=true "+
+          "after_archive_duplicates=50 rollback_preserved=1000",flush=True)
     with conn() as db:
         try:
             with db.transaction():
