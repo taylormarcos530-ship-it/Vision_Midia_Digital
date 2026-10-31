@@ -6,6 +6,9 @@ on:
     paths:
       - 'player.js'
       - 'tests/v30-playback-quarantine.test.cjs'
+      - 'tests/v30-playback-storage-quota.test.cjs'
+      - 'tests/v30-gateway-v22-parity.test.cjs'
+      - 'supabase/functions/device-gateway/index.ts'
       - '.github/workflows/playback-v30-quarantine-isolated.yml'
   workflow_dispatch:
 permissions:
@@ -19,4 +22,7 @@ jobs:
         with:
           node-version: '22'
       - name: Test real Player queue in sandbox without network or Supabase
-        run: node --test tests/v30-playback-quarantine.test.cjs
+        run: |
+          node --test tests/v30-playback-quarantine.test.cjs tests/v30-playback-storage-quota.test.cjs
+          node --test tests/v30-gateway-v22-parity.test.cjs
+          node --test tests/v30-playback-gateway-ack.test.cjs
