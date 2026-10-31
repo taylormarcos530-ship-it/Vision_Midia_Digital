@@ -46,8 +46,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python tests/vision-v2-sequence-qa/single-db-capacity-qa/single_db.py --target 1000000
-          echo 'QA_PILOT_SINGLE_DB=PASS'
+          python tests/vision-v2-sequence-qa/single-db-capacity-qa/single_db.py --target 12096000
+          echo 'QA_PROGRESSIVE_SINGLE_DB=PASS_OR_EXPLICIT_LIMIT'
       - name: Preserve production
         if: always()
         run: echo 'NO_SUPABASE=true NO_MAIN=true NO_DEPLOY=true NO_APK=true NO_DELETE=true'
