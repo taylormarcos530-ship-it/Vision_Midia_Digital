@@ -70,7 +70,7 @@ BEGIN
  WHILE v_i < v_total LOOP
    IF v_count=64 THEN v_seq:=v_seq+1; v_count:=0; END IF;
    v_remaining:=v_total-v_i;
-   v_take:=pg_catalog.least(64-v_count,v_remaining);
+   v_take:=LEAST(64-v_count,v_remaining);
    v_chunk:=pg_catalog.substring(p_packed,v_i*16+1,v_take*16);
    IF v_count=0 THEN
      INSERT INTO private.vision_playback_seen_segments_v30(
