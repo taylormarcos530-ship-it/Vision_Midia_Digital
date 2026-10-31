@@ -92,8 +92,12 @@ async function main(){
  let b=assertNoError(await userB.client.from('playback_logs').select('client_event_id,company_id'),'user B raw');
  assert.equal(a.length,2);assert.equal(b.length,1);
  assert.ok(a.every(e=>e.company_id===A)&&b.every(e=>e.company_id===B));
- let anonRead=assertNoError(await anon.from('playback_logs').select('client_event_id'),'anon raw');
- assert.equal(anonRead.length,0);
+ const anonRead=await anon.from('playback_logs').select('client_event_id');
+ if(anonRead.error){
+   assert.match(anonRead.error.message,/permission denied|permission/i);
+ }else{
+   assert.equal(anonRead.data.length,0);
+ }
  note('JWT_RLS_RAW','A=2 B=1 anon=0');
 
  // Compare archived report totals, including correct filters after retention.
