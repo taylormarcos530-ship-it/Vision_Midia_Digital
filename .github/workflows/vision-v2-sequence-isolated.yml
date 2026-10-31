@@ -1,0 +1,41 @@
+name: Vision V2 Sequence Journal Model - ISOLATED NO DEPLOY
+
+on:
+  push:
+    branches:
+      - feature/vision-v2-isolated-foundation-20261031
+    paths:
+      - 'tests/vision-v2-sequence-model.cjs'
+      - 'tests/vision-v2-sequence-qa.test.cjs'
+      - '.github/workflows/vision-v2-sequence-isolated.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sequence-model:
+    name: Node 22 sequence, lost ACK, journal and replay tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout without persistent credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Assert isolated branch and no publication
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feature/vision-v2-isolated-foundation-20261031"
+          test -f tests/vision-v2-sequence-model.cjs
+          test -f tests/vision-v2-sequence-qa.test.cjs
+          echo "NO_DEPLOY=true"
+          echo "NO_SECRETS=true"
+          echo "SYNTHETIC_ONLY=true"
+      - name: Execute synthetic sequence tests
+        run: node --test tests/vision-v2-sequence-qa.test.cjs
