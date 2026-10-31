@@ -1,0 +1,58 @@
+name: Vision V2 Full SQLite-HTTP-PG17-CQRS Matrix - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/full-flow-qa/**'
+      - '.github/workflows/vision-v2-full-flow-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  full-flow:
+    name: Isolated SQLite + HTTP + PG17 daily CQRS - ${{ matrix.tvs }} TVs
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        tvs: [7, 12, 20, 50, 100]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - name: Checkout isolated branch only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Reject production environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo 'QA_ONLY=true NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_TV=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install disposable database test driver
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Run SQLite local queue to loopback gateway to PG17 CQRS daily
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/vision-v2-sequence-qa/full-flow-qa/synthetic_full_flow.py --tvs ${{ matrix.tvs }}
+          echo "V2_FULL_FLOW_MATRIX_${{ matrix.tvs }}_TV=PASS"
+      - name: Confirm no production writes
+        if: always()
+        run: echo 'NO_SUPABASE=true NO_PRODUCTION_DATABASE=true NO_DEPLOY=true NO_APK=true NO_TVS=true'
