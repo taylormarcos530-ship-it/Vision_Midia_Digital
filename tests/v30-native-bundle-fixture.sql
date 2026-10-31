@@ -45,9 +45,8 @@ RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  INSERT INTO private.v30_bundle_write_audit(table_name,operation,company_id,device_id)
  VALUES(TG_TABLE_NAME,TG_OP,
-  CASE WHEN TG_TABLE_NAME='device_credentials' THEN NULL
-       ELSE NEW.company_id END,
-  NEW.device_id);
+  (to_jsonb(NEW)->>'company_id')::uuid,
+  (to_jsonb(NEW)->>'device_id')::uuid);
  RETURN NEW;
 END $$;
 CREATE TRIGGER audit_bundle_credentials AFTER UPDATE ON public.device_credentials
