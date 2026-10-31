@@ -124,7 +124,7 @@ END $reports$;
 DO $ack$
 DECLARE d uuid; c uuid; n bigint; t0 timestamptz; ms numeric;
 BEGIN
- SELECT id,company_id INTO d,c FROM qa_tvs WHERE n=1;
+ SELECT id,company_id INTO d,c FROM qa_tvs WHERE qa_tvs.n=1;
  WITH accepted AS (
   INSERT INTO public.playback_logs(client_event_id,company_id,device_id,started_at,completed)
   VALUES('multi-1',c,d,now()-interval '400 days',true)
@@ -152,7 +152,7 @@ END $ack$;
 DO $fail$
 DECLARE d uuid; c uuid; n bigint;
 BEGIN
- SELECT id,company_id INTO d,c FROM qa_tvs WHERE n=3;
+ SELECT id,company_id INTO d,c FROM qa_tvs WHERE qa_tvs.n=3;
  BEGIN
    INSERT INTO public.playback_logs(client_event_id,company_id,device_id,started_at,completed)
    VALUES('network-failed-sim',c,d,now(),true);
