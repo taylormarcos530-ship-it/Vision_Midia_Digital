@@ -91,13 +91,13 @@ def fixture():
                         rows.append((company,device,seq,f"hist-event-{seq}",campaign,pl,m_id,
                           name,camp,"Playlist histórica",media,started,localday,Decimal(15+n),n%2==0,sha(f"{device}:{seq}")))
         with c.transaction():
-            c.executemany("""INSERT INTO qa_commercial.playback
+            c.cursor().executemany("""INSERT INTO qa_commercial.playback
               (company_id,device_id,seq,client_event_id,campaign_id,playlist_id,media_id,
                device_name,campaign_name,playlist_name,media_name,started_at,play_day,
                seconds,completed,hash_sha256)
               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",rows)
             # Quarantined without wall clock: explicitly excluded from paid report.
-            c.executemany("""INSERT INTO qa_commercial.pending_time
+            c.cursor().executemany("""INSERT INTO qa_commercial.pending_time
                   (company_id,device_id,seq,client_event_id,hash_sha256)
                   VALUES(%s,%s,%s,%s,%s)""",
                  [(x[0],x[1],1000+x[2],"pending-"+x[3],x[15]) for x in rows[:24]])
@@ -272,7 +272,7 @@ class Gateway(ThreadingHTTPServer):
                         if any(original.get(e["seq"])!=e["hash"] for e in old):raise ValueError("replay_conflict")
                     if new:
                         if new[0]["seq"]!=mark+1:raise ValueError("missing_sequence")
-                        c.executemany("""INSERT INTO qa_commercial.pending_time
+                        c.cursor().executemany("""INSERT INTO qa_commercial.pending_time
                            (company_id,device_id,seq,client_event_id,hash_sha256)
                            VALUES(%s,%s,%s,%s,%s)""",
                            [(tenant,d,e["seq"],e["event_id"],e["hash"]) for e in new])
