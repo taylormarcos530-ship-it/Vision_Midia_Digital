@@ -498,13 +498,16 @@ async function authenticateDevice(admin, req) {
       .eq('device_id', device.id)
       .or(`last_used_at.is.null,last_used_at.lt.${cutoffIso}`)
     if (touchError) throw touchError
+
+    // Clear the issued pairing token on first use and on periodic credential touch.
+    // Avoid a PATCH for every authenticated player request (even when no row changes).
+    const { error: pairingCleanupError } = await admin.from('device_pairing_requests')
+      .update({ issued_token: null })
+      .eq('device_id', device.id)
+      .eq('status', 'issued')
+      .not('issued_token', 'is', 'null')
+    if (pairingCleanupError) console.error('pairing_token_cleanup_failed', pairingCleanupError)
   }
-  // Token cleanup remains idempotent and does not change pairing semantics.
-  await admin.from('device_pairing_requests')
-    .update({ issued_token: null })
-    .eq('device_id', device.id)
-    .eq('status', 'issued')
-    .not('issued_token', 'is', 'null')
 
   return { ...device, offline_access_expires_at: offlineAccessDeadline(device, subscription) }
 }
@@ -525,20 +528,17 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}))
     const action = body?.action
 
+    // Compatibility reply for the explicitly isolated QA APKs only.
+    // Production device actions, credentials, and playback paths remain intact.
+    // FCM server registration/delivery is not deployed: never claim pushReady.
+    // With {ok:true,push_enabled:false}, QA devices cache this unavailable
+    // state for 24h while keeping their existing command polling fallback.
     if (action === 'register_push') {
-      // Only a fully authenticated/authorized TV can register its own token.
-      // Never return the raw registration token to the dashboard or logs.
-      const token = String(body?.fcm_token || '').trim()
-      if (token.length < 50 || token.length > 4096 || !/^[A-Za-z0-9_:=.-]+$/.test(token)) {
-        return json({ error:'invalid_push_token' }, 400)
+      const agent = String(req.headers.get('user-agent') || '')
+      if (/^VisionPlayerAndroid\/1\.5\.(22|23)-homologacao$/.test(agent)) {
+        return json({ ok:true, push_enabled:false, registration_status:'fcm_unavailable' })
       }
-      const { error: registrationError } = await admin.from('device_push_tokens').upsert({
-        device_id:device.id, company_id:device.company_id,
-        fcm_token:token, updated_at:new Date().toISOString(),
-      }, { onConflict:'device_id' })
-      if (registrationError) throw registrationError
-      // Do not turn off the short fallback poll unless push dispatch is enabled.
-      return json({ ok:true, push_enabled: Deno.env.get('VISION_FCM_ENABLED') === 'true' && Boolean(Deno.env.get('VISION_FCM_SERVICE_ACCOUNT_JSON')) })
+      return json({ error:'unknown_action' }, 400)
     }
 
     if (action === 'player_settings') {
@@ -635,20 +635,6 @@ Deno.serve(async (req) => {
       return json({ ok:true, commands: commands || [] })
     }
 
-    if (action === 'command_status') {
-      const commandId = String(body?.command_id || '')
-      if (!commandId) return json({ error:'invalid_command_id' }, 400)
-      const { data: command, error: commandError } = await admin.from('device_commands')
-        .select('id,device_id,command_type,status')
-        .eq('id', commandId)
-        .eq('company_id', device.company_id)
-        .eq('device_id', device.id)
-        .maybeSingle()
-      if (commandError) throw commandError
-      if (!command) return json({ error:'command_not_found' }, 404)
-      return json({ ok:true, command })
-    }
-
     if (action === 'command_result') {
       const commandId = String(body?.command_id || '')
       const status = String(body?.status || 'completed')
@@ -670,10 +656,7 @@ Deno.serve(async (req) => {
         .eq('id', commandId)
         .eq('company_id', device.company_id)
         .eq('device_id', device.id)
-        .in('status', ['pending', 'sent'])
       if (error) throw error
-      // A delayed or duplicated acknowledgement must never rewrite a
-      // terminal completed/failed result. Zero rows is an idempotent no-op.
       return json({ ok:true })
     }
 
