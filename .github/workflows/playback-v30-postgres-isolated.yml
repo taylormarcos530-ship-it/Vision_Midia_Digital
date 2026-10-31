@@ -61,7 +61,7 @@ jobs:
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-dedupe-assertions.sql
-      - name: Real concurrent PostgreSQL sessions: archive vs late replay
+      - name: 'Real concurrent PostgreSQL sessions - archive versus late replay'
         env:
           PGDATABASE: vision_v30_dedupe_ci
         run: bash tests/v30-postgres-concurrency.sh
