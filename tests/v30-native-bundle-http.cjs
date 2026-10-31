@@ -28,9 +28,9 @@ async function main(){
  pg('INSERT INTO public.device_credentials(device_id,token_hash) VALUES ('+q(TA)+','+q(hash)+')');
  pg("UPDATE public.device_pairing_requests SET status='issued',issued_token='QA-ONLY' WHERE device_id="+q(TA));
  pg("INSERT INTO public.devices(id,company_id,name,status,last_seen_at) VALUES ('10000000-0000-4000-8000-000000000003',"+q(A)+",'stale QA','online',now()-interval '4 minutes')");
- pg('INSERT INTO public.device_commands(id,company_id,device_id,command_type,status) VALUES ('+
+ pg('INSERT INTO public.device_commands(id,company_id,device_id,command_type,status) VALUES '+
  '('+q(CMD)+','+q(A)+','+q(TA)+",'sync_now','pending'),"+
- '('+q(CROSS)+','+q(B)+','+q(TB)+",'sync_now','pending'))");
+ '('+q(CROSS)+','+q(B)+','+q(TB)+",'sync_now','pending')");
  expected(await request('wrong-token'),401);
  expected(await request(token,undefined,'LegacyClient/1'),403);
  expected(await request(token,{action:'command_status',command_id:CMD}),400);
