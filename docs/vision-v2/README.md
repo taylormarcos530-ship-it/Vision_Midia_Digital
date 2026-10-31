@@ -94,3 +94,18 @@ token inválido rejeitado; sincronização com revisão alterada fornece manifes
 - **Não conectar TV real nem direcionar site oficial ao projeto QA**. Não habilitar compactação, cron ou apagamento de registros.
 
 **Próximo gate:** registrar/testar contrato do painel QA (Auth e multiempresa), e executar teste autenticado HTTP/Deno com duas TVs sintéticas; depois simular 7/12/20/50/100 TVs e medir Edge invocations, bytes e escrita. GO apenas depois de testes, proteção de cotas e validação em bancada.
+
+
+## F1.1 — Contrato da Edge Function com testes automáticos isolados (31/10/2026)
+
+**PASS 16/16, FAIL 0** — [execução GitHub Actions 41219349476](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41219349476), commit `e953396354a6948cd80ce21602b8453b1bc4469c`, Node 22. Log original indica `NO_DEPLOY=true`, `NO_SUPABASE_CREDENTIALS=true`, `NO_PRODUCTION_TOUCH=true`.
+
+Arquivos: [simulador Node](../../tests/vision-v2-qa-api.test.cjs) e [workflow restrito à branch](../../.github/workflows/vision-v2-qa-edge-mock-isolated.yml). O workflow possui `contents: read`, checkout sem credenciais persistentes, sem chaves do Supabase, sem comandos de deploy e executa apenas testes no Node.
+
+Casos comprovados por **simulação local das funções Edge usando mocks**, executando o corpo JavaScript com a sintaxe TypeScript adaptada para Node: restrição de método/CORS, token malformado, JSON inválido, ação desconhecida, revisão inválida, lote fora de 1–50 eventos, corpo grande, manifesto inalterado/alterado, ACK de lote inicial, ACK de reenvio duplicado, negativa para token revogado/ilegal, evento inválido (400), indisponibilidade temporária (503 com Retry-After) e ausência de segredo (bloqueio).
+
+**Interpretação restrita:** essa suíte não enviou requisição HTTPS real para o Supabase, não testou JWT de plataforma no gateway e **não testou integração real Deno/PostgREST, PostgreSQL concorrente, login Master ou player Android**. O RPC SQL já foi testado no banco novo com dados descartáveis (etapa F1 anterior). O estado atual é **NO-GO para conectar TVs, publicar painel e migrar produção**.
+
+Auditoria de workflows: examinados os 24 workflows existentes em `.github/workflows`. Os workflows existentes de publicação do GitHub Pages ou APK são vinculados a outras branches, não à branch V2. A execução acima não contém deploy; integrações externas de preview do provedor de hospedagem **não** foram auditadas nessa análise.
+
+Próxima entrega: teste com tráfego **HTTPS real autorizado e restrito ao ambiente QA** (com credencial sintética e limpeza após o ensaio), seguido do painel QA multiempresa protegido e do player simulado. Medir invocações, erros e isolamento antes de qualquer teste de escala.
