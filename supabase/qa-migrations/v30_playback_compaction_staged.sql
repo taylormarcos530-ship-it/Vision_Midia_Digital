@@ -42,6 +42,7 @@ CREATE TABLE IF NOT EXISTS private.vision_playback_compaction_control_v30 (
   archive_verified_at timestamptz,
   reporting_verified_at timestamptz,
   offline_replay_verified_at timestamptz,
+  dedupe_verified_at timestamptz,
   updated_at timestamptz NOT NULL DEFAULT now()
 );
 INSERT INTO private.vision_playback_compaction_control_v30 (id,raw_days,enabled)
@@ -69,8 +70,10 @@ GRANT EXECUTE ON FUNCTION private.vision_playback_compaction_preview_v30(integer
 -- late/offline plays therefore remain in raw for 7 days after being received.
 -- Existing playback_logs INSERT trigger already updates vision_commercial_daily,
 -- and it is not touched or recalculated here.
--- This does NOT solve duplicate replays arriving after their original raw row
--- was compacted; that scenario requires a separately verified ACK/dedupe ledger.
+-- CRITICAL: an original event can be replayed after its raw unique index row
+-- was deleted, so dedupe_verified_at MUST remain NULL until a durable
+-- cross-compaction idempotency mechanism is implemented and actually tested.
+-- No trigger or ledger is installed by this staging migration.
 CREATE OR REPLACE FUNCTION private.vision_playback_compact_batch_v30(p_limit integer DEFAULT 250)
 RETURNS TABLE (raw_removed bigint, groups_written bigint)
 LANGUAGE plpgsql SECURITY INVOKER SET search_path = '' AS $fn$
@@ -82,10 +85,11 @@ BEGIN
   SELECT raw_days,
          enabled AND archive_verified_at IS NOT NULL
          AND reporting_verified_at IS NOT NULL AND offline_replay_verified_at IS NOT NULL
+         AND dedupe_verified_at IS NOT NULL
     INTO v_days,v_ok
-  FROM private.vision_playback_compaction_control_v30 WHERE id = 1 FOR UPDATE;
+  FROM private.vision_playback_compaction_control_v30 WHERE id = 1;
   IF NOT COALESCE(v_ok,false) THEN
-    RAISE EXCEPTION 'Vision compaction disabled: QA/backup/report/offline approval missing';
+    RAISE EXCEPTION 'Vision compaction disabled: QA/backup/report/offline/dedupe approval missing';
   END IF;
 
   -- Reject clock-anomalous events: keep those available for investigation.
@@ -159,7 +163,7 @@ BEGIN
      p_end_date<p_start_date OR p_end_date-p_start_date>366 THEN
     RAISE EXCEPTION 'invalid report range';
   END IF;
-  IF NOT (SELECT private.is_company_member(p_company_id)) THEN
+  IF NOT COALESCE((SELECT private.is_company_member(p_company_id)),false) THEN
     RAISE EXCEPTION 'forbidden' USING errcode='42501';
   END IF;
   SELECT COALESCE(timezone,'America/Sao_Paulo') INTO v_tz FROM public.companies WHERE id=p_company_id;
