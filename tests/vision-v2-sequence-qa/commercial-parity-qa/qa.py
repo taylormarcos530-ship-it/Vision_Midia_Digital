@@ -194,7 +194,7 @@ def parity():
         assert scalar(c,"SELECT count(distinct device_name) FROM qa_commercial.daily WHERE device_id='hist-A-0'")==2
         return {"result":"PASS","report_filter_combinations":checked,
                 "grouping_shapes":5,"total_group_comparisons":checked*5,
-                "distinct_devices_correct":n,"naive_sum_of_daily_distinct":naive,
+                "distinct_devices_correct":int(n),"naive_sum_of_daily_distinct":int(naive),
                 "historical_names_preserved":True,"pending_without_time_excluded":24}
 def rls_check():
     with connect() as c:
