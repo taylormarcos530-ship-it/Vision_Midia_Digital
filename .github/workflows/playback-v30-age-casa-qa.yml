@@ -1,0 +1,100 @@
+name: Vision V30 age backup + Casa QA package (isolated)
+on:
+  push:
+    branches: [fix/playback-daily-retention-safe-20261030]
+    paths:
+      - 'tests/v30-age-pg17-restore-qa.sh'
+      - 'tests/v30-rollback-stop-disposable.sql'
+      - 'docs/vision-v30-casa-QA-package-README.md'
+      - 'docs/vision-v30-readiness-casa-backup-rollback-20261031.md'
+      - '.github/workflows/playback-v30-age-casa-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  synthetic-backup-and-package:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_DB: vision_v30_age_ci
+          POSTGRES_PASSWORD: synthetic-ci-only-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v30_age_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: '5432'
+      PGUSER: postgres
+      PGDATABASE: vision_v30_age_ci
+      PGPASSWORD: synthetic-ci-only-password
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install local age and psql only
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y age postgresql-client
+          age --version
+          age-keygen --version
+      - name: Prepare isolated PostgreSQL 17 and staged V30 fixtures
+        run: |
+          set -euo pipefail
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | psql -v ON_ERROR_STOP=1
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_segmented_ledger_qa.sql
+          psql -v ON_ERROR_STOP=1 -f tests/v30-seven-day-retention-scale.sql
+      - name: Test rollback STOP and preserved reports in synthetic DB
+        run: psql -v ON_ERROR_STOP=1 -f tests/v30-rollback-stop-disposable.sql
+      - name: Encrypt ephemeral synthetic pg_dump with age, test negative cases and restore
+        run: bash tests/v30-age-pg17-restore-qa.sh
+      - name: Package Casa QA sources and runbook (NO APK)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/vision-v30-casa-QA"
+          P="$RUNNER_TEMP/vision-v30-casa-QA"
+          cp docs/vision-v30-casa-QA-package-README.md "$P/README-CASA.md"
+          cp docs/vision-v30-readiness-casa-backup-rollback-20261031.md "$P/CHECKLIST-CASA.md"
+          cp docs/vision-v30-scale-7day-backup-rollback-20261031.md "$P/ROTEIRO-ROLLBACK.md"
+          cp player.js "$P/player-v30-QA.js"
+          cp supabase/functions/device-gateway/index.ts "$P/device-gateway-v30-QA.ts"
+          cp tests/v30-playback-quarantine.test.cjs "$P/"
+          cp tests/v30-playback-storage-quota.test.cjs "$P/"
+          cp tests/v30-gateway-v22-parity.test.cjs "$P/"
+          {
+            echo 'VISION V30 - CASA QA - NO APK - NO PRODUCTION CREDENTIALS'
+            echo "COMMIT $(git rev-parse HEAD)"
+            echo "BRANCH $(git rev-parse --abbrev-ref HEAD)"
+            echo 'RETENTION_PRODUCTION=DISABLED'
+            echo 'NO_APK_INSTALLABLE_FILE=YES'
+            echo 'NO_REAL_BACKUP_INCLUDED=YES'
+          } > "$P/MANIFEST.txt"
+          (cd "$P" && sha256sum README-CASA.md CHECKLIST-CASA.md ROTEIRO-ROLLBACK.md \
+            player-v30-QA.js device-gateway-v30-QA.ts \
+            v30-playback-quarantine.test.cjs v30-playback-storage-quota.test.cjs \
+            v30-gateway-v22-parity.test.cjs MANIFEST.txt > SHA256SUMS.txt)
+          (cd "$P" && sha256sum -c SHA256SUMS.txt)
+          cd "$RUNNER_TEMP"
+          zip -X -r -q vision-v30-casa-QA.zip vision-v30-casa-QA
+          sha256sum vision-v30-casa-QA.zip > vision-v30-casa-QA.zip.sha256
+          unzip -l vision-v30-casa-QA.zip
+          echo "PASS_CASA_QA_PACKAGE $(sha256sum vision-v30-casa-QA.zip)"
+      - name: Upload only isolated QA ZIP and SHA256 for manual download
+        uses: actions/upload-artifact@v4
+        with:
+          name: Vision-V30-Casa-QA-no-APK
+          path: |
+            ${{ runner.temp }}/vision-v30-casa-QA.zip
+            ${{ runner.temp }}/vision-v30-casa-QA.zip.sha256
+          retention-days: 7
+          if-no-files-found: error
