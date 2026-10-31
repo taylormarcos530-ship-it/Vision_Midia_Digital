@@ -4,6 +4,10 @@ on:
     branches: [fix/playback-daily-retention-safe-20261030]
     paths:
       - 'tests/v30-age-pg17-restore-qa.sh'
+      - 'player.js'
+      - 'tests/v30-playback-quarantine.test.cjs'
+      - 'tests/v30-playback-storage-quota.test.cjs'
+      - 'supabase/functions/device-gateway/index.ts'
       - 'tests/v30-rollback-stop-disposable.sql'
       - 'docs/vision-v30-casa-QA-package-README.md'
       - 'docs/vision-v30-readiness-casa-backup-rollback-20261031.md'
