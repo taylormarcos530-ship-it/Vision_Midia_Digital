@@ -16,7 +16,7 @@ DSN = "postgresql://postgres:qa-only-local-password@127.0.0.1:5432/vision_v2_qua
 MODES = {"one":1, "batch50":50, "batch100":100, "batch500":500}
 EVENTS_PER_TV = 500
 
-def db():return psycopg.connect(DSN,connect_timeout=5)
+def db():return psycopg.connect(DSN,connect_timeout=5,autocommit=True)
 def allowed(mode):
     if mode not in MODES:raise ValueError("mode")
     return mode
