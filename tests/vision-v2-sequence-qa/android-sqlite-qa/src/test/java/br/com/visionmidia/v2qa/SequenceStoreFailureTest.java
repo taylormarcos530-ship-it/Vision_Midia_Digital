@@ -240,7 +240,7 @@ public final class SequenceStoreFailureTest {
         reopen();
         try {queue.append(event(2),sample(BOOT_B,1000),false);fail("should block corruption");}
         catch(IllegalStateException expected){assertTrue(expected.getMessage().contains("queue_gap_repair_required"));}
-        assertEquals(2,queue.snapshot().nextSequence-0);
+        assertEquals(2,scalar("SELECT next_seq FROM stream_state WHERE id=1"));
         assertEquals(0,scalar("SELECT count(*) FROM pending"));
     }
 
