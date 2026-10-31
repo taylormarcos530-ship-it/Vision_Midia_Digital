@@ -15,6 +15,9 @@ on:
       - 'supabase/qa-migrations/v30_playback_packed_ledger_qa.sql'
       - 'tests/v30-postgres-packed-assertions.sql'
       - 'tests/v30-postgres-packed-concurrency.sh'
+      - 'tests/v30-seven-day-retention-scale.sql'
+      - 'tests/v30-packed-ledger-scale.sql'
+      - 'tests/v30-backup-restore-disposable.sh'
       - '.github/workflows/playback-v30-postgres-isolated.yml'
   workflow_dispatch:
 jobs:
@@ -81,3 +84,17 @@ jobs:
         env:
           PGDATABASE: vision_v30_packed_ci
         run: bash tests/v30-postgres-packed-concurrency.sh
+
+      - name: Seven-day retention, 300k identity growth and measured write costs (fresh DB)
+        run: |
+          psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_scale_ci'
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1
+          PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1 -f tests/v30-seven-day-retention-scale.sql
+          PGDATABASE=vision_v30_scale_ci psql -v ON_ERROR_STOP=1 -f tests/v30-packed-ledger-scale.sql
+      - name: Encrypted-safe QA backup verification and isolated pg_restore 17
+        env:
+          PGDATABASE: vision_v30_scale_ci
+        run: bash tests/v30-backup-restore-disposable.sh
