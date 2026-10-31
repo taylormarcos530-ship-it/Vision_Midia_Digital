@@ -1,6 +1,6 @@
 # Vision V30: Retenção segura de reproduções (isolada)
 
-**Estado:** código em branch de homologação, SEM deploy, SEM limpeza.
+**Estado:** código em branch de homologação, SEM deploy, SEM limpeza; PostgreSQL 17 sintético aprovado em 30/10/2026 (UTC: 31/10).
 
 ## Motivo
 
@@ -23,7 +23,7 @@ nos dias 23–28/10/2026.
 1. Criar um backup **externo, completo, criptografado e com restauração testada** antes de qualquer exclusão real.
 2. Validar as contagens por empresa/TV/mídia/campanha, incluindo valores, taxas e nomes históricos (não apenas total global).
 3. Verificar a exportação individual antiga: depois de compactar, `get_playback_events` só entrega eventos recentes; o Master deve identificar corretamente os períodos resumidos.
-4. Validar a deduplicação de `client_event_id` **depois** de os eventos originais serem removidos. O índice único atual só evita duplicação enquanto `playback_logs` guarda o evento. Este SQL não soluciona reenvios extremamente tardios. **A limpeza não deve ser habilitada até essa garantia existir.**
+4. **FALHA COMPROVADA EM CI:** após excluir o bruto, a inserção de um evento já compactado é aceita pelo índice atual. A tabela de controle ganhou `dedupe_verified_at` obrigatório e sem valor padrão, portanto a limpeza permanece bloqueada mesmo com as demais aprovações. Implementar deduplicação durável e verificar custos de armazenamento, reconexões e concorrência antes de ativar. **Não habilitar limpeza.**
 5. Verificar a permissão de empresa e usuário, e a correspondência de relatórios no ambiente de testes.
 6. Medir o custo da função e do tamanho do banco em ambiente isolado. `DELETE` não devolve automaticamente o espaço físico ao sistema; `VACUUM`/manutenção exigem análise própria.
 7. Somente após testes, aplicar SQL em produção, atualizar painel para o novo RPC e habilitar compaction explicitamente em operação supervisionada. Não alterar `get_playback_report` até a validação.
@@ -33,3 +33,15 @@ nos dias 23–28/10/2026.
 `node --test tests/playback-compaction-v30.test.cjs`
 
 Esses testes são de invariantes de código e uma simulação de consolidação, **não** são teste de execução SQL em Postgres. Antes de qualquer deploy, é obrigatório validar SQL em um PostgreSQL isolado.
+## Evidências da homologação isolada (31/10/2026 UTC)
+
+- 270 agrupamentos e 63.021 reproduções comparados em leitura com `vision_playback_snapshot_qa` contra o histórico original: **zero divergências** por empresa, TV, campanha e mídia; universo de 11 TVs/3 empresas em 23–28/10.
+- 8 testes JavaScript executados em CI, 8 aprovados.
+- PostgreSQL 17 descartável com fixture sintética e migração V30: PASS para dois anunciantes, duas TVs, relatório híbrido, retenção de eventos offline, bloqueio sem aprovação, repetição do lote, preservação da tabela comercial e controle de acesso simulado.
+- **O cenário negativo de replay depois da exclusão foi reproduzido em CI.** A inexistência de deduplicação durável impede ativar compactação no projeto real.
+- Execução de testes: https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41152354204
+- Segurança: nenhum acesso de CI ao Supabase, nenhum cron, deploy ou alteração do Player/APK.
+
+## Próxima etapa obrigatória
+
+Projetar/implementar mecanismo de idempotência persistente econômico (sem recriar crescimento de storage no Free), testar race conditions em PostgreSQL descartável, conferir reenvios muito tardios e validar números comerciais. Depois passar por aprovação de backup/recuperação e de testes de relatórios. **Somente então** considerar ativação.
