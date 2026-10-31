@@ -55,6 +55,7 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
           " utc INTEGER, day TEXT,FOREIGN KEY(bucket) REFERENCES segments(bucket))");
         db.execSQL("CREATE INDEX receipts_unknown ON receipts(seq) WHERE utc IS NULL");
         db.execSQL("CREATE TABLE audit_proofs(seq INTEGER PRIMARY KEY,event_id TEXT NOT NULL,"+
+          "media TEXT NOT NULL,completed INTEGER NOT NULL,seconds REAL NOT NULL,"+
           "boot TEXT NOT NULL,mono INTEGER NOT NULL,proof_sha TEXT NOT NULL)");
         db.execSQL("CREATE TABLE audit_reviews(id INTEGER PRIMARY KEY AUTOINCREMENT,"+
           "seq INTEGER NOT NULL,code TEXT NOT NULL,evidence TEXT NOT NULL)");
@@ -163,10 +164,12 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         f.setTimeZone(TimeZone.getTimeZone("UTC"));
         return f.format(new Date(utc));
     }
-    private static String proof(String stream,long seq,String eventId,String boot,long mono) {
+    private static String proof(String stream,long seq,String eventId,String media,boolean completed,
+                                double seconds,String boot,long mono) {
         try{
             MessageDigest sha=MessageDigest.getInstance("SHA-256");
-            String value=stream+"\u001f"+seq+"\u001f"+eventId+"\u001f"+boot+"\u001f"+mono;
+            String value=stream+"\u001f"+seq+"\u001f"+eventId+"\u001f"+media+"\u001f"+
+                completed+"\u001f"+seconds+"\u001f"+boot+"\u001f"+mono;
             byte[] bytes=sha.digest(value.getBytes(StandardCharsets.UTF_8));
             StringBuilder b=new StringBuilder();
             for(byte x:bytes)b.append(String.format(Locale.ROOT,"%02x",x&255));
@@ -286,8 +289,14 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
             State s=read(db);
             if(through<s.ack || through>s.sent)throw new IllegalArgumentException("ack_out_of_range");
             long removed=through-s.ack;
+            try(Cursor c=db.rawQuery("SELECT bucket,count(*) FROM receipts WHERE seq<=? GROUP BY bucket",
+                    new String[]{Long.toString(through)})) {
+                while(c.moveToNext())
+                    db.execSQL("UPDATE segments SET live_count=live_count-? WHERE bucket=?",
+                        new Object[]{c.getLong(1),c.getLong(0)});
+            }
             db.execSQL("DELETE FROM receipts WHERE seq<=?",new Object[]{through});
-            db.execSQL("DELETE FROM segments WHERE NOT EXISTS (SELECT 1 FROM receipts r WHERE r.bucket=segments.bucket)");
+            db.execSQL("DELETE FROM segments WHERE live_count=0");
             db.execSQL("UPDATE state SET ack=?,pending_count=pending_count-? WHERE id=1",
                 new Object[]{through,removed});
             db.setTransactionSuccessful();
@@ -300,13 +309,18 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         try{
             State s=read(db);
             int n=0;
-            try(Cursor c=db.rawQuery("SELECT seq,event_id,boot,mono FROM receipts WHERE utc IS NULL ORDER BY seq",null)){
+            try(Cursor c=db.rawQuery("SELECT seq,event_id,media,completed,seconds,boot,mono FROM receipts WHERE utc IS NULL ORDER BY seq",null)){
                 while(c.moveToNext()){
                     long seq=c.getLong(0);
                     if(scalar(db,"SELECT count(*) FROM audit_proofs WHERE seq="+seq)!=0)continue;
-                    String id=c.getString(1),boot=c.getString(2);long mono=c.getLong(3);
-                    db.execSQL("INSERT INTO audit_proofs(seq,event_id,boot,mono,proof_sha) VALUES(?,?,?,?,?)",
-                        new Object[]{seq,id,boot,mono,proof(s.stream,seq,id,boot,mono)});
+                    String id=c.getString(1),media=c.getString(2),boot=c.getString(5);
+                    boolean completed=c.getInt(3)!=0;
+                    double seconds=c.getDouble(4);
+                    long mono=c.getLong(6);
+                    db.execSQL("INSERT INTO audit_proofs(seq,event_id,media,completed,seconds,boot,mono,proof_sha) "+
+                      "VALUES(?,?,?,?,?,?,?,?)",
+                      new Object[]{seq,id,media,completed?1:0,seconds,boot,mono,
+                        proof(s.stream,seq,id,media,completed,seconds,boot,mono)});
                     db.execSQL("INSERT INTO audit_reviews(seq,code,evidence) VALUES(?,'PENDING_TIME','NO_TRUSTED_CLOCK')",
                         new Object[]{seq});
                     n++;
@@ -323,10 +337,11 @@ public final class SegmentedOfflineQueue extends SQLiteOpenHelper {
         RuntimeException failure=null;
         try{
             State s=read(db);
-            try(Cursor c=db.rawQuery("SELECT event_id,boot,mono FROM receipts WHERE seq=? AND utc IS NULL",
+            try(Cursor c=db.rawQuery("SELECT event_id,media,completed,seconds,boot,mono FROM receipts WHERE seq=? AND utc IS NULL",
                 new String[]{Long.toString(seq)})){
                 if(!c.moveToFirst())throw new IllegalStateException("clock_not_unverified");
-                String actual=proof(s.stream,seq,c.getString(0),c.getString(1),c.getLong(2));
+                String actual=proof(s.stream,seq,c.getString(0),c.getString(1),
+                    c.getInt(2)!=0,c.getDouble(3),c.getString(4),c.getLong(5));
                 String saved=str(db,"SELECT proof_sha FROM audit_proofs WHERE seq="+seq);
                 if(!actual.equals(saved))throw new IllegalStateException("audit_proof_mismatch");
             }
