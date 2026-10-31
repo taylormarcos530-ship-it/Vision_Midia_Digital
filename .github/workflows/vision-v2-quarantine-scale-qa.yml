@@ -1,0 +1,78 @@
+name: Vision V2 Quarantine Capacity Matrix 7-100 TV - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/quarantine-qa/scale_benchmark.py'
+      - 'tests/vision-v2-sequence-qa/quarantine-qa/shadow_archive.sql'
+      - '.github/workflows/vision-v2-quarantine-scale-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  scale:
+    name: Isolated PostgreSQL 17 - ${{ matrix.tv }} TVs
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      max-parallel: 5
+      matrix:
+        tv: [7, 12, 20, 50, 100]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    env:
+      VISION_V2_QA_POSTGRES_DSN: postgresql://postgres:qa-only-local-password@127.0.0.1:5432/vision_v2_quarantine_disposable
+      PYTHONDONTWRITEBYTECODE: '1'
+    steps:
+      - name: Checkout without credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Block any production context or release
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
+          echo "NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_TVS=true"
+      - name: Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install Python PostgreSQL test driver (no external services)
+        shell: bash
+        run: |
+          python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Apply schema only to disposable PostgreSQL
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          import psycopg
+          with psycopg.connect(os.environ["VISION_V2_QA_POSTGRES_DSN"]) as con:
+              dbname=con.execute("SELECT current_database()").fetchone()[0]
+              assert dbname=="vision_v2_quarantine_disposable"
+              con.execute(Path("tests/vision-v2-sequence-qa/quarantine-qa/schema.sql").read_text())
+              print("DISPOSABLE_DB_ONLY=PASS")
+          PY
+      - name: Real table/index/WAL size, HTTP concurrency/ACK and shadow archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/vision-v2-sequence-qa/quarantine-qa/scale_benchmark.py --tvs ${{ matrix.tv }}
+          echo "V2_MATRIX_${{ matrix.tv }}_TV_PASS=true"
+      - name: Final no-deploy confirmation
+        run: echo 'NO_DEPLOY=true NO_SUPABASE=true NO_PRODUCTION_TV=true'
