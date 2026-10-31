@@ -1,0 +1,42 @@
+name: Vision V2 Edge API Mock QA - ISOLATED NO DEPLOY
+
+on:
+  push:
+    branches:
+      - feature/vision-v2-isolated-foundation-20261031
+    paths:
+      - 'tests/vision-v2-qa-api.test.cjs'
+      - 'supabase/functions/vision-v2-qa-device/index.ts'
+      - 'docs/vision-v2/qa-device-api.sql'
+      - '.github/workflows/vision-v2-qa-edge-mock-isolated.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  v2-mock-contract:
+    name: Node 22 isolated API contract - no network credentials
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - name: Checkout read-only
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify isolated branch and zero deployment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = "refs/heads/feature/vision-v2-isolated-foundation-20261031"
+          test -f tests/vision-v2-qa-api.test.cjs
+          test -f supabase/functions/vision-v2-qa-device/index.ts
+          echo "NO_DEPLOY=true"
+          echo "NO_SUPABASE_CREDENTIALS=true"
+          echo "NO_PRODUCTION_TOUCH=true"
+      - name: Verify Node API mocks and SQL static contract
+        run: node --test tests/vision-v2-qa-api.test.cjs
