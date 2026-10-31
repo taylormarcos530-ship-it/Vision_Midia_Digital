@@ -303,7 +303,7 @@ def cohort(n):
                      "max_pg_backends_seen":sampler.max_backend,
                      "max_python_rss_kib":sampler.max_rss,
                      "sampler_samples":sampler.samples,
-                     "autovacuum_count":s[0],"dead_tuple_estimate":s[1],
+                     "autovacuum_count":int(s[0]),"dead_tuple_estimate":int(s[1]),
                      "deadlocks":deadlocks,"cqrs_projector":out,
                      "receipts_relation_bytes":val(c,"SELECT pg_total_relation_size('qa_sustain.receipts')"),
                      "receipt_indexes_bytes":val(c,"SELECT pg_indexes_size('qa_sustain.receipts')"),
