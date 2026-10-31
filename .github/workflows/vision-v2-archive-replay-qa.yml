@@ -29,6 +29,7 @@ jobs:
       VISION_V2_QA_POSTGRES_DSN: postgresql://postgres:qa-only-local-password@127.0.0.1:5432/vision_v2_quarantine_disposable
       VISION_V2_QA_ARCHIVE_KEY_HEX: '0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef'
       PYTHONDONTWRITEBYTECODE: '1'
+      PYTHONPATH: tests/vision-v2-sequence-qa/quarantine-qa
     steps:
       - name: Checkout only isolated experimental branch
         uses: actions/checkout@v4
