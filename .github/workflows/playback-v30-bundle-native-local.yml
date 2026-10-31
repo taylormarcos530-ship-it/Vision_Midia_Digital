@@ -7,6 +7,7 @@ on:
       - 'tests/v30-native-bundle-fixture.sql'
       - 'tests/v30-native-bundle-http.cjs'
       - 'tests/v30-native-bundle-internal-commands.cjs'
+      - 'tests/v30-integration-contract-gaps.test.cjs'
       - '.github/workflows/playback-v30-bundle-native-local.yml'
   workflow_dispatch:
 
@@ -89,6 +90,7 @@ jobs:
           set -a; source "$RUNNER_TEMP/vision-v30-native-status.env"; set +a
           node tests/v30-native-bundle-http.cjs
           node tests/v30-native-bundle-internal-commands.cjs
+          node --test tests/v30-integration-contract-gaps.test.cjs
       - name: Print LOCAL service diagnostics only on failure
         if: failure()
         run: |
