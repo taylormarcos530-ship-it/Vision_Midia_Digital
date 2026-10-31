@@ -169,3 +169,20 @@ test('28 - ACK must be valid before client erases queued evidence',()=>{
   assert.throws(()=>j.ack({ok:false,committedThrough:1}),/ack_invalid/);
   assert.equal(j.events.length,1);
 });
+
+test('29 - Forged or future ACK must not erase unsent playback',()=>{
+  const j=new DurableJournal({epoch:'epoch-1'});
+  j.append(event(0));j.append(event(0));
+  for(const watermark of [3,999999,-1]) {
+    assert.throws(()=>j.ack({ok:true,committedThrough:watermark}),/ack_invalid/);
+  }
+  assert.deepEqual(j.batch().map(e=>e.seq),[1,2]);
+  assert.equal(j.lastIssued,2);
+});
+test('30 - Replaying identical ACK never erases later sequence',()=>{
+  const j=new DurableJournal({epoch:'epoch-1'});
+  j.append(event(0));j.append(event(0));j.append(event(0));
+  j.ack({ok:true,committedThrough:2});
+  j.ack({ok:true,committedThrough:2});
+  assert.deepEqual(j.batch().map(e=>e.seq),[3]);
+});
