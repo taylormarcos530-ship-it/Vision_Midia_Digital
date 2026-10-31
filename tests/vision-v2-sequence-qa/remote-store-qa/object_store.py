@@ -71,7 +71,10 @@ class Server(BaseHTTPRequestHandler):
             p=DATA/name
             if not p.is_file() or p.is_symlink():
                 return self.json(404,{"error":"not_found"})
-            self.raw(200,p.read_bytes())
+            content=p.read_bytes()
+            if state['mode']=='corrupt_read':
+                content=content[:-1]+bytes([content[-1]^1])
+            self.raw(200,content)
     def do_PUT(self):
         if not self.authorized(AUTH):return self.json(401,{"error":"unauthorized"})
         name=self.obj()
@@ -104,7 +107,9 @@ class Server(BaseHTTPRequestHandler):
                 state["puts"]+=1
                 if mode=="ack_lost":
                     return self.json(503,{"error":"synthetic_response_lost_after_durable_write"})
-                self.json(201,response_receipt(name,raw))
+                receipt=response_receipt(name,raw)
+                if mode=="bad_receipt":receipt["mac"]="0"*64
+                self.json(201,receipt)
             finally:
                 if os.path.exists(tmp):os.unlink(tmp)
     def do_POST(self):
@@ -116,7 +121,7 @@ class Server(BaseHTTPRequestHandler):
             req=json.loads(self.rfile.read(length))
         except (ValueError,json.JSONDecodeError):
             return self.json(400,{"error":"invalid_json"})
-        if set(req)!={"mode"} or req["mode"] not in {"normal","offline","ack_lost","write_full"}:
+        if set(req)!={"mode"} or req["mode"] not in {"normal","offline","ack_lost","write_full","corrupt_read","bad_receipt"}:
             return self.json(400,{"error":"invalid_mode"})
         with guard:state["mode"]=req["mode"]
         return self.json(200,{"mode":req["mode"]})
