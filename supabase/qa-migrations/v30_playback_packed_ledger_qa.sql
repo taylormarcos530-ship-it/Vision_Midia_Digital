@@ -24,8 +24,8 @@ GRANT SELECT,INSERT,UPDATE ON TABLE private.vision_playback_seen_packed_v30 TO s
 CREATE OR REPLACE FUNCTION private.vision_playback_fingerprint_bytes_v30(p_device uuid,p_event text)
 RETURNS bytea LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE SET search_path='' AS $fn$
  SELECT pg_catalog.substring(
-   pg_catalog.sha256(pg_catalog.convert_to(p_device::text || ':' || p_event,'UTF8'))
- FROM 1 FOR 16)
+   pg_catalog.sha256(pg_catalog.convert_to(p_device::text || ':' || p_event,'UTF8')),
+ 1, 16)
 $fn$;
 REVOKE ALL ON FUNCTION private.vision_playback_fingerprint_bytes_v30(uuid,text) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION private.vision_playback_fingerprint_bytes_v30(uuid,text) TO service_role;
@@ -40,7 +40,7 @@ BEGIN
  hi:=octet_length(p_packed)/16-1;
  WHILE lo<=hi LOOP
    m:=(lo+hi)/2;
-   v:=pg_catalog.substring(p_packed FROM (m*16+1) FOR 16);
+   v:=pg_catalog.substring(p_packed,(m*16+1),16);
    IF v=p_hash THEN RETURN true; END IF;
    IF v<p_hash THEN lo:=m+1; ELSE hi:=m-1; END IF;
  END LOOP;
@@ -57,10 +57,10 @@ BEGIN
  IF octet_length(p_old)%16<>0 OR octet_length(p_new)%16<>0
  THEN RAISE EXCEPTION 'Invalid V30 packed data length'; END IF;
  WITH all_hashes AS (
-  SELECT pg_catalog.substring(p_old FROM i*16+1 FOR 16) AS h
+  SELECT pg_catalog.substring(p_old,i*16+1,16) AS h
     FROM pg_catalog.generate_series(0,octet_length(p_old)/16-1) i
   UNION ALL
-  SELECT pg_catalog.substring(p_new FROM i*16+1 FOR 16) AS h
+  SELECT pg_catalog.substring(p_new,i*16+1,16) AS h
     FROM pg_catalog.generate_series(0,octet_length(p_new)/16-1) i
  )
  SELECT pg_catalog.string_agg(h,''::bytea ORDER BY h),count(*),count(DISTINCT h)
