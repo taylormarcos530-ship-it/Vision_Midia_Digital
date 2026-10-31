@@ -161,10 +161,15 @@ public final class SegmentedOfflineQueueTest {
     }
 
     @Test public void genuineSqliteFullAtPageQuotaDoesNotLeavePartialBatch(){
+        // Low SQLite max_page_count does NOT reliably emulate disk-full
+        // under WAL in this JVM. Force rollback journal for this specific
+        // isolated physical page-quota test, without changing normal WAL use.
+        queue.close();
+        queue=new SegmentedOfflineQueue(context,false);
         SQLiteDatabase db=queue.getWritableDatabase();
         long starting=queue.pageBytes();
-        long count=db.rawQuery("PRAGMA page_count",null).getCount(); // not used; only for API coverage
-        assertTrue(starting>0 && count>0);
+        assertTrue(starting>0);
+        System.out.println("V2_SQLITE_FULL_TEST_JOURNAL_MODE=DELETE");
         long pages=page("PRAGMA page_count");
         long max=page("PRAGMA max_page_count="+(pages+2));
         assertEquals(pages+2,max);
