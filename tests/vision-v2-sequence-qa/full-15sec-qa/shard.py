@@ -265,7 +265,7 @@ def bench(shard):
                 for offset in range(0,EVENTS_PER_TV,BATCH):
                     rows=q.execute("""SELECT seq,event_id,media_id,boot_id,mono_ms,proof_sha256
                           FROM proofs WHERE seq>? ORDER BY seq LIMIT ?""",(offset,BATCH)).fetchall()
-                    if len(rows)!=BATCH:raise AssertionError("local_proof_gap")
+                    if len(rows)!=min(BATCH,EVENTS_PER_TV-offset):raise AssertionError("local_proof_gap")
                     tick=time.perf_counter()
                     try:
                         ack=insert_batch(pg,device,company,stream,rows,injected)
