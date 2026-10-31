@@ -45,7 +45,7 @@ test('invalid and valid events: quarantine full proof, flush only valid, no extr
  assert.deepEqual(v.calls[0].events.map(x=>x.client_event_id),['good']);
  assert.equal(v.store.queue,null);
  assert.equal(v.store.quarantine.length,1);
- assert.deepEqual(v.store.quarantine[0].event,bad);
+ assert.deepEqual(JSON.parse(JSON.stringify(v.store.quarantine[0].event)),bad);
  assert.equal(v.store.quarantine[0].reason,'invalid_client_event_id');
 });
 test('over 2000: old proof preserved in local quarantine before active list shrinks',()=>{
@@ -71,7 +71,7 @@ test('on connectivity failure retain valid records and quarantined invalid origi
  assert.equal(v.store.queue.length,1);
  assert.equal(v.store.queue[0].client_event_id,'still-pending');
  assert.equal(v.store.quarantine.length,1);
- assert.deepEqual(v.store.quarantine[0].event,bad);
+ assert.deepEqual(JSON.parse(JSON.stringify(v.store.quarantine[0].event)),bad);
  assert.equal(v.calls.length,1);
 });
 test('bad start and end dates isolated without sending them',async()=>{
