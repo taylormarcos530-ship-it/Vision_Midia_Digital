@@ -256,5 +256,30 @@ class ArchiveOnlyReplayTests(unittest.TestCase):
         self.assert_originals()
         print("QA_ARCHIVE_RECOVERY_PASS archive_unavailable_then_restored=true",flush=True)
 
+    def test_batch_across_missing_segment_never_partially_acks(self):
+        archive_segment(self.root,KEY,self.device,1,32)
+        before=self.snapshot()
+        status,data=self.post([event(32),event(33)])
+        self.assertEqual((status,data["error"]),(503,"archive_unavailable_no_ack"))
+        self.assertEqual(self.snapshot(),before)
+        self.assert_originals()
+        print("QA_ARCHIVE_MULTISEGMENT_FAIL_CLOSED_PASS no_partial_ack=true",flush=True)
+
+    def test_registered_segment_manifest_is_immutable(self):
+        self.archive()
+        recorded=self.manifest(1)
+        with psycopg.connect(DSN) as db:
+            with self.assertRaises(psycopg.Error) as err:
+                with db.transaction():
+                    db.execute("""UPDATE v2_replay_qa.segment_manifests
+                        SET blob_sha256=%s
+                        WHERE device_id=%s AND seq_first=1""",
+                        ("f"*64,self.device))
+        self.assertIn("qa_manifest_immutable",str(err.exception))
+        self.assertEqual(self.manifest(1),recorded)
+        self.assertEqual(self.post([event(1)])[0],200)
+        self.assert_originals()
+        print("QA_ARCHIVE_MANIFEST_IMMUTABLE_PASS",flush=True)
+
 if __name__=="__main__":
     unittest.main(verbosity=2)
