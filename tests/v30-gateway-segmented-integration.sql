@@ -64,15 +64,15 @@ END $boundary$;
 INSERT INTO public.playback_logs(
  client_event_id,company_id,device_id,campaign_id,media_id,
  started_at,created_at,duration_seconds,completed)
-SELECT 'multi-'||n::text, t.company_id,t.id,
+SELECT 'multi-'||play.n::text, t.company_id,t.id,
        CASE WHEN t.n<=10 THEN '20000000-0000-4000-8000-000000000001'::uuid
        ELSE '20000000-0000-4000-8000-000000000002'::uuid END,
        CASE WHEN t.n<=10 THEN '30000000-0000-4000-8000-000000000001'::uuid
        ELSE '30000000-0000-4000-8000-000000000002'::uuid END,
        (((now() AT TIME ZONE 'America/Sao_Paulo')::date-31)::timestamp
-         AT TIME ZONE 'America/Sao_Paulo')+n*interval '1 second',
+         AT TIME ZONE 'America/Sao_Paulo')+play.n*interval '1 second',
        now()-interval '9 days',15,true
-FROM qa_tvs t CROSS JOIN generate_series(1,100) n;
+FROM qa_tvs t CROSS JOIN generate_series(1,100) AS play(n);
 
 -- Simulate Player authentication at gateway boundary: company comes from device.
 DO $reports$
