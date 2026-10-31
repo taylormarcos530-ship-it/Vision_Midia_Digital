@@ -282,6 +282,29 @@ def injection_and_restore():
             orig=c.execute(f"SELECT {FIELDS} FROM qa_rpc.read_events ORDER BY id").fetchall()
             new=c.execute(f"SELECT {FIELDS} FROM qa_rpc.restored_events ORDER BY id").fetchall()
             assert orig==new
+            # Install original query logic against independently RESTORED
+            # event rows: the source RPC stays unmodified.
+            c.execute("GRANT SELECT ON qa_rpc.restored_events TO authenticated")
+            c.execute("ALTER TABLE qa_rpc.restored_events ENABLE ROW LEVEL SECURITY")
+            c.execute("""CREATE POLICY restored_tenant ON qa_rpc.restored_events
+                  TO authenticated USING(
+                    company_id::text=current_setting('request.jwt.claim.company_id',true))""")
+            report_sql=REPORT.read_text(encoding="utf-8")
+            report_restored=report_sql.replace(
+                "function public.get_playback_report(",
+                "function public.get_playback_report_restored(").replace(
+                "from public.playback_logs l","from qa_rpc.restored_events l").replace(
+                "function public.get_playback_report(uuid,date,date,uuid,uuid)",
+                "function public.get_playback_report_restored(uuid,date,date,uuid,uuid)")
+            export_sql=EXPORT.read_text(encoding="utf-8")
+            export_restored=export_sql.replace(
+                "function public.get_playback_events(",
+                "function public.get_playback_events_restored(").replace(
+                "from public.playback_logs l","from qa_rpc.restored_events l").replace(
+                "function public.get_playback_events(uuid,date,date,uuid,uuid,integer,integer)",
+                "function public.get_playback_events_restored(uuid,date,date,uuid,uuid,integer,integer)")
+            c.execute(report_restored)
+            c.execute(export_restored)
             before=scalar(c,"SELECT count(*) FROM public.playback_logs")
             assert before==664
             assert scalar(c,"SELECT count(*) FROM qa_rpc.read_events")==before
@@ -305,7 +328,8 @@ def compare_full_json(devices,campaigns):
                         auth(c,claim)
                         raw=rpc(c,"get_playback_report",company,begin,end,camp,dev)
                         cq=rpc(c,"get_playback_report_cqrs",company,begin,end,camp,dev)
-                        assert raw==cq,(i,begin,end,camp,dev)
+                        restored=rpc(c,"get_playback_report_restored",company,begin,end,camp,dev)
+                        assert raw==cq==restored,(i,begin,end,camp,dev)
                         assert set(raw)=={"timezone","start_date","end_date","summary",
                                         "campaigns","devices","media","events"}
                         assert raw["timezone"]=="America/Sao_Paulo"
@@ -341,7 +365,9 @@ def compare_full_json(devices,campaigns):
                              limit=limit,offset=offset)
                     b=export(c,"get_playback_events_cqrs",company,DAYS[0],DAYS[2],
                              limit=limit,offset=offset)
-                    assert a==b
+                    restored=export(c,"get_playback_events_restored",company,DAYS[0],DAYS[2],
+                             limit=limit,offset=offset)
+                    assert a==b==restored
                     assert len(a)<=1000
                     if limit==12 and offset==0:assert len(a)==12
                     if limit==9999:assert len(a)==332
@@ -354,13 +380,17 @@ def compare_full_json(devices,campaigns):
                          campaign=campaigns[i][0],device=devices[i][0])
                 b=export(c,"get_playback_events_cqrs",company,DAYS[0],DAYS[2],
                          campaign=campaigns[i][0],device=devices[i][0])
-                assert a==b
+                restored=export(c,"get_playback_events_restored",company,DAYS[0],DAYS[2],
+                         campaign=campaigns[i][0],device=devices[i][0])
+                assert a==b==restored
                 cases+=1
     return {"result":"PASS","exact_json_report_comparisons":2*len(date_windows)*4,
             "exact_export_comparisons":2*6,
             "total_exact_query_comparisons":cases,
             "examined_event_timestamps":event_checks,"raw_summary_started_sum_across_queries":total_events,
             "recent_events_cap_250_checked":True,
+            "restored_full_json_equal":True,
+            "restored_export_equal":True,
             "timezone":"America/Sao_Paulo"}
 def access_negative():
     checks=0
