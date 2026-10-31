@@ -1,4 +1,4 @@
-name: Vision V2 Sequence Watermark QA - NO DEPLOY
+name: Vision V2 Sequence + Offline Clock QA - NO DEPLOY
 on:
   push:
     branches:
@@ -10,9 +10,9 @@ on:
 permissions:
   contents: read
 jobs:
-  sequence-qa:
+  sequence-offline-qa:
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 8
     steps:
       - name: Checkout no credentials
         uses: actions/checkout@v4
@@ -22,11 +22,11 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '22'
-      - name: Guard branch and prohibit production use
+      - name: Guard branch and no deployment
         shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = "refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031"
-          echo "QA_ONLY=true NO_DEPLOY=true NO_PRODUCTION_SECRETS=true"
-      - name: Test contiguous watermark and offline replay simulation
-        run: node --test tests/vision-v2-sequence-qa/model.test.cjs
+          echo "QA_ONLY=true NO_DEPLOY=true NO_SUPABASE=true NO_PRODUCTION_SECRETS=true"
+      - name: Test sequence model and real temporary file persistence
+        run: node --test tests/vision-v2-sequence-qa/*.test.cjs
