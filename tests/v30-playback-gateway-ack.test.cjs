@@ -2,7 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const { AsyncFunction } = Object.getPrototypeOf(async function () {}).constructor
+const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor
 const src = fs.readFileSync(path.join(__dirname, '../supabase/functions/device-gateway/index.ts'),'utf8')
 const player = fs.readFileSync(path.join(__dirname, '../player.js'),'utf8')
 const start = src.indexOf("    if (action === 'playback' || action === 'playback_batch') {")
