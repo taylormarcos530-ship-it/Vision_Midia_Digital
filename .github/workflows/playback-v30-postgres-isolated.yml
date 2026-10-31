@@ -57,7 +57,7 @@ jobs:
       - name: Dedupe V30 in separate disposable PostgreSQL 17 database
         run: |
           psql -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vision_v30_dedupe_ci'
-          PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-fixture.sql
+          sed '/^CREATE ROLE /d' tests/v30-postgres-fixture.sql | PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
           PGDATABASE=vision_v30_dedupe_ci psql -v ON_ERROR_STOP=1 -f tests/v30-postgres-dedupe-assertions.sql
