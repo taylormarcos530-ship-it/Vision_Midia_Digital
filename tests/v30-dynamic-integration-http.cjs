@@ -18,14 +18,17 @@ async function cycle(proofs,events=[]){
 }
 async function main(){
  pg('INSERT INTO public.device_credentials(device_id,token_hash) VALUES ('+q(device)+','+q(createHash('sha256').update(token).digest('hex'))+')');
+ assert.equal(pg("SELECT status FROM public.companies WHERE id='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'"),'active','QA company must be active before T01');
  const good='qa-t01-good',bad={client_event_id:'',started_at:'invalid'};
  const mixed=await cycle([proof(good),bad]);
  assert.equal(count(good),0,'T01: mixed invalid batch must not partially write valid proof; response='+JSON.stringify(mixed));
- assert.ok(mixed.status>=400||mixed.data.proofs?.ok===false,'T01: invalid mixed batch must be rejected');
+ assert.equal(mixed.status,200,'T01 bundle cycle should succeed while proof subaction rejects: '+JSON.stringify(mixed));
+ assert.equal(mixed.data.proofs?.ok,false,'T01 proof subaction must reject invalid batch: '+JSON.stringify(mixed));
+ assert.equal(mixed.data.proofs?.data?.error,'invalid_playback_event','T01 must reject for invalid proof, not access status');
  console.log('PASS_T01 mixed batch atomic no partial write');
  const a='qa-t02-proof';
  const partial=await cycle([proof(a)],[{event_type:'invalid-qa-event',timestamp:'invalid'}]);
- assert.equal(partial.status,200);
+ assert.equal(partial.status,200,'T02 response: '+JSON.stringify(partial));
  assert.equal(partial.data.proofs?.ok,true,'T02 proof subaction should succeed');
  assert.equal(partial.data.proofs?.data?.accepted,1);
  assert.equal(partial.data.events?.ok,false,'T02 invalid events must fail independently');
