@@ -3,7 +3,7 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const vm=require('node:vm');
 const player=fs.readFileSync('player.js','utf8');
-const start=player.indexOf('  function playbackQueue() {');
+const start=player.indexOf('  function strictPlaybackStoredArray(key) {');
 const end=player.indexOf('\n  function deviceEventQueue()',start);
 assert.ok(start>0&&end>start);
 const source=player.slice(start,end);
