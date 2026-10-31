@@ -31,6 +31,8 @@ CREATE TABLE v2_soak_qa.receipts_oct PARTITION OF v2_soak_qa.receipts
  FOR VALUES FROM ('2026-10-01') TO ('2026-11-01');
 CREATE TABLE v2_soak_qa.receipts_nov PARTITION OF v2_soak_qa.receipts
  FOR VALUES FROM ('2026-11-01') TO ('2026-12-01');
+CREATE INDEX qa_stream_seq_oct ON v2_soak_qa.receipts_oct(device,seq);
+CREATE INDEX qa_stream_seq_nov ON v2_soak_qa.receipts_nov(device,seq);
 CREATE INDEX qa_tenant_day_oct ON v2_soak_qa.receipts_oct(company,received_day);
 CREATE INDEX qa_tenant_day_nov ON v2_soak_qa.receipts_nov(company,received_day);
 CREATE TABLE v2_soak_qa.projectors(
