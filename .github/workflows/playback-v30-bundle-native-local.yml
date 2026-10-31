@@ -1,0 +1,103 @@
+name: Vision V30 native bundle Deno traffic and commands QA
+on:
+  push:
+    branches: [fix/playback-daily-retention-safe-20261030]
+    paths:
+      - 'supabase/functions/device-bundle-stable/index.ts'
+      - 'tests/v30-native-bundle-fixture.sql'
+      - 'tests/v30-native-bundle-http.cjs'
+      - 'tests/v30-native-bundle-internal-commands.cjs'
+      - '.github/workflows/playback-v30-bundle-native-local.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  local-supabase:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      SUPABASE_ACCESS_TOKEN: ''
+      SUPABASE_PROJECT_ID: ''
+      SUPABASE_DB_PASSWORD: ''
+      SUPABASE_EXPERIMENTAL_STACK: '0'
+      PGHOST: 127.0.0.1
+      PGPORT: '54322'
+      PGUSER: postgres
+      PGPASSWORD: postgres
+      PGDATABASE: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - uses: supabase/setup-cli@v3
+        with:
+          version: 2.84.2
+      - name: Verify CLI options and install psql
+        run: |
+          supabase --version
+          supabase start --help
+          supabase status --help
+          sudo apt-get update -qq
+          sudo apt-get install -y postgresql-client
+      - name: Create empty unlinked Supabase local project
+        run: |
+          set -euo pipefail
+          QA_DIR="$(mktemp -d -p "$RUNNER_TEMP" vision-v30-native.XXXXXXXX)"
+          echo "QA_DIR=$QA_DIR" >> "$GITHUB_ENV"
+          cd "$QA_DIR"
+          supabase init
+          mkdir -p supabase/functions/device-bundle-stable
+          cp "$GITHUB_WORKSPACE/supabase/functions/device-bundle-stable/index.ts" supabase/functions/device-bundle-stable/index.ts
+          cat >>supabase/config.toml <<'TOML'
+          [functions.device-bundle-stable]
+          verify_jwt = false
+          TOML
+          test ! -e supabase/.temp/project-ref
+      - name: Start only local Postgres Auth PostgREST Kong and Deno
+        run: |
+          set -euo pipefail
+          cd "$QA_DIR"
+          supabase start --exclude studio,imgproxy,realtime,storage-api,postgres-meta,mailpit,logflare,vector,supavisor
+          supabase status -o env > "$RUNNER_TEMP/vision-v30-native-status.env"
+          test -s "$RUNNER_TEMP/vision-v30-native-status.env"
+          set -a; source "$RUNNER_TEMP/vision-v30-native-status.env"; set +a
+          [[ "$API_URL" =~ ^http://(127\.0\.0\.1|localhost):54321/?$ ]] || exit 91
+          echo "Local API URL verified; no credentials printed"
+      - name: Load only V30 synthetic fixture and local RLS
+        run: |
+          set -euo pipefail
+          sed -e '/^CREATE ROLE /d' -e 's/^CREATE SCHEMA private;/CREATE SCHEMA IF NOT EXISTS private;/' \
+            tests/v30-postgres-fixture.sql > "$RUNNER_TEMP/vision-v30-local-fixture.sql"
+          psql -v ON_ERROR_STOP=1 -f "$RUNNER_TEMP/vision-v30-local-fixture.sql"
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_compaction_staged.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_dedupe_guard.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_packed_ledger_qa.sql
+          psql -v ON_ERROR_STOP=1 -f supabase/qa-migrations/v30_playback_segmented_ledger_qa.sql
+          psql -v ON_ERROR_STOP=1 -f tests/v30-http-qa-fixture.sql
+          psql -v ON_ERROR_STOP=1 -f tests/v30-native-supabase-rls.sql
+          psql -v ON_ERROR_STOP=1 -f tests/v30-native-bundle-fixture.sql
+      - name: Install pinned real SDK locally
+        run: |
+          set -euo pipefail
+          npm install --no-save --ignore-scripts --no-audit --no-fund @supabase/supabase-js@2.75.0
+      - name: Native bundle cycles and command concurrency over real local PostgREST
+        run: |
+          set -euo pipefail
+          set -a; source "$RUNNER_TEMP/vision-v30-native-status.env"; set +a
+          node tests/v30-native-bundle-http.cjs
+          node tests/v30-native-bundle-internal-commands.cjs
+      - name: Print LOCAL service diagnostics only on failure
+        if: failure()
+        run: |
+          cd "$QA_DIR" || exit 0
+          supabase status || true
+          docker ps --format '{{.Names}} {{.Status}}' | grep supabase || true
+      - name: Stop disposable local stack
+        if: always()
+        run: |
+          if [[ -n "$QA_DIR" && -d "$QA_DIR" ]]; then
+            (cd "$QA_DIR" && supabase stop --no-backup) || true
+          fi
