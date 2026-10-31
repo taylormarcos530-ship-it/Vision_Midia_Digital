@@ -109,3 +109,10 @@ Casos comprovados por **simulação local das funções Edge usando mocks**, exe
 Auditoria de workflows: examinados os 24 workflows existentes em `.github/workflows`. Os workflows existentes de publicação do GitHub Pages ou APK são vinculados a outras branches, não à branch V2. A execução acima não contém deploy; integrações externas de preview do provedor de hospedagem **não** foram auditadas nessa análise.
 
 Próxima entrega: teste com tráfego **HTTPS real autorizado e restrito ao ambiente QA** (com credencial sintética e limpeza após o ensaio), seguido do painel QA multiempresa protegido e do player simulado. Medir invocações, erros e isolamento antes de qualquer teste de escala.
+
+
+## F2 — Modelo de sequência e decisão sobre histórico (31/10/2026)
+
+**Concluído SOMENTE como protótipo Node isolado:** [modelo com watermark e journal persistível](../../tests/vision-v2-sequence-model.cjs) e [testes](../../tests/vision-v2-sequence-qa.test.cjs). **PASS 30/30 no [GitHub Actions 41220801069](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41220801069)**, incluindo ACK futuro inválido, reenvios, falha, reinício, 10.000 eventos simulados e lacunas. Nenhum deploy.
+
+**Decisão arquitetural e próximos gates:** [comparação de quatro alternativas e proposta B/C](storage-sequence-decision-20261031.md). Sequência monotônica por TV/epoch e janela recente limitada é a candidata de F2, mas ainda **NÃO está implementada no PostgreSQL ou no player**. A API F1 implantada continua no modelo de hash por evento e **continua crescendo sem retenção**. Não conectar TV nem habilitar limpeza antes de testes SQL de concorrência, backups reais/restauração, reconciliação comercial e QA HTTPS.
