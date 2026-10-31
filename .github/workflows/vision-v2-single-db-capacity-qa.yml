@@ -1,0 +1,53 @@
+name: Vision V2 Single PostgreSQL17 Capacity + Concurrent HTTP - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/single-db-capacity-qa/**'
+      - '.github/workflows/vision-v2-single-db-capacity-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  single-db:
+    name: Disposable single PG17 progressive capacity and 100/300 concurrent clients
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - name: Isolated branch read-only checkout
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Deny unexpected refs and production environment
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'QA_SINGLE_PG17=true NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_PANEL=true NO_TVS=true'
+      - name: Python 3.12 and QA-only PostgreSQL driver
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Progressive load with resource gates and real 100/300 concurrent loopback HTTP
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tests/vision-v2-sequence-qa/single-db-capacity-qa/single_db.py --target 1000000
+          echo 'QA_PILOT_SINGLE_DB=PASS'
+      - name: Preserve production
+        if: always()
+        run: echo 'NO_SUPABASE=true NO_MAIN=true NO_DEPLOY=true NO_APK=true NO_DELETE=true'
