@@ -201,7 +201,10 @@ class FencedHandler(BaseHTTPRequestHandler):
                 srv.denied+=1
                 if srv.denied<=3:print("QA_FENCED_DENIED="+repr(ex),flush=True)
             if not headers:
-                self.send_response(401);self.send_header("Content-Length","0");self.end_headers()
+                # Commercial revision changed during admission: stale, not
+                # invalid JWT. Both paths fail-closed without any body.
+                code=503 if str(ex)=="revised_during_stream" else 401
+                self.send_response(code);self.send_header("Content-Length","0");self.end_headers()
             else:
                 with srv.guard_mu:srv.failed+=1
                 self.close_connection=True
