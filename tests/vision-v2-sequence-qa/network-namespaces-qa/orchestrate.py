@@ -9,6 +9,10 @@ from pathlib import Path
 DB="postgresql://postgres:qa-only-local-password@127.0.0.1:55432/vision_v2_quarantine_disposable"
 CHANNEL="qa_vision_network_notify"
 PREFIX="v2qa_"
+LEASE_TEST=float(os.environ.get("QA_NETWORK_LEASE_SECONDS","1.7"))
+RECONCILE_TEST=float(os.environ.get("QA_NETWORK_RECONCILE_SECONDS","0.5"))
+CUT_TEST=float(os.environ.get("QA_NETWORK_CUT_SECONDS","0"))
+PULSE_PERIOD=float(os.environ.get("QA_NETWORK_PULSE_SECONDS","0.35"))
 def shell(*args):
     r=subprocess.run(args,text=True,capture_output=True,check=True)
     return r.stdout.strip()
@@ -40,7 +44,7 @@ def pulse(stop,metrics):
                 while not stop.is_set():
                     c.execute("SELECT pg_notify(%s,%s)",(CHANNEL,"pulse"))
                     metrics["pulses"]+=1
-                    stop.wait(.35)
+                    stop.wait(PULSE_PERIOD)
         except Exception as exc:
             metrics["errors"]+=1
             stop.wait(.25)
@@ -61,7 +65,7 @@ def wave(n):
     after=[read(z)[1]["sql_reads"] for z in "ab"]
     delta=sum(a-b for a,b in zip(after,before))
     # Bounded periodic SQL per replica; *never* one query for each GET.
-    max_expected=math.ceil(elapsed/.5)*2+7
+    max_expected=math.ceil(elapsed/RECONCILE_TEST)*2+7
     assert delta<=max_expected,("unbounded_sql_reads",delta,max_expected)
     return {"clients":n,"p95_ms":pctl(latency,.95),"p99_ms":pctl(latency,.99),
          "periodic_postgres_sql_reads":delta,"per_request_sql":False,
@@ -85,7 +89,8 @@ def main():
         shell("docker","run","-d","--name",PREFIX+node,"--network",PREFIX+"front",
               "-p",f"127.0.0.1:{port}:8080","-e",f"QA_NODE={node}",
               "-e","QA_DB_DSN=postgresql://postgres:qa-only-local-password@v2qa_pg:5432/vision_v2_quarantine_disposable",
-              "-e","QA_LEASE_SECONDS=1.7","v2qa-network-replica:ci")
+              "-e",f"QA_LEASE_SECONDS={LEASE_TEST}",
+              "-e",f"QA_RECONCILE_SECONDS={RECONCILE_TEST}","v2qa-network-replica:ci")
         shell("docker","network","connect",PREFIX+"back",PREFIX+node)
     pids={n:int(shell("docker","inspect","--format","{{.State.Pid}}",PREFIX+n)) for n in "ab"}
     namespaces={n:shell("docker","exec",PREFIX+n,"python","-c",
@@ -97,7 +102,12 @@ def main():
         until(lambda:all(read(n)[0]==200 and read(n)[1]["revision"]==1 for n in "ab"),18)
         note("disconnect_only_backend_of_replica_b_keep_HTTP_frontend")
         shell("docker","network","disconnect","--force",PREFIX+"back",PREFIX+"b")
-        until(lambda:read("b")[0]==503,8)
+        cut_since=time.monotonic()
+        if CUT_TEST:
+            # REAL elapsed wall-clock partition, no fake/speed-adjusted timer.
+            time.sleep(CUT_TEST)
+            assert time.monotonic()-cut_since>=180,"partition_shorter_than_180s"
+        until(lambda:read("b")[0]==503,12 if CUT_TEST else 8)
         assert read("a")[0]==200,"healthy_replica_disrupted"
         disconnected=read("b")
         assert disconnected[1]["backend_healthy"] is False
@@ -110,11 +120,11 @@ def main():
             a=read("a")
             if a[0]==200 and a[1]["revision"]==2:return True
             raise AssertionError(("replica_a_revision_pending",a,"replica_b",read("b"),"heartbeat",stats))
-        until(revision_a_ok,8)
+        until(revision_a_ok,max(8,RECONCILE_TEST*2+10))
         assert read("b")[0]==503,"partitioned_replica_served_cached_request"
         note("reconnect_backend_b_then_reload_durable_revision")
         shell("docker","network","connect",PREFIX+"back",PREFIX+"b")
-        until(lambda:read("b")[0]==200 and read("b")[1]["revision"]==2,15)
+        until(lambda:read("b")[0]==200 and read("b")[1]["revision"]==2,max(15,RECONCILE_TEST*2+12))
         healthy={n:read(n)[1] for n in "ab"}
         results=[wave(100),wave(300)]
         states={n:read(n)[1] for n in "ab"}
@@ -122,7 +132,11 @@ def main():
         assert stats["connections"]<=3,stats
         result={"result":"PASS","postgres17_disposable":True,
           "two_distinct_docker_network_namespaces":True,
-          "same_ephemeral_github_runner":True,"different_physical_hosts_tested":False,
+          "same_ephemeral_github_runner":True,
+          "actual_partition_wall_seconds":round(time.monotonic()-cut_since,3) if CUT_TEST else None,
+          "180_second_partition_tested":CUT_TEST>=180,
+          "configured_lease_seconds":LEASE_TEST,
+          "configured_reconcile_seconds":RECONCILE_TEST,"different_physical_hosts_tested":False,
           "backend_cut_b_frontend_still_accessible":True,
           "http_503_after_silent_feed_lease":True,
           "durable_outbox_recovered_after_reconnect":True,
