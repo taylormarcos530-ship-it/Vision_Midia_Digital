@@ -152,7 +152,7 @@ def main():
         revoked=race(srv,keys,"revoke")
         ck(get(srv,keys,200,"UPDATED MID HTTP")>0,"membership_recovery")
         stats=srv.pool_metrics()
-        ck(stats["created"]==qa.PG_POOL and stats["borrows"]>stats["capacity"],
+        ck(stats["created"]==qa.PG_POOL+1 and stats["broken"]==1 and stats["borrows"]>stats["capacity"],
            ("pool_not_actually_reused",stats))
         ck(stats["peak"]<=qa.PG_POOL and stats["reuses"]>0,"pool_bound_failed")
         with v.con() as db:
