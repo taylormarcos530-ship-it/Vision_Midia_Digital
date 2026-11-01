@@ -262,7 +262,18 @@ def security_midstream(replica,keys):
         chk(len(first)==16384,"missing_first_chunk")
         chk(ctl(replica,"pause_state"),"stream_not_paused")
         publish_membership(v.COMPANIES[0],v.USER_IDS[0],False)
-        until(lambda:ctl(replica,"stats")["active_membership"].get(str(v.COMPANIES[0])) is False,6)
+        with v.con() as c:
+            actual=c.execute("SELECT count(*) FROM private.memberships WHERE company_id=%s AND user_id=%s",
+                 (v.COMPANIES[0],v.USER_IDS[0])).fetchone()[0]
+        chk(actual==0,("revocation_not_persisted",actual))
+        print("QA_ROLLING_REVOKE_DB_JSON="+js({"membership_remaining":actual,
+            "worker_before":ctl(replica,"stats")}),flush=True)
+        try:
+            until(lambda:ctl(replica,"stats")["active_membership"].get(str(v.COMPANIES[0])) is False,9)
+        except AssertionError:
+            print("QA_ROLLING_REVOKE_FAIL_JSON="+js({"worker":ctl(replica,"stats"),
+                "db_membership_remaining":actual}),flush=True)
+            raise
         ctl(replica,"resume")
         try:
             remain=r.read()
