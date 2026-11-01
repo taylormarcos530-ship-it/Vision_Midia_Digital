@@ -184,7 +184,17 @@ def scheduler_negative():
     ck(selected==2 and now>deadline,"late_scheduler_routed_old")
     # Intentionally measure a wall-clock overshoot; a strict physical 420ms
     # deadline cannot be promised when the process is not scheduled.
+    # Real OS scheduling delay: NO background timer is trusted for routing.
+    # If the process resumes late, a new caller must still choose NEW.
+    real=Cutover(7,8)
+    real.change(.42)
+    time.sleep(.54)
+    rport,rnow=real.route()
+    real_overshoot=(rnow-real.expires)*1000
+    ck(rport==8 and real_overshoot>=0,
+       ("real_scheduler_delay_admitted_expired_old_route",rport,real_overshoot))
     return {"deadline_monotonic":deadline,"fake_scheduler_overshoot_ms":650.,
+        "real_scheduler_overshoot_ms":round(real_overshoot,3),
         "post_deadline_old_admissions":0,"hard_physical_420ms_achieved":False,
         "route_pointer_immediately_switched":True}
 def http(port,path,timeout=5):
