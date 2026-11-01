@@ -93,7 +93,7 @@ def main():
     v2.disk.driver.q.init_db()
     v2.disk.driver.p.expanded_history()
     v2.disk.driver.a.setup_outbox()
-    v2.deep.rls_audit()
+    v2.driver.deep.rls_audit()
     z.create_tables()
     keys=v2.disk.driver.a.Keys()
     company=v.COMPANIES[0]
