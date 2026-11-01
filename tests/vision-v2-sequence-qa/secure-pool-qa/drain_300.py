@@ -265,11 +265,40 @@ def main():
         good_new=post_wave_retry(base,keys,100,"RACE UPDATED")
         proxy.switch(peers[1][2]["port"])
         good_new2=post_wave_retry(base,keys,100,"RACE UPDATED")
+        # Negative proof: a revoked JWT/company association must return 401
+        # on precisely ONE new HTTP attempt, without joining the 503 retry
+        # policy or returning a buffered commercial report.
+        co,uid=v.COMPANIES[0],v.USER_IDS[0]
+        qa.qa.guarded_revoke(co,uid)
+        with proxy.lock:
+            revoked_hits_before=sum(proxy.hits_by_port.values())
+        forbidden=request.Request(base+"/0",headers={
+            "X-QA-JWT":token,"Accept-Encoding":"gzip"})
+        try:
+            with request.urlopen(forbidden,timeout=10) as resp:
+                raise AssertionError(("revoked_user_received_HTTP",resp.status))
+        except error.HTTPError as exc:
+            ck(exc.code==401,("revoked_JWT_not_401",exc.code))
+            ck(len(exc.read())==0, "revoked_user_received_body")
+        with proxy.lock:
+            revoked_hits_after=sum(proxy.hits_by_port.values())
+        ck(revoked_hits_after-revoked_hits_before==1,
+           ("revoked_401_retried_or_bypassed_proxy",
+            revoked_hits_before,revoked_hits_after))
+        with v.con() as db:
+            with db.transaction():
+                db.execute("SELECT pg_advisory_xact_lock(%s)",(qa.qa.lockkey(co),))
+                db.execute("""INSERT INTO private.memberships(company_id,user_id)
+                    VALUES(%s,%s) ON CONFLICT DO NOTHING""",(co,uid))
+        ck(drv.fetch_url(base,keys,0,200,"RACE UPDATED")["code"]==200,
+           "JWT_RLS_membership_recovery_after_no_retry_401")
         with v.con() as db:
             db_bytes=db.execute("SELECT pg_database_size(current_database())").fetchone()[0]
             index=db.execute("SELECT pg_indexes_size('public.playback_logs')").fetchone()[0]
         result={"result":"PASS","mixed_300":counts,
             "retry_policy":"only idempotent GET 503 max5 attempts and 7.5s; never JWT 401 or partial 200",
+            "revocation_401":{"attempts":1,"body_bytes":0,"retry":False,
+                "recovered_after_regrant":True},
             "admission_drain":{"switches":proxy.drain_switches,
                 "timeouts":proxy.drain_timeouts,
                 "max_old_active":proxy.drain_old_max,
