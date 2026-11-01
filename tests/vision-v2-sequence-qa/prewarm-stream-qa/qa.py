@@ -117,7 +117,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.check_auth(company,token)
                 # Bound member lookups per full JSON stream; paused fault
                 # injection uses a deterministic 16KiB first chunk.
-                chunk_size=16384 if paused and sent==0 else 262144
+                chunk_size=16384 if paused and sent==0 else 524288
                 chunk=body[sent:sent+chunk_size]
                 self.wfile.write(chunk);self.wfile.flush()
                 prev=sent
