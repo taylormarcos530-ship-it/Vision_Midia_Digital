@@ -103,11 +103,14 @@ def main():
             replies=[f.result(timeout=65) for f in futures]
         counts={str(code):sum(x["code"]==code for x in replies) for code in (200,503,"incomplete")}
         ck(sum(counts.values())==300,("lost_client",counts))
-        # Zero baseline HTTP 200 is acceptable when the commercial commit
-        # catches ALL 300 in-flight requests before their body completes.
-        # Never weaken integrity checks of any 200 that *does* complete.
-        ck((counts["503"]+counts["incomplete"])>0,
-           ("expected_fail_closed_after_inflight_change",counts))
+        # The publishing transaction must never slip between revision
+        # observation and admission fence acquisition. A permitted caller
+        # cannot receive a transient 503 from that TOCTOU window.
+        # An already-started 200 can still truncate on a later revision;
+        # it is counted as incomplete and NEVER retried or accepted as 200.
+        ck(counts["503"]==0,("commercial_admission_503_regression",counts))
+        ck(counts["200"]+counts["incomplete"]==300,
+           ("missing_or_unclassified_response",counts))
         # Both stale after commit even if lost LISTEN. No old version may pass
         # NEW admission; HTTP 200 from old wave was admitted before commit.
         for peer in peers:
