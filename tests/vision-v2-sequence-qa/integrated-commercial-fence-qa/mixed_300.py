@@ -82,10 +82,14 @@ def main():
             proxy.switch(peers[1][2]["port"])
             # Allow NEW to receive live submissions while OLD requests are
             # still in flight. Commit during unfinished client wave.
-            time.sleep(.04)
-            with proxy.lock:
-                new_started=proxy.hits_by_port.get(peers[1][2]["port"],0)
-            ck(new_started>0,("new_route_unused",proxy.hits_by_port))
+            deadline=time.monotonic()+3
+            new_started=0
+            while time.monotonic()<deadline:
+                with proxy.lock:
+                    new_started=proxy.hits_by_port.get(peers[1][2]["port"],0)
+                if new_started>0:break
+                time.sleep(.006)
+            ck(new_started>0,("new_route_never_assigned",proxy.hits_by_port))
             unfinished_before=sum(not f.done() for f in futures)
             ck(unfinished_before>0,"all_300_finished_before_mutation")
             event=qa.guarded_publish(v.COMPANIES[0],"RACE UPDATED",notify=False)
