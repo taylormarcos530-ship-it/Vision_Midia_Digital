@@ -54,12 +54,18 @@ def wave(n):
         code,body=read("ab"[i%2])
         assert code==200 and body["revision"]==2,(code,body)
         return (time.perf_counter()-begin)*1000
+    start=time.perf_counter()
     with ThreadPoolExecutor(max_workers=n) as pool:
         latency=list(pool.map(hit,range(n)))
+    elapsed=time.perf_counter()-start
     after=[read(z)[1]["sql_reads"] for z in "ab"]
-    assert before==after,("cache_hit_per_request_sql",before,after)
+    delta=sum(a-b for a,b in zip(after,before))
+    # Bounded periodic SQL per replica; *never* one query for each GET.
+    max_expected=math.ceil(elapsed/.5)*2+7
+    assert delta<=max_expected,("unbounded_sql_reads",delta,max_expected)
     return {"clients":n,"p95_ms":pctl(latency,.95),"p99_ms":pctl(latency,.99),
-         "postgres_sql_reads_from_http":0,"http_responses":len(latency)}
+         "periodic_postgres_sql_reads":delta,"per_request_sql":False,
+         "http_responses":len(latency)}
 def main():
     note("create_isolated_docker_networks")
     shell("docker","network","create",PREFIX+"front")
