@@ -1,0 +1,114 @@
+name: Vision V2 Independent Encrypted CQRS Archive Restore - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/independent-cqrs-archive-qa/**'
+      - '.github/workflows/vision-v2-independent-cqrs-archive-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  produce:
+    name: Runner A - PG17 originals, AES256GCM encrypted segments, SHA256, JSON reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict branch and no production deployment
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'QA_ONLY=true NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_TVS=true NO_DELETE=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Build encrypted external archive and original report JSON reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/qa_archive" "$RUNNER_TEMP/qa_key"
+          python -u tests/vision-v2-sequence-qa/independent-cqrs-archive-qa/pipeline.py --mode producer --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_key"
+      - name: Upload ENCRYPTED segments and SHA manifest as GitHub artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-v2-encrypted-segments
+          path: ${{ runner.temp }}/qa_archive/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+      - name: Upload SYNTHETIC key separately (QA-only, NOT a production KMS)
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-v2-synthetic-key-NOT-PRODUCTION
+          path: ${{ runner.temp }}/qa_key/
+          retention-days: 1
+          if-no-files-found: error
+      - name: Always preserve original records
+        if: always()
+        run: echo 'NO_ORIGINAL_DELETE=true NO_PROD_DB=true'
+  restore:
+    needs: produce
+    name: Runner B - independent PG17 restore, corruption/outage, full JSON and export
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate independent runner and branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = 'refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031'
+          echo 'DIFFERENT_GITHUB_JOB=true INDEPENDENT_DATABASE=true NO_PRODUCTION=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-v2-encrypted-segments
+          path: ${{ runner.temp }}/qa_archive/
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-v2-synthetic-key-NOT-PRODUCTION
+          path: ${{ runner.temp }}/qa_key/
+      - name: Restore archive in new PostgreSQL and verify exact original RPC JSON
+        shell: bash
+        run: |
+          set -euo pipefail
+          chmod 600 "$RUNNER_TEMP/qa_key/synthetic-only-aes256.key"
+          python -u tests/vision-v2-sequence-qa/independent-cqrs-archive-qa/pipeline.py --mode consumer --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_key"
+          echo 'QA_V2_INDEPENDENT_ENCRYPTED_RESTORE_PASS=true'
+      - name: No deployments, deletions or original changes
+        if: always()
+        run: echo 'NO_SUPABASE=true NO_APK=true NO_SITE=true NO_PANEL=true NO_TV=true NO_DELETE=true'
