@@ -103,6 +103,8 @@ def main():
             replies=[f.result(timeout=65) for f in futures]
         counts={str(code):sum(x["code"]==code for x in replies) for code in (200,503,"incomplete")}
         ck(sum(counts.values())==300,("lost_client",counts))
+        # The router handler is driver.CommercialRouterHandler in the existing
+        # bounded-fence module; its exception counters diagnose upstream aborts.
         # A committed revision can abort an ALREADY-started gzip stream.
         # The buffering proxy fails closed (503), with no truncated-200 retry.
         # Admission itself must have ZERO pre-header revision TOCTOU failures.
