@@ -34,6 +34,60 @@ def consumer_stage_crash(consumer,mode):
         if mode=="after_checkpoint_commit_before_ack":
             os._exit(84)
         os._exit(85)
+def publisher_process(company,label,start,output):
+    check(start.wait(8),"publisher_barrier_timeout")
+    result=[]
+    for i in range(4):
+        result.append(z.publish(company,label+"-"+str(i),notify=False))
+        time.sleep(.022)
+    output.put({"pid":os.getpid(),"ids":[x["id"] for x in result]})
+def multi_process_publish_consume():
+    # Two real *publisher OS processes*, two independent consumers already
+    # alive, SQL polling overlap with physical commits; all in one QA runner.
+    import queue
+    consumers=[z.start_consumer(0),z.start_consumer(1)]
+    gate=mp.Event();output=mp.Queue()
+    procs=[mp.Process(target=publisher_process,args=(v.COMPANIES[i],
+       "PROC"+str(i),gate,output)) for i in (0,1)]
+    try:
+        for proc in procs:proc.start()
+        gate.set()
+        observed=[[],[]]
+        overlap=[0,0]
+        for k in range(18):
+            for j,peer in enumerate(consumers):
+                ids=z.ask(peer,"sync")["seen"]
+                observed[j]+=ids
+                if ids:overlap[j]+=1
+            time.sleep(.018)
+        for proc in procs:
+            proc.join(8)
+            check(proc.exitcode==0,("publisher_process_failure",proc.exitcode))
+        outputs=[output.get(timeout=2) for _ in procs]
+        ids=sorted(x for entry in outputs for x in entry["ids"])
+        check(len(ids)==8 and len(set(ids))==8,"missing_multi_process_commits")
+        for i,peer in enumerate(consumers):
+            observed[i]+=z.ask(peer,"sync")["seen"]
+            check(observed[i]==ids,("multi_process_consumer_order",observed[i],ids))
+            check(overlap[i]>0,("consumer_never_replayed_during_writes",overlap))
+        with v.con() as c:
+            receipts=c.execute("""SELECT consumer,id FROM qa_ordered_processed
+                 WHERE consumer IN (0,1) AND id >= %s ORDER BY consumer,id""",
+                 (ids[0],)).fetchall()
+            check(receipts==[(j,eid) for j in (0,1) for eid in ids],
+                  "missing_or_duplicate_multi_process_receipts")
+        return {"status":"PASS","publisher_pids":[z["pid"] for z in outputs],
+             "real_different_publisher_processes":len(set(z["pid"] for z in outputs))==2,
+             "independent_consumer_processes":2,
+             "committed_events":ids,
+             "concurrent_replay_batch_counts":overlap,
+             "identical_complete_event_order_on_consumers":True}
+    finally:
+        for peer in consumers:
+            if peer[0].is_alive():z.shutdown(peer)
+        for proc in procs:
+            if proc.is_alive():proc.terminate();proc.join(3)
+
 def verify():
     started=time.perf_counter()
     q.init_db();z.create_tables()
@@ -109,7 +163,9 @@ def verify():
                  "receipt_bytes":c.execute("SELECT pg_total_relation_size('qa_ordered_processed')").fetchone()[0],
                  "db_bytes":c.execute("SELECT pg_database_size(current_database())").fetchone()[0],
                  "wal_delta_bytes":int(c.execute("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(),%s)",(lsn0,)).fetchone()[0])}
+    multi=multi_process_publish_consume()
     summary={"status":"PASS","real_process_crashes":4,
+             "multi_process_publish_consume":multi,
              "transaction_abort_before_commit":True,
              "producer_commit_then_hard_crash_no_NOTIFY":True,
              "nonconsecutive_ID_after_rollback":expected_id>1,
