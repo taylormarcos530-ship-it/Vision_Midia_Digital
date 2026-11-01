@@ -172,21 +172,28 @@ def exact_crossing(router,keys,old_rep,new_rep):
     zero_old=before.get(op,0);zero_new=before.get(np,0)
     t0=time.perf_counter()
     start=threading.Event()
+    release_after_rollback=threading.Event()
     def hit(i):
         start.wait()
+        if i>=220:release_after_rollback.wait()
         return old.fetch(url,keys,i)
     with ThreadPoolExecutor(max_workers=300) as pool:
         futures=[pool.submit(hit,i) for i in range(300)]
         start.set()
         until(lambda:router.hits_by_port.get(op,0)-zero_old>=20,18)
         chk(router.active>0,"no_inflight_during_first_cutover")
+        old_at_cutover=router.hits_by_port.get(op,0)
         router.switch(np)
         until(lambda:router.hits_by_port.get(np,0)-zero_new>=30,18)
         chk(router.active>0,"no_inflight_during_rollback")
+        old_at_rollback=router.hits_by_port.get(op,0)
         router.switch(op)
+        release_after_rollback.set()
         results=[f.result(timeout=90) for f in futures]
     counts={str(op):router.hits_by_port.get(op,0)-zero_old,
             str(np):router.hits_by_port.get(np,0)-zero_new}
+    after_rollback_old=router.hits_by_port.get(op,0)-old_at_rollback
+    chk(after_rollback_old>=80,("rollback_no_post_traffic",after_rollback_old))
     chk(counts[str(op)]>=20 and counts[str(np)]>=30,("not_covered_both_hosts",counts))
     chk(all(x["status"]==200 for x in results),("http_non_200",counts))
     chk(router.errors==0 and router.active==0,"router_errors")
@@ -196,6 +203,9 @@ def exact_crossing(router,keys,old_rep,new_rep):
         "P99_ms":old.percentile([x["ms"] for x in results],.99),
         "cutover_then_rollback_while_requests_active":True,
         "upstream_assignments":counts,
+        "old_before_first_cutover":old_at_cutover-zero_old,
+        "old_after_rollback":after_rollback_old,
+        "controlled_post_rollback_clients":80,
         "full_json_http_200":300,"compressed_bytes":sum(x["wire"] for x in results),
         "uncompressed_bytes":sum(x["plain"] for x in results),
         "duration_s":round(time.perf_counter()-t0,3)}
