@@ -149,13 +149,17 @@ class FencedHandler(BaseHTTPRequestHandler):
                     srv.fence_reads+=1;srv.fence_locks+=1;srv.revision_checks+=1;srv.sql_chunks+=1
             with srv.mu:existing=srv.cache.get(key)
             if not existing or existing["revision"]!=rev[0]:
-                srv.stale+=1;self.send_error(503,"stale_until_replay");return
+                srv.stale+=1
+                if srv.stale<=3:print("QA_FENCED_STALE="+repr((existing,rev)),flush=True)
+                self.send_error(503,"stale_until_replay");return
             # If disk corrupted or artifact not yet materialized: 503, NEVER
             # return the previous commercial revision.
             try:ready=srv.get_verified(company,rev[0])
             except (OSError,ValueError):ready=None
             if not ready:
-                srv.stale+=1;self.send_error(503,"incomplete_corrupt_or_insecure_asset");return
+                srv.stale+=1
+                if srv.stale<=3:print("QA_FENCED_BAD_ASSET="+repr((ready,srv.versions.get(key))),flush=True)
+                self.send_error(503,"incomplete_corrupt_or_insecure_asset");return
             self.send_response(200);headers=True
             self.send_header("Content-Type","application/json")
             self.send_header("Content-Encoding","gzip")
@@ -192,8 +196,10 @@ class FencedHandler(BaseHTTPRequestHandler):
                 with srv.guard_mu:srv.sent+=1
             finally:
                 with srv.guard_mu:srv.active_streams-=1
-        except PermissionError:
-            with srv.guard_mu:srv.denied+=1
+        except PermissionError as ex:
+            with srv.guard_mu:
+                srv.denied+=1
+                if srv.denied<=3:print("QA_FENCED_DENIED="+repr(ex),flush=True)
             if not headers:
                 self.send_response(401);self.send_header("Content-Length","0");self.end_headers()
             else:
@@ -203,8 +209,12 @@ class FencedHandler(BaseHTTPRequestHandler):
                 except OSError:pass
         except (socket.timeout,BrokenPipeError,ConnectionResetError):
             with srv.guard_mu:srv.failed+=1
-        except Exception:
-            with srv.guard_mu:srv.failed+=1
+        except Exception as ex:
+            with srv.guard_mu:
+                srv.failed+=1
+                if srv.failed<=4:
+                    print("QA_FENCED_EXCEPTION="+repr(ex),flush=True)
+                    traceback.print_exc()
             if not headers:
                 try:self.send_error(503,"fail_closed_pg_or_io")
                 except OSError:pass
