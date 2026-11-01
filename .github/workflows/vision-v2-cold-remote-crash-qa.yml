@@ -1,0 +1,57 @@
+name: Vision V2 PG17 Cold 100 300 HTTP Remote AES Outbox Crash QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/cold-remote-qa/**'
+      - '.github/workflows/vision-v2-cold-remote-crash-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa:
+    name: Disposable PG17 / remote HTTP object crash / cold full JSON HTTP100-300 / RLS
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict isolation guard — no production secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "DISPOSABLE_PG17=true NO_PRODUCTION=true NO_DEPLOY=true NO_APK=true NO_TV=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned isolated PostgreSQL17 and crypto requirements
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Validate static syntax before database run
+        run: python -m py_compile tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
+      - name: Execute full cold-start HTTP and remote crash outbox QA
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
+          echo "QA_COLD_REMOTE_PASS=true"
+      - name: Confirm no production writes
+        if: always()
+        run: echo "NO_DEPLOY=true NO_SUPABASE=true NO_APKS=true NO_SITE=true NO_PANEL=true NO_TVS=true NO_REAL_HISTORY=true"
