@@ -113,13 +113,17 @@ class Handler(BaseHTTPRequestHandler):
             self.end_headers()
             paused="pause=1" in self.path
             sent=0
-            for index in range(0,len(body),16384):
+            while sent<len(body):
                 self.check_auth(company,token)
-                chunk=body[index:index+16384]
+                # Bound member lookups per full JSON stream; paused fault
+                # injection uses a deterministic 16KiB first chunk.
+                chunk_size=16384 if paused and sent==0 else 262144
+                chunk=body[sent:sent+chunk_size]
                 self.wfile.write(chunk);self.wfile.flush()
+                prev=sent
                 sent+=len(chunk)
                 with self.server.mx:self.server.bytes_out+=len(chunk)
-                if paused and index==0:
+                if paused and prev==0:
                     self.server.paused.set()
                     if not self.server.pause.wait(12):
                         raise PermissionError("qa_pause_timeout")
