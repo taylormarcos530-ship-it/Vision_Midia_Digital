@@ -1,0 +1,98 @@
+name: Vision V2 Inflight 300 Cutover Rollback Outbox RLS PG17 QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/rolling-cutover-outbox-qa/**'
+      - '.github/workflows/vision-v2-cutover-rollback-authoritative-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  cutover:
+    name: Two replica HTTP 100/300 cutover rollback RLS and 30s shared outbox
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fail closed unless exact QA branch without production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "ONLY_SYNTHETIC_PG17=true NO_PRODUCTION=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Syntax check
+        run: python -m py_compile tests/vision-v2-sequence-qa/rolling-cutover-outbox-qa/qa.py
+      - name: Test actual 100 and 300 full gzip in-flight cutover, rollback and lost notify revocation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/rolling-cutover-outbox-qa/qa.py
+          echo "QA_ROLLBACK_PASS=true"
+      - name: Confirm no production effects
+        if: always()
+        run: echo "NO_SUPABASE=true NO_APK=true NO_SITE=true NO_PANEL=true NO_TV=true NO_HISTORY=true"
+  outbox:
+    name: Independent PG17 encrypted remote object crash and outbox regression
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Block other branches and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "NO_PRODUCTION=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Verify remote object AES crash/retry, JWT/RLS and original full HTTP 100/300 cold
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
+          echo "QA_REMOTE_AES_OUTBOX_PASS=true"
+      - name: Confirm no production effects
+        if: always()
+        run: echo "NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_TV=true"
