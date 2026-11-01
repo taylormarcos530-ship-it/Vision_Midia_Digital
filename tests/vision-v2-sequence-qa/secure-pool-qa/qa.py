@@ -8,7 +8,7 @@ writer protocol still required. memfd seals operate only on Linux QA runners.
 """
 from __future__ import annotations
 import contextlib,fcntl,hashlib,importlib.util,json,os,queue,resource,stat
-import threading,time,zlib,socket,traceback
+import threading,time,zlib,socket,traceback,multiprocessing as mp
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 ROOT=Path(__file__).resolve().parent
@@ -381,11 +381,75 @@ class SealedHandler(qa.FencedHandler):
                 try:self.connection.shutdown(socket.SHUT_WR)
                 except OSError:pass
 
+def worker(index,keys,pipe):
+    try:
+        return worker_impl(index,keys,pipe)
+    except BaseException as exc:
+        traceback.print_exc()
+        try:pipe.send({"fatal":type(exc).__name__+":"+str(exc)})
+        except BaseException:pass
+        raise
+
+def worker_impl(index,keys,pipe):
+    service=SealedServer(index,keys)
+    service.startup()
+    service.make_cache()
+    for co,item in list(service.cache.items()):
+        if not co.startswith("base:"):
+            service.build_revision(co,item["revision"],item["campaign"])
+    thread=threading.Thread(target=service.serve_forever,daemon=True);thread.start()
+    pipe.send({"pid":os.getpid(),"port":service.server_address[1]})
+    try:
+        while True:
+            msg=pipe.recv();op=msg["op"]
+            if op=="sync":
+                pipe.send({"ids":service.replay(),"cursor":service.last})
+            elif op=="get_stats":
+                with service.mu:
+                    pipe.send({
+                        "pid":os.getpid(),"cursor":service.last,
+                        "cached":{k:x for k,x in service.cache.items() if not k.startswith("base:")},
+                        "sql_background":service.sql_background,
+                        "sql_admission":service.sql_admission,
+                        "sql_per_block":service.sql_chunks,
+                        "sent":service.sent,"denied":service.denied,
+                        "failed":service.failed,"stale":service.stale,
+                        "payload_bytes":service.payload_bytes,
+                        "RSS_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                        "report_builds":service.report_builds,
+                        "chunk_bytes":CHUNK,
+                        "cached_gzip_bytes":sum(x["length"] for x in service.versions.values()),
+                        "disk_peak_bytes":service.disk_peak,
+                        "gzip_build_seconds":service.build_seconds,
+                        "peak_active_streams":service.peak_active_streams,
+                        "max_file_read_bytes":service.reader_bytes_max,
+                        "pool":service.pool_metrics()
+                    })
+            elif op=="stop":pipe.send(True);break
+            else:raise RuntimeError("unsupported_command:"+str(op))
+    finally:
+        service.shutdown();service.server_close();thread.join(3)
+        service.cleanup()
+
+def launch(index,keys):
+    parent,child=mp.Pipe()
+    proc=mp.Process(target=worker,args=(index,keys,child));proc.start()
+    if not parent.poll(95):
+        alive=proc.is_alive()
+        if alive:proc.terminate()
+        proc.join(3)
+        raise AssertionError("commercial_worker_startup_timeout_95s_pid_"+str(proc.pid)+"_was_alive_"+str(alive))
+    info=parent.recv()
+    if "fatal" in info:
+        proc.join(3)
+        raise AssertionError("commercial_worker_startup_failed:"+info["fatal"])
+    return proc,parent,info
+
 def configure():
     qa.configure()
     qa.FencedHandler=SealedHandler
     disk.BoundedCommercialServer=SealedServer
-    driver.c.launch=disk.launch
+    driver.c.launch=launch
 def main():
     configure()
     driver.main()
