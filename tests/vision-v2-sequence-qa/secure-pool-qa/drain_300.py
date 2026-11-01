@@ -139,6 +139,8 @@ def main():
     z.create_tables()
     keys=drv.a.Keys()
     initial=qa.guarded_publish(v.COMPANIES[0],"RACE BASELINE",notify=False)
+    with v.con() as baseline_db:
+        wal_start=baseline_db.execute("SELECT pg_current_wal_lsn()").fetchone()[0]
     peers=[qa.launch(i,keys) for i in (0,1)]
     proxy=None;thread=None
     try:
@@ -295,6 +297,8 @@ def main():
         with v.con() as db:
             db_bytes=db.execute("SELECT pg_database_size(current_database())").fetchone()[0]
             index=db.execute("SELECT pg_indexes_size('public.playback_logs')").fetchone()[0]
+            wal_delta=int(db.execute("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(),%s)",
+                (wal_start,)).fetchone()[0])
         result={"result":"PASS","mixed_300":counts,
             "retry_policy":"only idempotent GET 503 max5 attempts and 7.5s; never JWT 401 or partial 200",
             "revocation_401":{"attempts":1,"body_bytes":0,"retry":False,
@@ -324,6 +328,7 @@ def main():
             "routed_old_and_new":True,"encrypted_manifest_in_separate_CI":True,
             "worker_stats":[c.ask(peer,"get_stats") for peer in peers],
             "db_bytes":db_bytes,"index_bytes":index,
+            "wal_delta_after_fixture_bytes":wal_delta,
             "parent_rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             "elapsed_s":round(time.perf_counter()-began,3),
             "notes":"Retries only mask transient 503 at client; server 503 still possible and TCP already buffered old authorized bytes can arrive after commercial commit. Do NOT treat this as zero post-revoke delivery.",
