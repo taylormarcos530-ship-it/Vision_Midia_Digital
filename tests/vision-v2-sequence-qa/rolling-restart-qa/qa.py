@@ -50,6 +50,7 @@ class RollingServer(pre.Server):
         self.active={}
         self.revocation_ready=False
         self.revocation_last_ok=0
+        self.snapshots_paused=False
         self.revocation_sql=0
         self.revocation_notifies=0
         self.revocation_errors=0
@@ -60,6 +61,8 @@ class RollingServer(pre.Server):
         self.watch_thread.start()
         self.reconcile_thread.start()
     def snapshot(self,c):
+        with self.revocation_lock:
+            if self.snapshots_paused:return
         allowed={}
         for co,user in zip(v.COMPANIES,v.USER_IDS):
             permitted=c.execute("""SELECT EXISTS(
@@ -150,6 +153,13 @@ def rolling_process(keys,control):
                     "revocation_age":round(time.monotonic()-srv.revocation_last_ok,3)})
                 control.send(info)
             elif op=="pause_state":control.send(srv.paused.is_set())
+            elif op=="pause_snapshot":
+                with srv.revocation_lock:srv.snapshots_paused=True
+                control.send(True)
+            elif op=="resume_snapshot":
+                with srv.revocation_lock:srv.snapshots_paused=False
+                with v.con() as conn:srv.snapshot(conn)
+                control.send(True)
             elif op=="resume":srv.pause.set();control.send(True)
             elif op=="rotate_b_only":srv.keys.accept={"b"};control.send(True)
             elif op=="stop":control.send(True);break
@@ -403,6 +413,25 @@ def main():
             close(old);all_processes.remove(old)
             old=new
         security=security_midstream(old,keys)
+        # Inject a silent authorization-channel loss while the worker remains
+        # live and check fail-closed after the 6s safety lease. This control
+        # affects QA synthetic snapshot only; no production dependency.
+        ctl(old,"pause_snapshot")
+        time.sleep(LEASE_S+.35)
+        expired=ctl(old,"stats")
+        chk(expired["revocation_age"]>LEASE_S,"lease_not_expired")
+        good_key=keys.issue(v.COMPANIES[0],v.USER_IDS[0],"b")
+        req=request.Request("http://127.0.0.1:"+str(old[2]["port"])+"/0",
+            headers={"X-QA-JWT":good_key,"Accept-Encoding":"gzip"})
+        try:request.urlopen(req,timeout=15)
+        except error.HTTPError as exc:chk(exc.code==401,"stale_auth_must_fail_closed")
+        else:raise AssertionError("stale_authorization_served")
+        ctl(old,"resume_snapshot")
+        with request.urlopen(req,timeout=15) as response:
+            chk(response.status==200 and len(response.read())>100000,
+                "fresh_auth_not_recovered")
+        security["silent_auth_channel_expires_fail_closed"]=True
+        security["lease_seconds"]=LEASE_S
         last=ctl(old,"stats")
         check=0
         with v.con() as c:
