@@ -1,0 +1,113 @@
+name: Vision V2 Commercial Result Cache 110K 512K 2M PG17 - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/result-cache-matrix-qa/**'
+      - '.github/workflows/vision-v2-result-cache-matrix-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  producer:
+    name: Runner A synthetic originals + encrypted archive (no production)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Hard block production and other branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          echo "DISPOSABLE_QA_POSTGRES_ONLY=true"
+          echo "NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_SITE=true NO_TVS=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Disposable-only packages
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Build source synthetic archive and exact-RPC baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/qa_archive" "$RUNNER_TEMP/qa_keys"
+          python -u tests/vision-v2-sequence-qa/compact-ondemand-qa/compact.py --mode producer --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_keys"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-matrix-ciphertext-baseline
+          path: ${{ runner.temp }}/qa_archive/
+          retention-days: 1
+          if-no-files-found: error
+          compression-level: 0
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-matrix-synthetic-key-NOT-KMS
+          path: ${{ runner.temp }}/qa_keys/
+          retention-days: 1
+          if-no-files-found: error
+  matrix:
+    needs: producer
+    name: Runner B PG17 HTTP 100 and 300 x result-cache quota 110K/512K/2M
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard no production access
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          echo "NO_SUPABASE_SQL=true NO_SECRETS=true NO_DEPLOY=true NO_APK=true NO_PRODUCTION=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: PG17 driver and AES-GCM QA dependencies
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-matrix-ciphertext-baseline
+          path: ${{ runner.temp }}/qa_archive/
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-matrix-synthetic-key-NOT-KMS
+          path: ${{ runner.temp }}/qa_keys/
+      - name: Execute real HTTP, JSON+export parity, JWT RLS, TTL, revision, queue P95/P99
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/result-cache-matrix-qa/benchmark.py --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_keys"
+          echo "QA_V2_RESULT_CACHE_MATRIX_PASS=true"
+      - name: Final production protection marker
+        if: always()
+        run: echo "NO_SUPABASE=true NO_APK=true NO_PANEL=true NO_SITE=true NO_TVS=true NO_ORIGINAL_DELETE=true"
