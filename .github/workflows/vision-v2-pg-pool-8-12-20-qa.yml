@@ -1,0 +1,60 @@
+name: Vision V2 Real PostgreSQL Pool 8 12 20 by 64 256 KiB QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - '.github/workflows/vision-v2-pg-pool-8-12-20-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-pg-pool:
+    name: PG17 ${{ matrix.pool }} connections and ${{ matrix.chunk }} bytes, two revokers, 300 socket stalls
+    strategy:
+      fail-fast: false
+      matrix:
+        pool: [8,12,20]
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: QA-only branch and production credential guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "SYNTHETIC_PG17=true NO_OFFICIAL_PRODUCTION=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install synthetic fixture dependencies only
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: SQL pool cap, two competing revoke commits, 300 unread sockets and RLS/SECDEF escape attempts
+        env:
+          QA_PG_POOL_SIZE: ${{ matrix.pool }}
+          QA_POOL_CHUNK_BYTES: ${{ matrix.chunk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/bounded-fence-qa/multi_revokers_pool.py
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/multi_revokers_pool.py
+          echo "QA_REAL_PG_POOL_GRID_PASS=true"
