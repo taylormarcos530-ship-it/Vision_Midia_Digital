@@ -19,6 +19,7 @@ c=qa.c
 ADMISSIONS=qa.ADMISSIONS
 PG_POOL=qa.PG_POOL
 guarded_publish=qa.guarded_publish
+txguard=qa.txguard
 CHUNK=qa.CHUNK
 MFD_ALLOW_SEALING=getattr(os,"MFD_ALLOW_SEALING",2)
 SEALS=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
