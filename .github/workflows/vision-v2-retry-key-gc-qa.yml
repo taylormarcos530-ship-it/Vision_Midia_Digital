@@ -1,0 +1,57 @@
+name: Vision V2 Retry 300 Cutover and Secure Key GC PG17 NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/secure-pool-qa/retry_300.py'
+      - 'tests/vision-v2-sequence-qa/secure-pool-qa/rotation_gc.py'
+      - 'tests/vision-v2-sequence-qa/secure-pool-qa/key_gc_faults.py'
+      - '.github/workflows/vision-v2-retry-key-gc-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  retry-300:
+    name: 300 simultaneous cutover+commit+rollback with fail-closed bounded 503 retry
+    runs-on: ubuntu-latest
+    timeout-minutes: 23
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exact QA branch and absence of production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_SYNTHETIC=true NO_PRODUCTION=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Fixture-only libs
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: 300 synthetic full-report clients SHA, 503 bounded idempotent GET retry, 401 never retried
+        env:
+          QA_COMMERCIAL_ADMISSIONS: "12"
+          QA_PG_POOL_SIZE: "12"
+          QA_COMMERCIAL_CHUNK: "262144"
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/retry_300.py
+          python -u tests/vision-v2-sequence-qa/secure-pool-qa/retry_300.py
+          echo "QA_RETRY_300_PASS=true"
