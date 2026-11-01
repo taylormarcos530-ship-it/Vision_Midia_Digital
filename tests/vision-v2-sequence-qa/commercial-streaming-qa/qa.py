@@ -216,7 +216,7 @@ def worker(index,keys,pipe):
 
 def launch(index,keys):
     parent,child=mp.Pipe()
-    proc=mp.Process(target=worker,args=(index,keys));proc.start()
+    proc=mp.Process(target=worker,args=(index,keys,child));proc.start()
     info=parent.recv()
     return proc,parent,info
 
@@ -226,19 +226,7 @@ def main():
     # changes; assertions for 300 SHA-256/10k event HTTP responses, 503 on
     # stale revisions, two outbox replays, and rollback remain unchanged.
     driver.c.launch=launch
-    previous=driver.threading.BoundedSemaphore
-    # Prevent affecting any other tests (this module runs in disposable job).
-    driver.main.__globals__["ADMIT_LIMIT_QA"]=ADMISSIONS
-    # Driver hardcoded 12: replace via a tiny runtime constructor patch
-    # without touching previously passing QA files.
-    import inspect
-    src=inspect.getsource(driver.main)
-    assert "proxy.io_bound=threading.BoundedSemaphore(12)" in src
-    replacement=src.replace("proxy.io_bound=threading.BoundedSemaphore(12)",
-        "proxy.io_bound=threading.BoundedSemaphore(ADMIT_LIMIT_QA)")
-    exec(compile(replacement,"<disposable-qa-admission-overridden>","exec"),
-         driver.main.__globals__)
-    driver.main.__globals__["main"]()
+    driver.main()
     print("QA_COMMERCIAL_STREAMING_PASS=true",flush=True)
 
 if __name__=="__main__":main()
