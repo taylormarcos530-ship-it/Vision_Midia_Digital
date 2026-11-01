@@ -8,7 +8,7 @@ writer protocol still required. memfd seals operate only on Linux QA runners.
 """
 from __future__ import annotations
 import contextlib,fcntl,hashlib,importlib.util,json,os,queue,resource,stat
-import threading,time,zlib
+import threading,time,zlib,socket,traceback
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 ROOT=Path(__file__).resolve().parent
