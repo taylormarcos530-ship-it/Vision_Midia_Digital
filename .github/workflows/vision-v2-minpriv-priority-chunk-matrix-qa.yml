@@ -1,0 +1,201 @@
+name: Vision V2 PG17 Minimum Privilege Writer Priority and 16 64 256 Chunk Matrix NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/bounded-fence-qa/**'
+      - '.github/workflows/vision-v2-minpriv-priority-chunk-matrix-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  minpriv:
+    name: Forced RLS / least privilege / 300 slow chunks / real socket timeout
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: No production path, secrets, or deployments
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "ONLY_EPHEMERAL_PG17=true NO_SUPABASE=true NO_DEPLOY=true NO_TV=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - run: python -m py_compile tests/vision-v2-sequence-qa/bounded-fence-qa/minpriv_priority.py
+      - name: Real minimum privilege and kernel socket timeout negative QA
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/minpriv_priority.py
+          echo "QA_MINPRIV_PRIORITY_PASS=true"
+  matrix:
+    name: Full 100/300 gzip HTTP 16-64-256KiB with post-commit protected write chunk ${{ matrix.chunk }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [16384, 65536, 262144]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: No production path, secrets, or deployments
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - run: python -m py_compile tests/vision-v2-sequence-qa/bounded-fence-qa/qa.py
+      - name: Full original gzip HTTP 100 and 300 across cutover, rollback, bounded commit and stall
+        env:
+          QA_STREAM_CHUNK: ${{ matrix.chunk }}
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/qa.py
+          echo "QA_CHUNK_MATRIX_PASS=true"
+  crash-matrix:
+    name: Durable PG17 outbox crashes before and after commits, multiprocess replay
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard exact experimental branch and secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Persisted outbox and two OS-process writers with consumers
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/crash_matrix.py
+          echo "QA_CRASH_MATRIX_PASS=true"
+  commercial:
+    name: Full commercial HTTP and synthetic JWT revocation negative 6 publisher 2 consumer
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Full commercial JSON and races
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/commit-race-http-qa/qa.py
+          echo "QA_COMMERCIAL_RACE_PASS=true"
+  aes:
+    name: Remote simulated AES manifest forced crash and genuine cold full JSON HTTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Remote AES outbox crash and 100/300 true cold
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
+          echo "QA_AES_PASS=true"
