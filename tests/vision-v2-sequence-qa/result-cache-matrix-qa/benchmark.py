@@ -129,7 +129,12 @@ class CacheAPI(ThreadingHTTPServer):
                 begin=date.fromisoformat(case["start"]);end=date.fromisoformat(case["end"])
                 campaign=uuid.UUID(case["campaign"]) if case["campaign"] else None
                 device=uuid.UUID(case["device"]) if case["device"] else None
-                archive_rows=self.archive.select(uuid.UUID(company),begin,end)
+                # Archive integrity/unavailability is a transient backend
+                # failure, not an invalid request. Return 503 with no ACK.
+                try:
+                    archive_rows=self.archive.select(uuid.UUID(company),begin,end)
+                except Exception as exc:
+                    raise OSError("archive_missing_or_invalid") from exc
                 with self.mx:
                     self.waiters+=1;self.max_waiters=max(self.waiters,self.max_waiters)
                 acquired=self.sem.acquire(timeout=45)
