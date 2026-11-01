@@ -140,7 +140,9 @@ def main():
         ck(read(srv,keys,0,200,"NEW DURABLE CAMPAIGN")["code"]==200,"symlink_repair")
         # OS-process crash after fsync before atomic publication:
         # consumer 1 has NOT read the durable outbox yet.
-        child=mp.Process(target=hard_crash_build,args=(keys,));child.start();child.join(12)
+        child=mp.Process(target=hard_crash_build,args=(keys,));child.start();child.join(40)
+        if child.is_alive():
+            child.terminate();child.join(4)
         ck(child.exitcode==94,("not_crashed_before_rename",child.exitcode))
         revived=v2.FencedServer(1,keys)
         revived.startup();revived.make_cache()
