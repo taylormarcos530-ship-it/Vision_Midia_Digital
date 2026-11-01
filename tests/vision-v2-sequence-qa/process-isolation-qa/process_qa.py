@@ -244,6 +244,7 @@ def mutate_campaign_and_archive(archive_dir,key,baseline):
                  AND started_at >= TIMESTAMPTZ '2026-10-30'
                  RETURNING id""",(v.COMPANIES[0],)).fetchall()
             check(len(row)>0,"campaign_source_not_updated")
+            source_snapshots_changed=len(row)
     manifest=json.loads((archive_dir/"manifest.json").read_bytes())
     changed=0
     for segment in manifest["segments"]:
@@ -274,7 +275,7 @@ def mutate_campaign_and_archive(archive_dir,key,baseline):
     temp=archive_dir/"manifest.qa.tmp";temp.write_bytes(p.canon(manifest))
     os.replace(temp,archive_dir/"manifest.json")
     ev,rev=q.publish(v.COMPANIES[0],"campaign")
-    return new_reference,ev,rev,{"updated_source_snapshots":len(row),
+    return new_reference,ev,rev,{"updated_source_snapshots":source_snapshots_changed,
          "updated_archive_snapshots":changed,"original_json_sha":previous,
          "revised_json_sha":after,"other_company_unchanged":True}
 
