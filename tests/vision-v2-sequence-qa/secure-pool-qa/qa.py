@@ -12,7 +12,7 @@ import threading,time,zlib,socket,traceback,multiprocessing as mp
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 ROOT=Path(__file__).resolve().parent
-spec=importlib.util.spec_from_file_location("vision2_fenced_base",ROOT/"qa.py")
+spec=importlib.util.spec_from_file_location("vision2_fenced_base",ROOT.parent/"integrated-commercial-fence-qa"/"qa.py")
 qa=importlib.util.module_from_spec(spec);spec.loader.exec_module(qa)
 v,driver,disk,z=qa.v,qa.driver,qa.disk,qa.z
 c=qa.c
