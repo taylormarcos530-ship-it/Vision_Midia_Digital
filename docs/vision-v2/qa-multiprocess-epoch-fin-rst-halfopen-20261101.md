@@ -1,24 +1,24 @@
 # Vision V2 — QA de epoch de admissão multiprocesso e HTTP interrompido, 01/11/2026
 
-**Branch única:** \`experiment/vision-v2-sequence-watermark-qa-20261031\`.
-**HEAD inicial exigido e confirmado:** \`9eff56238744481369a6ef95139fb3585ed9670c\`.
-**Última alteração de código executada:** \`7b1abdbe7c34fa64a57d0cb05ac10f37f2c84882\`.
+**Branch única:** `experiment/vision-v2-sequence-watermark-qa-20261031`.
+**HEAD inicial exigido e confirmado:** `9eff56238744481369a6ef95139fb3585ed9670c`.
+**Última alteração de código executada:** `7b1abdbe7c34fa64a57d0cb05ac10f37f2c84882`.
 **Decisão: QA PASS para a bancada sintética; PRODUÇÃO NO-GO. Nenhum deploy.**
 
 ### Execuções verificadas no GitHub Actions
 
-- [Nova matriz multiprocesso, TCP real e prazos — 12/12 PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358314336), com 100/300 clientes × pool de 8/12/20 × blocos gzip 64/256 KiB e PostgreSQL17 descartável; SHA \`7b1abdbe\`.
+- [Nova matriz multiprocesso, TCP real e prazos — 12/12 PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358314336), com 100/300 clientes × pool de 8/12/20 × blocos gzip 64/256 KiB e PostgreSQL17 descartável; SHA `7b1abdbe`.
 - [Relatórios comerciais completos, pool persistente, AES-GCM, cutover/rollback e regressões — 12/12 PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358314468), mesmo SHA.
-- [Recibos AES-GCM com conexão PostgreSQL recusada, outbox e escrita transacional protegida — 7/7 PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358152677), SHA anterior \`f63d82ad\`, sem modificação dessas suítes depois dele.
-- [Sequência/offline — PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358314499), SHA \`7b1abdbe\`.
+- [Recibos AES-GCM com conexão PostgreSQL recusada, outbox e escrita transacional protegida — 7/7 PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358152677), SHA anterior `f63d82ad`, sem modificação dessas suítes depois dele.
+- [Sequência/offline — PASS](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41358314499), SHA `7b1abdbe`.
 
 Os 31 jobs contados são distintos; a suíte de sequência/offline é adicional. Tentativas intermediárias anteriores e a primeira execução com contador de bytes não isolado estão preservadas, sem serem contadas no resultado final. A instrumentação foi corrigida para medir o primeiro bloco da revogação separadamente dos streams de falha TCP anteriores e contabilizar nove GETs adicionais por rodada.
 
 ### O que efetivamente foi testado
 
-**Protocolo de admissão:** epoch e ponteiro compartilhados via memória multiprocesso e mutex, em dois processos de teste que tentam utilizar tickets emitidos antes do cutover. Após troca de rota, cada processo permanece impedido de reutilizar o ticket antigo; um \`sleep\` real de 560ms faz os processos acordarem aproximadamente **140ms APÓS** o deadline de 420ms. Zero novas admissões na rota antiga após a troca. A decisão lógica passa; **nenhum SLA físico de encerramento de streams em 420ms está comprovado**. Este é um runner com processos separados, NÃO máquinas ou regiões independentes.
+**Protocolo de admissão:** epoch e ponteiro compartilhados via memória multiprocesso e mutex, em dois processos de teste que tentam utilizar tickets emitidos antes do cutover. Após troca de rota, cada processo permanece impedido de reutilizar o ticket antigo; um `sleep` real de 560ms faz os processos acordarem aproximadamente **140ms APÓS** o deadline de 420ms. Zero novas admissões na rota antiga após a troca. A decisão lógica passa; **nenhum SLA físico de encerramento de streams em 420ms está comprovado**. Este é um runner com processos separados, NÃO máquinas ou regiões independentes.
 
-**Quatro falhas de rede reais e diferenciadas**, sempre sob um cabeçalho HTTP 200 com Content-Length integral: (1) só cabeçalhos/sem corpo → \`IncompleteRead\`; (2) FIN TCP após um bloco gzip real → \`IncompleteRead\`; (3) socket configurado com \`SO_LINGER\` para RST após um bloco → \`ConnectionResetError\`; (4) half-open de leitura temporizado → \`TimeoutError\`. Todas classificadas como incompletas e **NUNCA repetidas automaticamente**. Token inválido → HTTP 401 em uma tentativa, zero corpo, sem retry. Apenas GET que recebe HTTP 503 transitório é repetido e recuperado exatamente na segunda tentativa com corpo gzip completo e SHA-256 verificado. Falhas são provocadas em processo de servidor HTTP real no localhost, e não imagens ou objetos Storage.
+**Quatro falhas de rede reais e diferenciadas**, sempre sob um cabeçalho HTTP 200 com Content-Length integral: (1) só cabeçalhos/sem corpo → `IncompleteRead`; (2) FIN TCP após um bloco gzip real → `IncompleteRead`; (3) socket configurado com `SO_LINGER` para RST após um bloco → `ConnectionResetError`; (4) half-open de leitura temporizado → `TimeoutError`. Todas classificadas como incompletas e **NUNCA repetidas automaticamente**. Token inválido → HTTP 401 em uma tentativa, zero corpo, sem retry. Apenas GET que recebe HTTP 503 transitório é repetido e recuperado exatamente na segunda tentativa com corpo gzip completo e SHA-256 verificado. Falhas são provocadas em processo de servidor HTTP real no localhost, e não imagens ou objetos Storage.
 
 **Revogação comercial/JWT-RLS sintética entre blocos:** compressed payload propositalmente **442.825 bytes**, garantindo múltiplas escritas tanto em 64 quanto em 256 KiB. Após primeiro bloco autorizado de 65.536/262.144 bytes, transação SQL é concluída, revogador recebe lock PostgreSQL exclusivo e confirma revogação, servidor tenta continuação, falha na nova verificação de associação sob RLS e trunca a resposta. **Zero novas escritas do aplicativo após commit** em 12/12 jobs. No job de 300 clientes/pool12/256KiB, commit de revogação ~7,37ms; em toda matriz 7,37–11,15ms. A revogação subsequentemente gera HTTP 401 em nova requisição, sem retry; regrant sintético permite novamente o tráfego normal. **Bytes previamente enfileirados no kernel/proxy podem chegar depois do commit e isso não foi impedido nem comprovado ausente.**
 
