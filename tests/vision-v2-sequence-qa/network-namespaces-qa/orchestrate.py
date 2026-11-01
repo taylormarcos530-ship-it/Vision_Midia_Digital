@@ -82,7 +82,8 @@ def main():
               "-e","QA_LEASE_SECONDS=1.7","v2qa-network-replica:ci")
         shell("docker","network","connect",PREFIX+"back",PREFIX+node)
     pids={n:int(shell("docker","inspect","--format","{{.State.Pid}}",PREFIX+n)) for n in "ab"}
-    namespaces={n:shell("readlink",f"/proc/{pid}/ns/net") for n,pid in pids.items()}
+    namespaces={n:shell("docker","exec",PREFIX+n,"python","-c",
+         "import os;print(os.readlink('/proc/self/ns/net'))") for n in "ab"}
     assert len(set(namespaces.values()))==2,("not_two_network_namespaces",namespaces)
     stop=threading.Event();stats={"connections":0,"pulses":0,"errors":0}
     t=threading.Thread(target=pulse,args=(stop,stats),daemon=True);t.start()
