@@ -56,7 +56,9 @@ class RollingServer(pre.Server):
         self.watch_stop=threading.Event()
         self.watch_ready=threading.Event()
         self.watch_thread=threading.Thread(target=self.watch,daemon=True)
+        self.reconcile_thread=threading.Thread(target=self.reconcile,daemon=True)
         self.watch_thread.start()
+        self.reconcile_thread.start()
     def snapshot(self,c):
         allowed={}
         for co,user in zip(v.COMPANIES,v.USER_IDS):
@@ -90,8 +92,25 @@ class RollingServer(pre.Server):
                     self.revocation_errors+=1
                 self.watch_ready.set()
                 self.watch_stop.wait(.1)
+    def reconcile(self):
+        # Dedicated durable SQL reconciliation independent of LISTEN's
+        # potentially blocked generator; 1 persistent PG connection, 2s
+        # per-instance cadence ONLY, no SQL triggered by individual GETs.
+        while not self.watch_stop.is_set():
+            try:
+                with v.con() as c:
+                    while not self.watch_stop.is_set():
+                        self.snapshot(c)
+                        self.watch_stop.wait(RECONCILE_S)
+            except Exception:
+                with self.revocation_lock:
+                    self.revocation_ready=False
+                    self.revocation_errors+=1
+                self.watch_stop.wait(.2)
     def close_watch(self):
-        self.watch_stop.set();self.watch_thread.join(3)
+        self.watch_stop.set()
+        self.reconcile_thread.join(3)
+        self.watch_thread.join(2)
 
 def rolling_process(keys,control):
     srv=RollingServer(keys)
