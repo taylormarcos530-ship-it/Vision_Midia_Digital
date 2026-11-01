@@ -160,6 +160,13 @@ class Keys:
         except Exception as exc:raise PermissionError("qa_jwt_invalid") from exc
 
 def jwt_and_rls():
+    # Demonstrate the baseline fixture RLS only scopes company, not membership;
+    # harden policy in this disposable DB before testing membership revocation.
+    with v.con() as c:
+        c.execute("DROP POLICY logs ON public.playback_logs")
+        c.execute("""CREATE POLICY logs ON public.playback_logs TO authenticated
+          USING(company_id::text=current_setting('request.jwt.claim.company_id',true)
+                AND private.is_company_member(company_id))""")
     keys=Keys();company=v.COMPANIES[0];user=v.USER_IDS[0]
     first=keys.issue(company,user,"a")
     chk(keys.verify(first)["sub"]==user,"original_token")
@@ -191,7 +198,7 @@ def jwt_and_rls():
             v.auth(c,keys.verify(newer))
             chk(scalar(c,"SELECT count(*) FROM public.playback_logs")==10_332,"RLS_restore")
     return {"key_rotation_old_denied":True,"new_key_accepted":True,
-       "jwt_expiry_tamper_denied":True,"native_RLS_revocation_and_restore":True}
+       "jwt_expiry_tamper_denied":True,"native_RLS_revocation_and_restore":True,"qa_rls_policy_hardened":True}
 
 def full_historical_rpc():
     result=[]
