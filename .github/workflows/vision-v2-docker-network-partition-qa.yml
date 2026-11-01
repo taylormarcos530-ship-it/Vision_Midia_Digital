@@ -1,0 +1,49 @@
+name: Vision V2 Two Docker Network Namespaces PG17 Partition QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/network-namespaces-qa/**'
+      - '.github/workflows/vision-v2-docker-network-partition-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  network-partition:
+    runs-on: ubuntu-latest
+    name: Two Docker network namespaces / PostgreSQL17 backend cut / 100-300 HTTP
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict branch and production secret guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "NO_SUPABASE=true NO_DEPLOY=true NO_APKS=true NO_TVS=true NO_SITE=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: QA-only local PostgreSQL driver
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Build unprivileged QA container image
+        run: docker build -f tests/vision-v2-sequence-qa/network-namespaces-qa/Dockerfile -t v2qa-network-replica:ci .
+      - name: Run real Docker backend network disconnection and GET load
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/network-namespaces-qa/orchestrate.py
+          echo "QA_DOCKER_NETWORK_NAMESPACES_PASS=true"
+      - name: Cleanup all isolated Docker resources
+        if: always()
+        shell: bash
+        run: |
+          docker rm -f v2qa_a v2qa_b v2qa_pg 2>/dev/null || true
+          docker network rm v2qa_front v2qa_back 2>/dev/null || true
+          echo "NO_PRODUCTION_CHANGE=true"
