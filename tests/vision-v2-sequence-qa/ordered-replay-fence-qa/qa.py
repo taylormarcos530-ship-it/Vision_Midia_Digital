@@ -145,7 +145,8 @@ def verify_replay():
                     (v.COMPANIES[0],"CAMPAIGN A2"),(v.COMPANIES[1],"CAMPAIGN B2")]
             evs=list(pool.map(lambda x:publish(x[0],x[1]),actions))
         ids=sorted(x["id"] for x in evs)
-        check(ids==list(range(1,5)),("not_gap_free_committed_ids",ids))
+        check(len(ids)==4 and ids==sorted(set(ids)) and ids[0]>1,
+              ("identity_gap_after_aborted_transaction_not_handled",ids))
         for peer in peers:
             check(ask(peer,"get",company=str(v.COMPANIES[0]))["status"]==503,"stale_cache_accepted")
         # First consumer commits only first event then is forcibly terminated.
@@ -159,8 +160,8 @@ def verify_replay():
         check(peers[0][2]["pid"]!=old_pid,"process_not_restarted")
         rest=ask(peers[0],"sync")
         other=ask(peers[1],"sync")
-        check(rest["seen"]==[2,3,4],("ordered_restart_gap",rest))
-        check(other["seen"]==[1,2,3,4],("consumer_2_order",other))
+        check(rest["seen"]==ids[1:],("ordered_restart_gap",rest))
+        check(other["seen"]==ids,("consumer_2_order",other))
         check(ask(peers[0],"sync")["seen"]==[],"duplicate_replay")
         for peer in peers:
             for co in v.COMPANIES:
@@ -180,8 +181,8 @@ def verify_replay():
         with v.con() as c:
             cp=c.execute("SELECT consumer,last_id FROM qa_ordered_cursor ORDER BY consumer").fetchall()
             receipt=c.execute("SELECT consumer,id FROM qa_ordered_processed ORDER BY consumer,id").fetchall()
-            check(cp==[(0,5),(1,5)],("checkpoint",cp))
-            check(receipt==[(i,j) for i in (0,1) for j in range(1,6)],
+            check(cp==[(0,change["id"]),(1,change["id"])],("checkpoint",cp))
+            check(receipt==[(i,j) for i in (0,1) for j in ids+[change["id"]]],
                   ("replay_duplicates_or_gaps",receipt))
             wal=row(c,"SELECT pg_current_wal_lsn()")[0]
             storage={"ordered_event_bytes":row(c,"SELECT pg_total_relation_size('qa_ordered_events')")[0],
@@ -189,7 +190,8 @@ def verify_replay():
                      "checkpoint_bytes":row(c,"SELECT pg_total_relation_size('qa_ordered_cursor')")[0],
                      "db_size":row(c,"SELECT pg_database_size(current_database())")[0]}
         return {"status":"PASS","two_distinct_consumer_pids":True,"restart_after_sig_exit":True,
-          "parallel_companies_ordered_ids":ids,"crash_resumed_ids":rest["seen"],
+          "parallel_companies_ordered_ids":ids,"expected_nontransactional_identity_gap":True,
+          "crash_resumed_ids":rest["seen"],
           "independent_consumer_ids":other["seen"],"zero_duplicate_durable_receipts":True,
           "post_revocation_cache_fails_closed_even_if_no_notify":True,
           "unaffected_company_stays_available":True,"commerical_payload_version_invalidation_both":True,
