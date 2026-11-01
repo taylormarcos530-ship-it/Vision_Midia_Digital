@@ -1,0 +1,56 @@
+name: Vision V30 device-health stage A manual isolated validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  stage-a-only:
+    if: github.ref == 'refs/heads/fix/v30-device-health-state-upsert-isolated-20261031'
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    env:
+      SUPABASE_URL: ''
+      SUPABASE_SERVICE_ROLE_KEY: ''
+      SUPABASE_SECRET_KEYS: ''
+      SUPABASE_ACCESS_TOKEN: ''
+      VERCEL_TOKEN: ''
+      NETLIFY_AUTH_TOKEN: ''
+    steps:
+      - name: Checkout isolated branch without persisted credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: fix/v30-device-health-state-upsert-isolated-20261031
+      - name: Setup Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Execute actual repository Node mock tests
+        run: node --test supabase/functions/device-health-alerts/tests/stage-a-state-upsert.test.mjs
+      - name: Setup Deno (syntax-only; do not run Edge Function)
+        uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Check TypeScript syntax with local stubs and no remote imports
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --input-type=module <<'NODE'
+          import fs from 'node:fs'
+          const path = 'supabase/functions/device-health-alerts/index.ts'
+          const source = fs.readFileSync(path, 'utf8')
+          const imports = "import { createClient } from 'npm:@supabase/supabase-js@2'\nimport webpush from 'npm:web-push@3.6.7'\n"
+          if (!source.startsWith(imports)) throw Error('Unexpected imports; refuse to check modified assumptions')
+          const stub = [
+            'declare const Deno: { env: { get(name: string): string | undefined }; serve(handler: (req: Request) => Response | Promise<Response>): void }',
+            'declare function createClient(...args: any[]): any',
+            'declare const webpush: { setVapidDetails(...args: any[]): void; sendNotification(...args: any[]): Promise<any> }',
+          ].join('\n')
+          fs.writeFileSync('/tmp/vision-v30-stage-a-syntax.ts', stub + '\n' + source.slice(imports.length))
+          NODE
+          deno check --no-config --no-remote /tmp/vision-v30-stage-a-syntax.ts
+      - name: Confirm original and current file are only minimally different
+        run: node --test supabase/functions/device-health-alerts/tests/stage-a-state-upsert.test.mjs
