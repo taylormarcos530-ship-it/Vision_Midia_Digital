@@ -47,7 +47,7 @@ class BoundedCommercialServer(c.HTTP):
             del canonical
             raw_path=self.root/("raw-"+str(company)+".json")
             with open(raw_path,"wb") as dest:
-                encoded=payload.encode("utf-8")
+                encoded=payload if isinstance(payload,bytes) else payload.encode("utf-8")
                 for start in range(0,len(encoded),262144):
                     dest.write(memoryview(encoded)[start:start+262144])
                 self.prewarm_bytes+=len(encoded)
