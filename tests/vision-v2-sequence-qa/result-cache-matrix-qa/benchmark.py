@@ -132,7 +132,7 @@ class CacheAPI(ThreadingHTTPServer):
                 # Archive integrity/unavailability is a transient backend
                 # failure, not an invalid request. Return 503 with no ACK.
                 try:
-                    archive_rows=self.archive.select(uuid.UUID(company),begin,end)
+                    archive_rows=self.archive.select(company,begin,end)
                 except Exception as exc:
                     raise OSError("archive_missing_or_invalid") from exc
                 with self.mx:
@@ -236,7 +236,7 @@ def preflight(api,store,base,ref):
     # not hidden by existing cache. No ACK on failed request.
     target=next(x for x in api.archive.manifest["segments"] if x["descriptor"]["company"]==co and x["descriptor"]["local_day"]==case["start"])
     name=target["file"]
-    api.cache.clear(co);api.archive.cache.clear()
+    api.cache.clear(co);api.archive.clear()
     with store.lock:store.offline.add(name)
     try:
         before=api.snapshot()["approved"]
@@ -251,7 +251,7 @@ def preflight(api,store,base,ref):
     try:p.decrypt(secrets.token_bytes(32),target,blob)
     except Exception:pass
     else:raise AssertionError("incorrect_aes_key_passed")
-    api.cache.clear(co);api.archive.cache.clear()
+    api.cache.clear(co);api.archive.clear()
     corrupted=bytearray(blob);corrupted[len(corrupted)//2]^=1
     (store.folder/name).write_bytes(corrupted)
     try:assert post(base,0,valid,"file-tampered")[0]==503
@@ -259,7 +259,7 @@ def preflight(api,store,base,ref):
     success("tamper-recovered")
     # Force TTL expiry even if quota cannot hold more than one result.
     api.cache.clear(co);api.cache.ttl=.05
-    api.archive.cache.clear()
+    api.archive.clear()
     success("ttl-first")
     s=api.cache.snapshot()
     success("ttl-hit")
@@ -283,7 +283,7 @@ def preflight(api,store,base,ref):
     assert api.cache.snapshot()["misses"]>previous
     with v.con() as c:
         assert v.scalar(c,"SELECT version FROM qa_cache_revision WHERE company_id=%s",(uuid.UUID(co),))==2
-    api.cache.clear();api.archive.cache.clear()
+    api.cache.clear();api.archive.clear()
     return {"result":"PASS","jwt_cross_tenant_rejected":True,
        "jwt_expired_rejected":True,"jwt_tampered_rejected":True,
        "postgres_RLS_checked":True,"original_rpc_membership_checked":True,
@@ -302,7 +302,7 @@ def waves(api,base,store,quota,baseline):
             if phase=="cold":
                 api.cache.clear()
             # Reset archive cache so only the new result cache can save GETs.
-            api.archive.cache.clear()
+            api.archive.clear()
             before_gets=store.requests
             prior_c=api.cache.snapshot()
             prior_api=api.snapshot()
@@ -344,7 +344,7 @@ def waves(api,base,store,quota,baseline):
 
 def one_quota(quota,manifest,key,baseline,store):
     url=f"http://127.0.0.1:{store.server_address[1]}"
-    archive=p.Archive(url,manifest,key)
+    archive=prior.BoundedCache(url,manifest,key,quota=quota,ttl=CACHE_TTL)
     api=CacheAPI(archive,baseline,quota)
     worker=threading.Thread(target=api.serve_forever,daemon=True)
     worker.start()
@@ -355,8 +355,11 @@ def one_quota(quota,manifest,key,baseline,store):
         assert stat["max_inflight"]<=PG_PERMITS
         assert stat["queue_timeout"]==0
         assert stat["approved"]>=800
+        segment=archive.stats()
+        assert segment["max_cache_bytes"]<=2*quota
+        assert all(x<=quota for x in segment["per_tenant_cached_bytes"].values())
         return {"quota":quota,"safety":safety,"phases":metrics,"service":stat,
-                "cache":c}
+                "cache":c,"segment_cache":segment}
     finally:
         api.shutdown();api.server_close();worker.join(4)
 
