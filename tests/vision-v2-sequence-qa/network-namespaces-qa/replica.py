@@ -62,6 +62,24 @@ def listener():
                 state["errors"]+=1
         time.sleep(.15)
 
+def reconciler():
+    # Independent backend channel: a stuck LISTEN socket cannot block all
+    # freshness checks. This is a disposable stress test with an accelerated
+    # interval; real low-rate rollout requires an independent cost review.
+    while True:
+        try:
+            with psycopg.connect(DB,autocommit=True,connect_timeout=2) as c:
+                latest=c.execute("SELECT coalesce(max(revision),1) FROM qa_network_outbox").fetchone()[0]
+                with lock:
+                    state["revision"]=max(int(latest),state["revision"])
+                    state["fresh_at"]=time.monotonic()
+                    state["connected"]=True
+                    state["reads"]+=1
+                    state["periodic_reconciles"]+=1
+        except Exception:
+            with lock:state["errors"]+=1
+        time.sleep(RECONCILE)
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*args):pass
     def do_GET(self):
@@ -86,4 +104,5 @@ class Server(ThreadingHTTPServer):
 
 if __name__=="__main__":
     t=threading.Thread(target=listener,daemon=True);t.start()
+    watchdog=threading.Thread(target=reconciler,daemon=True);watchdog.start()
     Server(("0.0.0.0",8080),Handler).serve_forever()
