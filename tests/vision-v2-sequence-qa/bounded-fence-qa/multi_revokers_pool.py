@@ -118,19 +118,36 @@ def concurrent_fairness():
     try:
         with concurrent.futures.ThreadPoolExecutor(max_workers=36) as ex:
             futures=[ex.submit(stream_task,i) for i in range(TASKS)]
-            revokers=[ex.submit(revoker,i) for i in range(2)]
             start.set()
             deadline=now()+5
+            count=0
             while now()<deadline:
                 with lock:count=stats["accepted"]
                 if count>=3:break
                 time.sleep(.006)
             check(count>=3,("no_initial_active_streams",count))
+            # Independent OS threads (NOT queued behind all 300 pool jobs).
+            # The previous CI detected the bad scheduling and is preserved.
+            revoker_results=[None,None]
+            revoker_errors=[]
+            def invoke_revoker(i):
+                try:revoker_results[i]=revoker(i)
+                except BaseException as ex:
+                    revoker_errors.append((i,type(ex).__name__,str(ex)))
+            revoker_threads=[threading.Thread(target=invoke_revoker,args=(i,),
+                name="priority-revoker-"+str(i)) for i in (0,1)]
+            for thread in revoker_threads:thread.start()
             enabled.set()
-            writer_results=[r.result(timeout=15) for r in revokers]
+            for thread in revoker_threads:thread.join(10)
+            check(all(not thread.is_alive() for thread in revoker_threads),
+                "revokers_starved_behind_stream_work")
+            check(not revoker_errors and all(revoker_results),
+                  ("revoker_failed",revoker_errors))
+            writer_results=revoker_results
             for f in futures:f.result(timeout=20)
         check(not stats["other_errors"] and stats["pool_timeouts"]==0,("pool_failures",stats))
-        check(stats["denied"]>0 and stats["accepted"]>0,("priority_unproven",stats))
+        check(stats["denied"]>=TASKS//2 and stats["accepted"]>0,
+              ("revocation_started_too_late_or_priority_failed",stats))
         check(stats["accepted"]+stats["denied"]==TASKS,("unaccounted_streams",stats))
         check(stats["peak_active"]<=POOL_SIZE,("pool_not_bounded",stats))
         check(all(x["commit_elapsed_ms"]<1200 for x in writer_results),
