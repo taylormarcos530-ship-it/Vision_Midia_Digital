@@ -300,9 +300,13 @@ class SealedHandler(qa.FencedHandler):
             with srv.sql_slots:
               with srv.pool.borrow() as db:
                 with db.transaction():
+                    # Acquire the cooperative commercial fence FIRST, then read
+                    # the revision under the same READ COMMITTED transaction.
+                    # The exclusive publishing commit cannot interleave here.
+                    # Do not retry a revoked 401 or any partially sent HTTP 200.
+                    txguard(db,claims,company)
                     rev=db.execute("SELECT revision FROM qa_ordered_campaign WHERE company_id=%s",(company,)).fetchone()
                     if not rev:raise PermissionError("unknown_company")
-                    txguard(db,claims,company,rev[0])
                     srv.fence_reads+=1;srv.fence_locks+=1;srv.revision_checks+=1;srv.sql_chunks+=1
             with srv.mu:existing=srv.cache.get(key)
             if not existing or existing["revision"]!=rev[0]:
