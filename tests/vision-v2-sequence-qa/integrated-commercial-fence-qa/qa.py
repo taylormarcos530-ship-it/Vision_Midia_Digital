@@ -245,7 +245,21 @@ def guarded_revoke(company,user):
             db.execute("DELETE FROM private.memberships WHERE company_id=%s AND user_id=%s",(company,user))
     return time.monotonic()
 
+def create_ordered_tables_with_read_only_rls():
+    _base_create_tables()
+    with v.con() as db:
+        db.execute("ALTER TABLE qa_ordered_campaign ENABLE ROW LEVEL SECURITY")
+        db.execute("""CREATE POLICY qa_campaign_read_by_member ON qa_ordered_campaign
+            FOR SELECT TO authenticated USING (
+                company_id::text=current_setting('request.jwt.claim.company_id',true)
+                AND private.is_company_member(company_id))""")
+        db.execute("GRANT SELECT(company_id,revision) ON qa_ordered_campaign TO authenticated")
+        # A real negative check: no customer role may UPDATE the commercial state.
+        db.execute("REVOKE INSERT,UPDATE,DELETE ON qa_ordered_campaign FROM authenticated")
+
+_base_create_tables=z.create_tables
 def configure():
+    z.create_tables=create_ordered_tables_with_read_only_rls
     disk.BoundedCommercialServer=FencedServer
     disk.BoundedHandler=FencedHandler
     driver.c.launch=disk.launch
