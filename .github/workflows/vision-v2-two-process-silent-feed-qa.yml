@@ -35,7 +35,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
-          test -z "$SUPABASE_URL"
+          test -z "${SUPABASE_URL:-}"
           echo "DISPOSABLE_PG17=true NO_DEPLOY=true NO_PRODUCTION=true"
       - uses: actions/setup-python@v5
         with:
@@ -86,7 +86,7 @@ jobs:
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
-          test -z "$SUPABASE_URL"
+          test -z "${SUPABASE_URL:-}"
           echo "NO_APK=true NO_PANEL=true NO_SITE=true NO_TVS=true NO_SUPABASE=true"
       - uses: actions/setup-python@v5
         with:
