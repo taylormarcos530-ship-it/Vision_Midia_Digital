@@ -17,7 +17,8 @@ spec=importlib.util.spec_from_file_location("qa_old_rollback",ROOT/"rolling-cuto
 rollback=importlib.util.module_from_spec(spec);spec.loader.exec_module(rollback)
 v,deep,a,q,p=rollback.v,rollback.deep,rollback.a,rollback.q,rollback.p
 FENCE_BASE=621780111
-CHUNK=65536
+CHUNK=int(os.environ.get('QA_STREAM_CHUNK','65536'))
+assert CHUNK in (16384,65536,262144), 'invalid_disposable_chunk_size'
 MAX_PAUSE_SECONDS=.30
 def lock_id(i):return FENCE_BASE+i
 def ck(x,m):assert x,m
@@ -202,8 +203,8 @@ def race_safe(peer,keys):
         time.sleep(.08)
         ck("committed_at" not in finished,"writer_bypassed_shared_lock")
         cmd(peer,"release")
-        first=resp.read(65536)
-        ck(len(first)==65536,"first_chunk_not_transmitted")
+        first=resp.read(CHUNK)
+        ck(len(first)==CHUNK,"first_chunk_not_transmitted")
         until(lambda:cmd(peer,"first_written"),5)
         writer.join(4);ck(not writer.is_alive(),"revocation_stalled")
         write_time=cmd(peer,"stats")["first_write_time"]
@@ -279,7 +280,7 @@ def main():
         with v.con() as c:
             result={"result":"PASS","100_clients":h100,"300_cutover_rollback":c300,
                 "race":race,"stall":stall,"workers":stats,"prewarm":prepared,
-                "auth_sql_per_block":True,"sql_statements_approx_check_plus_lock":sum(x["checks"]+x["lock_calls"] for x in stats),
+                "auth_sql_per_block":True,"chunk_bytes":CHUNK,"sql_statements_approx_check_plus_lock":sum(x["checks"]+x["lock_calls"] for x in stats),
                 "pg_database_bytes":int(c.execute("SELECT pg_database_size(current_database())").fetchone()[0]),
                 "index_bytes":int(c.execute("SELECT pg_indexes_size('public.playback_logs')").fetchone()[0]),
                 "wal_after_fixture_bytes":int(c.execute("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(),%s)",(wal0,)).fetchone()[0]),
