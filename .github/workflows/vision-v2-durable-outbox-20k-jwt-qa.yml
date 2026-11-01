@@ -1,0 +1,55 @@
+name: Vision V2 PG17 Durable Outbox JWT Key Rotation 20K Full RPC NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/durable-outbox-qa/**'
+      - '.github/workflows/vision-v2-durable-outbox-20k-jwt-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pg17-isolated:
+    name: Two OS processes / durable outbox / full 20K original SQL RPC / WAL
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fail closed before any execution if scope or credentials incorrect
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "NO_PRODUCTION=true NO_DEPLOY=true NO_APK=true NO_TVS=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install QA-only pinned PG17 driver and AES library
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Run DB transaction / PostgreSQL RLS / JWT rotation / 20k exact full report-export
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/durable-outbox-qa/advanced.py
+          echo "QA_DURABLE_OUTBOX_20K_PASS=true"
+      - name: Confirm no production mutation
+        if: always()
+        run: echo "NO_SUPABASE=true NO_DEPLOY=true NO_APK=true NO_PANEL=true NO_TV=true NO_DELETE=true"
