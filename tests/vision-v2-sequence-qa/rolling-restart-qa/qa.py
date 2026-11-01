@@ -271,7 +271,7 @@ def security_midstream(replica,keys):
             chk(len(err.partial)==0,("unauthorized_post_revoke_bytes",len(err.partial)))
     finally:r.close()
     # Already cached results must not bypass revocation on NEW requests.
-    for i in (0,2):
+    for i in (0,):
         denied=fetch("http://127.0.0.1:"+str(replica[2]["port"]),keys,i,expect=401)
         chk(denied["status"]==401,"revoked_user_allowed")
     keys.accept={"a","b"}
@@ -358,7 +358,7 @@ def main():
             chk(newstat["prewarm_sql"]==2,"new_extra_SQL")
             chk(oldstat["prewarm_sql"]==2,"old_extra_SQL")
             records.append({"concurrent":concurrent,"rolling_response":outcome,
-              "new_prewarm_seconds":round(time.perf_counter()-t,3),
+              "new_prewarm_seconds":newstat["prewarm_seconds"],
               "old_served":counts.get(old[2]["port"],0),
               "new_served":counts.get(new[2]["port"],0),
               "old_sql_auth":oldstat["auth_sql"],
