@@ -242,6 +242,55 @@ def concurrent_publishers(peers):
         authoritative=c.execute("SELECT company_id,revision,name FROM qa_ordered_campaign").fetchall()
     return committed,[(str(x),y,n) for x,y,n in authoritative]
 
+def concurrent_publish_and_replay(peers,keys):
+    """ACTUAL overlap: six PG writers and two independent consumer-process
+    IPC-drain loops run simultaneously; no assumed ID contiguity.
+    """
+    start=threading.Event()
+    def writer(i):
+        ck(start.wait(5),"overlap_start_timeout")
+        time.sleep(.015+i*.035)
+        return z.publish(v.COMPANIES[i%2],"OVERLAP CAMPAIGN "+str(i),notify=False)
+    def reader(peer):
+        ck(start.wait(5),"overlap_start_timeout")
+        seen=[]
+        during=0
+        for i in range(16):
+            got=ask(peer,"sync")["ids"]
+            seen+=got
+            if got:during+=1
+            time.sleep(.028)
+        return {"seen":seen,"nonempty_during_writers":during}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        publishers=[pool.submit(writer,i) for i in range(6)]
+        consumers=[pool.submit(reader,peer) for peer in peers]
+        start.set()
+        actions=[task.result(timeout=40) for task in publishers]
+        recorded=[task.result(timeout=40) for task in consumers]
+    ids=sorted(a["id"] for a in actions)
+    for peer,track in zip(peers,recorded):
+        tail=ask(peer,"sync")["ids"]
+        covered=track["seen"]+tail
+        ck(covered==ids,("concurrent_publisher_consumer_replay_mismatch",covered,ids))
+        ck(track["nonempty_during_writers"]>0,
+            ("no_consumer_replayed_during_writes",track))
+        ck(ask(peer,"sync")["ids"]==[],"replayed_duplicate_after_overlap")
+    # Actual full original commercial HTTP after concurrent revisions.
+    with v.con() as c:
+        current=c.execute("SELECT company_id,revision,name FROM qa_ordered_campaign").fetchall()
+    for peer in peers:
+        for tenant,co in enumerate(v.COMPANIES):
+            body=fetch(peer,keys,tenant)
+            qa=next(x for x in current if x[0]==co)
+            ck(body["code"]==200 and body["campaign"]==qa[2] and
+               body["revision"]==qa[1],("commercial_http_overlap_parity",body,qa))
+    return {"actual_simultaneous_publishers":6,
+            "actual_simultaneous_independent_consumer_processes":2,
+            "committed_ordered_ids":ids,
+            "consumer_during_writer_reads":recorded,
+            "identical_persisted_order_each_consumer":True,
+            "full_commercial_HTTP_parity_after_overlap":True}
+
 def revocation_between_check_and_write(peer,keys):
     co=v.COMPANIES[0];user=v.USER_IDS[0]
     token=keys.issue(co,user,"a")
@@ -330,11 +379,12 @@ def run():
                 rownext=next(x for x in latest if x[0]==co)
                 ck(reply["campaign"]==rownext[2] and reply["revision"]==rownext[1],
                     ("HTTP_cached_commercial_payload_not_updated",reply,rownext))
+        concurrent=concurrent_publish_and_replay(peers,keys)
         race=revocation_between_check_and_write(peers[0],keys)
         with v.con() as c:
             cur=c.execute("SELECT consumer,last_id FROM qa_ordered_cursor ORDER BY consumer").fetchall()
             records=c.execute("SELECT consumer,id FROM qa_ordered_processed ORDER BY consumer,id").fetchall()
-            expected=[x["id"] for x in baseline]+committed
+            expected=[x["id"] for x in baseline]+committed+concurrent["committed_ordered_ids"]
             ck(records==[(i,j) for i in (0,1) for j in expected],"duplicate_or_missing_receipts")
             ck(all(c[1]==expected[-1] for c in cur),"checkpoint_corrupt")
             wal=int(c.execute("SELECT pg_wal_lsn_diff(pg_current_wal_lsn(),%s)",(wal_start,)).fetchone()[0])
@@ -344,6 +394,7 @@ def run():
         stats=[ask(peer,"get_stats") for peer in peers]
         report={"status":"PASS_with_documented_unsafe_negative_case",
            "concurrent_publishers":9,"committed_after_rollback_attempts":len(committed),
+           "real_publisher_consumer_overlap":concurrent,
            "expected_nonconsecutive_committed_IDs":True,
            "crash_after_commit_before_replay_and_restarted":True,
            "persisted_checkpoints":[list(x) for x in cur],"durable_receipts":len(records),
