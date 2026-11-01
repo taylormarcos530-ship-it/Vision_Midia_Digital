@@ -93,6 +93,9 @@ class CacheAPI(ThreadingHTTPServer):
         self.db_misses=0;self.max_inflight=0;self.inflight=0
         self.waiters=0;self.max_waiters=0;self.queue_timeout=0
         self.acked=set()
+    def auth_guard(self,claim,company):
+        # Optional hook used by the two-replica isolated QA only.
+        return None
     def snapshot(self):
         with self.mx:
             return {k:getattr(self,k) for k in
@@ -118,7 +121,9 @@ class CacheAPI(ThreadingHTTPServer):
             raise PermissionError("tenant_cross")
         user=v.USER_IDS[v.COMPANIES.index(uuid.UUID(company))]
         if claim["sub"]!=user:raise PermissionError("wrong_user")
-        with self.mx: revision=self.revision[company]
+        with self.mx:
+            self.auth_guard(claim,company)
+            revision=self.revision[company]
         key=(case["start"],case["end"],case["campaign"],case["device"],revision)
         with self.cache.mutex: single=self.cache.per_key[(company,key)]
         # Singleflight ensures 300 identical concurrent requests cannot
@@ -163,6 +168,10 @@ class CacheAPI(ThreadingHTTPServer):
                     with self.mx:self.inflight-=1
                     self.sem.release()
         with self.mx:
+            # Fail closed for an invalidation/revocation racing a cache fill.
+            if self.revision[company]!=revision:
+                raise OSError("revision_changed_during_request")
+            self.auth_guard(claim,company)
             self.approved+=1
             self.acked.add((company,reqid))
         return {"verified":True,"sha256":sha(body),"request_id":reqid,
