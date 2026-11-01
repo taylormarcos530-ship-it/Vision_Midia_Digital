@@ -23,8 +23,7 @@ TABLES=(("public","companies","c","id"),("public","devices","d","company_id"),
  ("public","media_assets","me","company_id"),
  ("public","playback_logs","logs","company_id"),
  ("qa_rpc","daily","daily_model","company_id"),
- ("qa_rpc","pending_without_time","pending","company_id"),
- ("qa_rpc","read_events","read_model","company_id"))
+ ("qa_rpc","pending_without_time","pending","company_id"))
 WINDOW=(date(2024,12,31),date(2025,1,6))
 def chk(ok,msg):assert ok,msg
 def dump(obj):return m.dump(obj)
@@ -36,6 +35,10 @@ def counts():
         "daily_index_bytes":int(v.scalar(c,"SELECT pg_indexes_size('qa_rpc.daily')")),
         "outbox_bytes":int(v.scalar(c,"SELECT coalesce(pg_total_relation_size(to_regclass('qa_v2_outbox')),0)"))}
 def rls_audit():
+    # The event-level read model is intentionally dropped by q.init_db().
+    with v.con() as check_db:
+        chk(v.scalar(check_db,"SELECT to_regclass('qa_rpc.read_events')") is None,
+            "duplicate_event_read_model_unexpectedly_exists")
     # Baseline fixture policies are *intentionally* not hardened; fail the
     # baseline audit before changing policy in the disposable database.
     test=[]
