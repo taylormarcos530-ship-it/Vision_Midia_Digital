@@ -187,7 +187,7 @@ def report_full(company):
     chk(len({r[0] for r in rows})==10000,"duplicate_full_export")
     body=dump({"report":report,"export":rows})
     return {"payload_sha256":h(body),"export_rows":len(rows),"bytes":len(body),
-            "full_rpc_sql_ms":round((time.perf_counter()-start)*1000,3)}
+            "payload":body,"full_rpc_sql_ms":round((time.perf_counter()-start)*1000,3)}
 
 class Gateway(ThreadingHTTPServer):
     daemon_threads=True;request_queue_size=512
@@ -211,8 +211,10 @@ class Handler(BaseHTTPRequestHandler):
                         self.server.sql_calls+=1
                 else:
                     with self.server.lock:self.server.hits+=1
-            payload=dump(cached)
+            payload=cached["payload"]
             self.send_response(200)
+            self.send_header("X-QA-SHA256",cached["payload_sha256"])
+            self.send_header("X-QA-Export-Rows",str(cached["export_rows"]))
         except Exception as exc:
             self.send_response(503)
             payload=dump({"error":repr(exc)})
@@ -252,22 +254,32 @@ def concurrent_http():
             st=time.perf_counter()
             with request.urlopen(url,timeout=90) as res:
                 chk(res.status==200,"http_code")
-                data=json.loads(res.read())
-            chk(data["export_rows"]==10000 and len(data["payload_sha256"])==64,"report_export_not_complete")
-            return (time.perf_counter()-st)*1000
+                raw=res.read()
+                announced=res.headers.get("X-QA-SHA256")
+                export_rows=int(res.headers.get("X-QA-Export-Rows","0"))
+                declared=int(res.headers.get("Content-Length","0"))
+            chk(export_rows==10000 and declared==len(raw) and h(raw)==announced,
+                "full_HTTP_body_integrity_failed")
+            if i<4 or i%50==0:
+                decoded=json.loads(raw)
+                chk(len(decoded["export"])==10000 and "report" in decoded,
+                    "actual_full_body_missing")
+            return (time.perf_counter()-st)*1000,len(raw)
         # First requests are cold; the rest are warm, with full archived body
         # actually computed by original RPC once per tenant per worker.
         cold=[hit(0),hit(1),hit(2),hit(3)]
         results=[]
         for n in (100,300):
             start=time.perf_counter()
-            with ThreadPoolExecutor(max_workers=n) as pool: times=list(pool.map(hit,range(n)))
-            times=sorted(times)
+            with ThreadPoolExecutor(max_workers=n) as pool: observations=list(pool.map(hit,range(n)))
+            times=sorted(x[0] for x in observations)
+            transferred=sum(x[1] for x in observations)
             def percentile(frac):
                 ix=(len(times)-1)*frac;lo=int(ix);hi=min(lo+1,len(times)-1)
                 return round(times[lo]*(hi-ix)+times[hi]*(ix-lo),3)
             results.append({"clients":n,"http_200":n,"p95_ms":percentile(.95),
-                "p99_ms":percentile(.99),"wall_seconds":round(time.perf_counter()-start,3)})
+                "p99_ms":percentile(.99),"wall_seconds":round(time.perf_counter()-start,3),
+                "full_json_http_bytes_transferred":transferred})
         stats=[]
         for proc,ipc,info in processes:
             ipc.send("stats");stats.append({"pid":info["pid"],**ipc.recv()})
@@ -275,7 +287,8 @@ def concurrent_http():
         chk(all(x["requests"]>=202 for x in stats),("request_count",stats))
         return {"result":"PASS","two_independent_pids":True,"cold_full_rpc_requests":4,
            "warm_http_100_300":results,"replicas":stats,
-           "full_json_hash_from_original_rpc":True,"http_request_sql_on_hit":0,
+           "full_json_hash_from_original_rpc":True,"full_json_transferred_to_each_http_client":True,
+           "http_request_sql_on_hit":0,
            "source_events_per_company":10332,"zero_serve_from_raw_unverified":True}
     finally:
         for proc,ipc,_ in processes:
