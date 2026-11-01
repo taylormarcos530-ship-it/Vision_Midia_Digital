@@ -297,7 +297,14 @@ def main():
             "P99_ms":v.pct([x[1] for x in got],.99),
             "max_ms":round(max(x[1] for x in got),3),
             "gzip_egress_bytes":sum(x[0] for x in got),
-            "HTTP_GET_attempts":N+7,"SQL_guard_calls_lower_bound":N+8,
+            # Four forced failures + 401 + first 503+retry = 7;
+            # gated stream + post-revocation 401 = another 2. Healthy N.
+            "HTTP_GET_attempts_local":N+9,
+            # Each healthy GET performs one SQL admission + one per actual
+            # compressed chunk. EXCLUDES negative and admin/DDL statements.
+            "SQL_authorization_guard_calls_HEALTHY_lower_bound":
+                N*(1+(len(make_report()[1])+CHUNK-1)//CHUNK),
+            "SQL_full_statements_measured":False,
             "WAL_after_fixture_bytes":delta,"database_bytes":size,
             "membership_index_bytes":idx,
             "parent_RSS_KiB":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
