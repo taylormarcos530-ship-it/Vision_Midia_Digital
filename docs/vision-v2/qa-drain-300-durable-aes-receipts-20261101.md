@@ -53,7 +53,7 @@ All three: PostgreSQL receipt 2 durable rows, HMAC manifest tamper rejected, ide
 
 The 12-job full regression covers synthetic JWT/RLS and minimum privileges, two concurrent revokers, app writes under shared advisory transaction locks, process crashes and outbox durable checkpoints, and AES-GCM remote-manifest force-crash recovery. The simulated tiny remote encrypted manifest was previously instrumented as **1 GET (168 bytes) / 4 PUTs (680 bytes)**; this does **NOT** include any actual TV media/video/image GETs or production Storage egress.
 
-Assume EXACTLY one full gzip commercial report (about 351.75KiB compressed) per client per day, for 30 days. 100 clients -> 3,000 reports, about **1.055GB gzip egress**. 300 clients -> 9,000 reports, about **3.166GB gzip egress**. Neither includes retries, advertisements/media, device heartbeat, GET/PATCH or real storage.
+Assume EXACTLY one full gzip commercial report (about 351.75 kB compressed) per client per day, for 30 days. 100 clients -> 3,000 reports, about **1.055GB gzip egress**. 300 clients -> 9,000 reports, about **3.166GB gzip egress**. Neither includes retries, advertisements/media, device heartbeat, GET/PATCH or real storage.
 
 | Engineering monthly SQL (approximate; includes OPTIONAL 30-second two-replica outbox poll, not enabled in these jobs) | 100 clients | 300 clients |
 |---|---:|---:|
