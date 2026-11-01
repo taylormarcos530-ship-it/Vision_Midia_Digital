@@ -197,9 +197,9 @@ def finish_storage(state,remote_port):
       "object_integrity_sha_and_AES_GCM":True,"durable_outbox_events":outbox,
       "remote_payload_bytes":len(blob)}
 
-def jwt_guard(token,company):
+def jwt_guard(token,company,keys):
     # Synthetic signed JWT, plus active native PostgreSQL membership check.
-    claims=KEYS.verify(token)
+    claims=keys.verify(token)
     if claims["company_id"]!=str(company):raise PermissionError("cross_tenant")
     with v.con() as c:
         with c.transaction():
@@ -235,7 +235,7 @@ class ReportHandler(BaseHTTPRequestHandler):
             ix=int(self.path.strip("/"))
             company=v.COMPANIES[ix];token=self.headers.get("X-QA-JWT","")
             with self.server.auth_semaphore:
-                jwt_guard(token,company)
+                jwt_guard(token,company,self.server.keys)
                 with self.server.mx:self.server.auth_queries+=1
             with self.server.locks[str(company)]:
                 with self.server.mx:body=self.server.cache.get(str(company))
@@ -250,7 +250,7 @@ class ReportHandler(BaseHTTPRequestHandler):
                     with self.server.mx:self.server.hits+=1
             # Protect in-flight result after revocation while SQL ran.
             with self.server.auth_semaphore:
-                jwt_guard(token,company)
+                jwt_guard(token,company,self.server.keys)
                 with self.server.mx:self.server.auth_queries+=1
             self.sendit(200,body)
         except (PermissionError,ValueError,KeyError,IndexError):
@@ -276,6 +276,10 @@ def report_process(keys,control):
                       "bytes_http":srv.http_bytes,"auth_sql":srv.auth_queries,
                       "rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
                       "cache_bytes":sum(len(b) for b in srv.cache.values())})
+            elif cmd=="allow_both_keys":
+                srv.keys.accept={"a","b"};control.send(True)
+            elif cmd=="rotate_b_only":
+                srv.keys.accept={"b"};control.send(True)
             elif cmd=="stop":control.send(True);break
     finally:
         srv.shutdown();srv.server_close();worker.join(4)
@@ -361,15 +365,17 @@ def rotation_revoke_race(peers):
     for i in range(12):
         hit(peers,i*4,expect=401)
     KEYS.accept.add("b")
+    command(peers,"allow_both_keys")
     for i in range(6):
         hit(peers,i*4,kid="b",expect=401)
     KEYS.accept.remove("a")
-    # New key succeeds only after restoring membership, in new worker process
-    # environment the key-rotation set remains local to parent, so for the
-    # worker restart use new keyring built with active=b and reject old.
+    command(peers,"rotate_b_only")
     with v.con() as c:
         c.execute("INSERT INTO private.memberships(company_id,user_id) VALUES(%s,%s)",
             (v.COMPANIES[0],v.USER_IDS[0]))
+    for i in range(4):
+        hit(peers,i*4,kid="a",expect=401)
+        hit(peers,i*4,kid="b",expect=200)
     after=command(peers,"stats")
     chk(sum(x["denied"]-y["denied"] for x,y in zip(after,before))>=18,
         "revoked_access_not_denied")
@@ -378,7 +384,8 @@ def rotation_revoke_race(peers):
       "new_rotated_signed_key_while_revoked_denied":6,
       "synthetic_active_RLS_membership_checked_before_and_after":True,
       "inflight_completed_or_revoked":len(outcomes),
-      "old_key_revocation_in_parent_only_not_live_child":True}
+      "old_key_revoked_on_both_live_children":True,
+      "new_key_accepted_after_membership_restore":True}
 
 def main():
     global KEYS
@@ -396,8 +403,9 @@ def main():
             state=storage_protocol(store[2]["port"],td)
             # Crash and restart separate remote HTTP service; existing partial
             # object remains on disk. No existing DB "READY" is forged.
-            store[1].send("stop");store[1].recv();store[0].join(5)
-            chk(store[0].exitcode==0,"object_store_crash_simulation")
+            store[1].send("stats");initial_remote_stats=store[1].recv()
+            store[0].terminate();store[0].join(5)
+            chk(store[0].exitcode not in (None,0),"remote_process_not_force_killed")
             store=spawn_object(td)
             results=finish_storage(state,store[2]["port"])
             before=store[2]["pid"]
@@ -414,6 +422,11 @@ def main():
                     if proc.is_alive():proc.terminate();proc.join(3)
                     chk(proc.exitcode==0,"bad_exit_report_process")
             store[1].send("stats");remote_stats=store[1].recv()
+            remote_stats={"before_crash":initial_remote_stats,"after_crash":remote_stats,
+              "combined_puts":initial_remote_stats["puts"]+remote_stats["puts"],
+              "combined_gets":initial_remote_stats["gets"]+remote_stats["gets"],
+              "combined_upload_bytes":initial_remote_stats["bytes_put"]+remote_stats["bytes_put"],
+              "combined_download_bytes":initial_remote_stats["bytes_get"]+remote_stats["bytes_get"]}
         finally:
             if store[0].is_alive():
                 store[1].send("stop");store[1].recv()
