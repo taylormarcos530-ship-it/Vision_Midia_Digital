@@ -55,8 +55,10 @@ def main():
                     ck(hashlib.sha256(raw).hexdigest()==response.headers["X-QA-SHA256"],"mixed_sha")
                     j=json.loads(raw)
                     ck(len(j["original_full_report"]["export"])==10000,"mixed_10k_missing")
-                    ck(j["campaign"]=="RACE BASELINE",("old_after_new_without_replay",j["campaign"]))
-                    result={"code":200,"bytes":len(gz),"ms":(time.perf_counter()-st)*1000}
+                    ck(j["campaign"] in ("RACE BASELINE","RACE UPDATED"),
+                       ("commercial_revision_not_committed",j["campaign"]))
+                    result={"code":200,"campaign":j["campaign"],"bytes":len(gz),
+                            "ms":(time.perf_counter()-st)*1000}
             except error.HTTPError as ex:
                 ck(ex.code==503,("unexpected_HTTP",ex.code))
                 result={"code":503,"bytes":len(ex.read()),"ms":(time.perf_counter()-st)*1000}
@@ -110,7 +112,8 @@ def main():
         # NEW admission; HTTP 200 from old wave was admitted before commit.
         for peer in peers:
             url="http://127.0.0.1:"+str(peer[2]["port"])
-            ck(drv.fetch_url(url,keys,0,503)["code"]==503,"stale_http_after_commit")
+            ck(drv.fetch_url(url,keys,0,200,"RACE UPDATED")["code"]==200,
+               "authoritative_singleflight_rebuild_not_serving_current")
         for peer in peers:
             got=c.ask(peer,"sync")["ids"]
             ck(got==[event["id"]],("durable_replay_missing",got))
@@ -121,6 +124,8 @@ def main():
             db_bytes=db.execute("SELECT pg_database_size(current_database())").fetchone()[0]
             index=db.execute("SELECT pg_indexes_size('public.playback_logs')").fetchone()[0]
         result={"result":"PASS","mixed_300":counts,
+            "completed_new_revision":sum(x.get("campaign")=="RACE UPDATED" for x in replies),
+            "completed_old_revision":sum(x.get("campaign")=="RACE BASELINE" for x in replies),
             "mixed_300_P95_ms":pct([x["ms"] for x in replies],.95),
             "mixed_300_P99_ms":pct([x["ms"] for x in replies],.99),
             "mixed_full_200_gzip_bytes":sum(x["bytes"] for x in replies if x["code"]==200),
@@ -128,7 +133,7 @@ def main():
             "pending_at_rollback":at_rollback,"unfinished_at_mutation":unfinished_before,
             "unfinished_after_rollback":unfinished_after,
             "post_replay_100_old":good_new,"post_replay_100_new":good_new2,
-            "both_stale_rejected_before_replay":True,
+            "both_replicas_authoritatively_rebuilt_without_notify":True,
             "all_complete_HTTP_SHA256_AND_10K":True,
             "routed_old_and_new":True,"encrypted_manifest_in_separate_CI":True,
             "worker_stats":[c.ask(peer,"get_stats") for peer in peers],
