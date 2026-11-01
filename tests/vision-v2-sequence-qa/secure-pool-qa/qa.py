@@ -164,7 +164,7 @@ class SealedServer(qa.FencedServer):
         start=time.perf_counter()
         identity=key+"/"+str(revision)
         path=self.root/("rev-"+key+"-"+str(revision)+".aes")
-        stage=self.root/("stage-"+key+"-"+str(revision)+".aes.tmp"
+        stage=self.root/("stage-"+key+"-"+str(revision)+".aes.tmp")
         source=AEADFrames(self.data_key,"source",key)
         archive=AEADFrames(self.data_key,"archive",identity)
         raw_sha=hashlib.sha256();raw_count=0;gz_sha=hashlib.sha256();wire_len=0
