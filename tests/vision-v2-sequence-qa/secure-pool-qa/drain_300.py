@@ -97,6 +97,42 @@ def drain_switch(proxy,new_port,timeout_s=.42):
             "timed_out":remaining>0,
             "wait_ms":round((time.monotonic()-started)*1000,3)}
 
+def post_wave_retry(url,keys,n,campaign):
+    """Safe 503-only retries for post-cutover full SHA-verified report waves."""
+    def one(i):
+        started=time.perf_counter()
+        attempts=0
+        while True:
+            attempts+=1
+            co,user=v.COMPANIES[0],v.USER_IDS[0]
+            req=request.Request(url+"/0",headers={
+                "X-QA-JWT":keys.issue(co,user,"a"),"Accept-Encoding":"gzip"})
+            try:
+                with request.urlopen(req,timeout=12) as response:
+                    wire=response.read();raw=gzip.decompress(wire)
+                    ck(hashlib.sha256(raw).hexdigest()==response.headers["X-QA-SHA256"],
+                       "post_wave_report_sha")
+                    doc=json.loads(raw)
+                    ck(len(doc["original_full_report"]["export"])==10000,"post_wave_10k")
+                    ck(doc["campaign"]==campaign,"post_wave_wrong_revision")
+                    return {"ms":(time.perf_counter()-started)*1000,"wire":len(wire),
+                        "raw":len(raw),"attempts":attempts}
+            except error.HTTPError as e:
+                ck(e.code==503,("post_wave_denied_auth_never_retry",e.code))
+                e.read()
+                if attempts>=5 or time.perf_counter()-started>=7.5:
+                    raise AssertionError("post_wave_503_retry_exhausted")
+                time.sleep(min(.025*(2**(attempts-1)),.14))
+    with ThreadPoolExecutor(max_workers=75) as pool:
+        results=list(pool.map(one,range(n)))
+    ck(len(results)==n,"post_wave_incomplete")
+    return {"clients":n,"campaign":campaign,"full_original_report_SHA_pass":True,
+        "P95_ms":pct([q["ms"] for q in results],.95),
+        "P99_ms":pct([q["ms"] for q in results],.99),
+        "gzip_bytes":sum(q["wire"] for q in results),
+        "original_bytes":sum(q["raw"] for q in results),
+        "clients_with_retry":sum(q["attempts"]>1 for q in results)}
+
 def main():
     began=time.perf_counter()
     drv.q.init_db();drv.p.expanded_history();drv.a.setup_outbox();drv.deep.rls_audit()
@@ -226,9 +262,9 @@ def main():
         for peer in peers:
             got=c.ask(peer,"sync")["ids"]
             ck(got==[event["id"]],("durable_replay_missing",got))
-        good_new=drv.run_wave(base,keys,100,"RACE UPDATED")
+        good_new=post_wave_retry(base,keys,100,"RACE UPDATED")
         proxy.switch(peers[1][2]["port"])
-        good_new2=drv.run_wave(base,keys,100,"RACE UPDATED")
+        good_new2=post_wave_retry(base,keys,100,"RACE UPDATED")
         with v.con() as db:
             db_bytes=db.execute("SELECT pg_database_size(current_database())").fetchone()[0]
             index=db.execute("SELECT pg_indexes_size('public.playback_logs')").fetchone()[0]
