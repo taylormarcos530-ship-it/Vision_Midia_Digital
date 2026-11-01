@@ -283,6 +283,55 @@ def waves(apis,store,baseline,quota):
             phases.append(row)
     return phases
 
+def revoke_during_load(apis,feeds,baseline,quota):
+    """Exercise revoke while 100/300 requests are already concurrent.
+    Earlier authorizations may complete; after both listeners acknowledge
+    revocation, every NEW request must deny with no ACK. No strong instant
+    revocation SLA is inferred from this QA.
+    """
+    company=v.COMPANIES[0]
+    user=v.USER_IDS[0]
+    outcomes=[]
+    for n in (100,300):
+        ev,allow_rev=publish(company,"race_allow",user,True)
+        await_events(feeds,ev)
+        for api in apis:
+            api.cache.clear(str(company))
+            api.archive.clear(str(company))
+        token=v.token(company,user)
+        with ThreadPoolExecutor(max_workers=n) as pool:
+            def worker(i):
+                api=apis[i%2]
+                idx=i%24
+                reqid="revoke-race-"+str(quota)+"-"+str(n)+"-"+str(i)
+                code,body,ms=m.post("http://127.0.0.1:"+str(api.server_address[1]),
+                                    idx,token,reqid)
+                if code==200:
+                    assert body["sha256"]==m.sha(m.dump(baseline[idx]["result"]))
+                else:
+                    assert code in (401,503),(code,body)
+                    assert (str(company),reqid) not in api.acked
+                return code,ms
+            futures=[pool.submit(worker,i) for i in range(n)]
+            time.sleep(.04)
+            ev,deny_rev=publish(company,"race_revoke",user,False)
+            await_events(feeds,ev)
+            codes=[f.result()[0] for f in futures]
+        assert len(codes)==n
+        for k,api in enumerate(apis):
+            assert_bad(api,0,token,"revoke-race-post-"+str(quota)+"-"+str(n)+"-"+str(k),401)
+        counts={str(code):codes.count(code) for code in (200,401,503)}
+        info={"quota":quota,"clients":n,"result":"PASS","previous_revision":allow_rev,
+              "revoked_revision":deny_rev,"http_codes":counts,
+              "new_requests_denied_after_notification":True}
+        print("QA_DISTRIBUTED_REVOKE_RACE_JSON="+m.dump(info).decode(),flush=True)
+        outcomes.append(info)
+    ev,version=publish(company,"race_restore",user,True)
+    await_events(feeds,ev)
+    for i,api in enumerate(apis):
+        assert_good(api,0,baseline,"race-restored-"+str(quota)+"-"+str(i),version)
+    return outcomes
+
 def run(archive_dir,key_dir):
     manifest=json.loads((archive_dir/"manifest.json").read_bytes())
     data=(archive_dir/"rpc-baseline.json").read_bytes()
@@ -314,7 +363,8 @@ def run(archive_dir,key_dir):
                     feed=Feed(api);feed.start();feeds.append(feed)
                 checks=preflight(apis,feeds,store,baseline,quota)
                 phases=waves(apis,store,baseline,quota)
-                results.append({"quota":quota,"checks":checks,"phases":phases,
+                revoke_races=revoke_during_load(apis,feeds,baseline,quota)
+                results.append({"quota":quota,"checks":checks,"phases":phases,"revoke_races":revoke_races,
                   "feeds":{"db_snapshot_reads":sum(f.snapshot_reads for f in feeds),
                            "notifications":sum(f.notices for f in feeds),
                            "per_request_revision_sql":0,
