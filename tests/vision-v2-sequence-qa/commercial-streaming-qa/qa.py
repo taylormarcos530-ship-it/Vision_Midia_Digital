@@ -9,7 +9,7 @@ NOT an approved auth-to-socket fence or a deployment candidate.
 """
 from __future__ import annotations
 import hashlib,importlib.util,json,multiprocessing as mp,os,resource,socket
-import tempfile,threading,time,zlib
+import tempfile,threading,time,zlib,traceback
 from http.server import BaseHTTPRequestHandler
 from pathlib import Path
 from urllib import request,error
@@ -175,6 +175,15 @@ class BoundedHandler(BaseHTTPRequestHandler):
                 except OSError:pass
 
 def worker(index,keys,pipe):
+    try:
+        return worker_impl(index,keys,pipe)
+    except BaseException as exc:
+        traceback.print_exc()
+        try:pipe.send({"fatal":type(exc).__name__+":"+str(exc)})
+        except BaseException:pass
+        raise
+
+def worker_impl(index,keys,pipe):
     service=BoundedCommercialServer(index,keys)
     service.startup()
     service.make_cache()
@@ -217,7 +226,15 @@ def worker(index,keys,pipe):
 def launch(index,keys):
     parent,child=mp.Pipe()
     proc=mp.Process(target=worker,args=(index,keys,child));proc.start()
+    if not parent.poll(95):
+        alive=proc.is_alive()
+        if alive:proc.terminate()
+        proc.join(3)
+        raise AssertionError("commercial_worker_startup_timeout_95s_pid_"+str(proc.pid)+"_was_alive_"+str(alive))
     info=parent.recv()
+    if "fatal" in info:
+        proc.join(3)
+        raise AssertionError("commercial_worker_startup_failed:"+info["fatal"])
     return proc,parent,info
 
 def main():
