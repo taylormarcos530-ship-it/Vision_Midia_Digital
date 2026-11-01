@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib import request,error
 import argparse,hashlib,hmac,json,math,resource,secrets,threading,time,uuid
 import importlib.util
+import psycopg
 
 SRC=Path(__file__).resolve().parents[1]/"compact-ondemand-qa"/"compact.py"
 SPEC=importlib.util.spec_from_file_location("vision_compact_previous",SRC)
