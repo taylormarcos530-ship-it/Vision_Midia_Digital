@@ -67,6 +67,10 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length",str(len(response)))
         self.end_headers();self.wfile.write(response)
 
+class Server(ThreadingHTTPServer):
+    daemon_threads=True
+    request_queue_size=512
+
 if __name__=="__main__":
     t=threading.Thread(target=listener,daemon=True);t.start()
-    ThreadingHTTPServer(("0.0.0.0",8080),Handler).serve_forever()
+    Server(("0.0.0.0",8080),Handler).serve_forever()
