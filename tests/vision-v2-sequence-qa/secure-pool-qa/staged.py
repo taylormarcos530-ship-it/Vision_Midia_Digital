@@ -175,5 +175,6 @@ if __name__=="__main__":
     secure.configure()
     c.launch=secure.launch
     z.publish=secure.guarded_publish
+    z.create_tables=secure.qa.create_ordered_tables_with_read_only_rls
     main()
     print("QA_SEALED_POOL_COMMERCIAL_PASS=true",flush=True)
