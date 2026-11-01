@@ -203,7 +203,7 @@ def jwt_and_rls():
 def full_historical_rpc():
     result=[]
     for company,user in zip(v.COMPANIES,v.USER_IDS):
-        begin=date(2025,1,1);end=date(2025,1,5)
+        begin=date(2024,12,31);end=date(2025,1,6)
         start=time.perf_counter()
         with v.con() as c:
             with c.transaction():
