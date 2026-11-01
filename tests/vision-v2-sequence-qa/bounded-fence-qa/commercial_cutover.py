@@ -109,6 +109,9 @@ def main():
         spec=importlib.util.spec_from_file_location("rolling_v2_source",BASE/"rolling-cutover-outbox-qa"/"qa.py")
         roll=importlib.util.module_from_spec(spec);spec.loader.exec_module(roll)
         proxy=roll.old.Router(peers[0][2]["port"])
+        # Synthetic admission limit avoids dozens of simultaneous 3MB JSON
+        # parse/serialize allocations in the unbounded commercial handler.
+        proxy.io_bound=threading.BoundedSemaphore(12)
         proxy.RequestHandlerClass=CommercialRouterHandler
         loop=threading.Thread(target=proxy.serve_forever,daemon=True);loop.start()
         url="http://127.0.0.1:"+str(proxy.server_address[1])
