@@ -167,15 +167,20 @@ class Controller:
         return m.post("http://127.0.0.1:"+str(self.port),case_id,token,request_id)
 
 def heartbeat_loop(stop,counters):
+    # One connection for all heartbeat messages, not one new PG connection
+    # on every heartbeat. Reopen only after actual failure (QA-only cadence).
     while not stop.is_set():
         try:
             with v.con() as c:
-                c.execute("SELECT pg_notify(%s,%s)",(q.CHANNEL,obj({"kind":"heartbeat"})))
-                counters["heartbeat_sql"]+=1
+                counters["pg_connections_opened"]+=1
+                while not stop.is_set():
+                    c.execute("SELECT pg_notify(%s,%s)",(q.CHANNEL,obj({"kind":"heartbeat"})))
+                    counters["heartbeat_sql"]+=1
+                    stop.wait(HEARTBEAT_PERIOD)
         except Exception as exc:
             counters["failures"]+=1
             counters["last_error"]=str(exc)
-        stop.wait(HEARTBEAT_PERIOD)
+            stop.wait(.2)
 
 def states(replicas):return [x.ask("state") for x in replicas]
 def event_seen(replicas,event,timeout=6):
@@ -326,7 +331,7 @@ def run(archive_dir,key_dir):
     q.init_db()
     history=expanded_history()
     store=p.Store(archive_dir);thread=threading.Thread(target=store.serve_forever,daemon=True);thread.start()
-    pulse_stop=threading.Event();pulse_count={"heartbeat_sql":0,"failures":0}
+    pulse_stop=threading.Event();pulse_count={"heartbeat_sql":0,"failures":0,"pg_connections_opened":0}
     pulse=threading.Thread(target=heartbeat_loop,args=(pulse_stop,pulse_count),daemon=True);pulse.start()
     cohort=[]
     try:
