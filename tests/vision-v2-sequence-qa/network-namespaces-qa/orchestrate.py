@@ -100,7 +100,11 @@ def main():
             with c.transaction():
                 c.execute("INSERT INTO qa_network_outbox(revision) VALUES(2)")
                 c.execute("SELECT pg_notify(%s,%s)",(CHANNEL,"outbox:2"))
-        until(lambda:read("a")[0]==200 and read("a")[1]["revision"]==2,8)
+        def revision_a_ok():
+            a=read("a")
+            if a[0]==200 and a[1]["revision"]==2:return True
+            raise AssertionError(("replica_a_revision_pending",a,"replica_b",read("b"),"heartbeat",stats))
+        until(revision_a_ok,8)
         assert read("b")[0]==503,"partitioned_replica_served_cached_request"
         note("reconnect_backend_b_then_reload_durable_revision")
         shell("docker","network","connect",PREFIX+"back",PREFIX+"b")
