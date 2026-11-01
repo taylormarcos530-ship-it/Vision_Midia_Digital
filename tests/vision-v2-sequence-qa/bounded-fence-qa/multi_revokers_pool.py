@@ -35,7 +35,9 @@ def policy_bypass_negative():
     for role,dsn in (("reader",m.STREAM),("revoker",m.REVOKER)):
         for name,stmt,args in cases:
             try:
-                with m.con(dsn) as c:c.execute(stmt,args)
+                with m.con(dsn) as c:
+                    with c.transaction():
+                        c.execute(stmt,args)
             except psycopg.Error as ex:
                 check(ex.sqlstate in ("42501","42P01","55000"),("unexpected_denial_error",name,ex.sqlstate))
                 extra[role+"_"+name]=ex.sqlstate
