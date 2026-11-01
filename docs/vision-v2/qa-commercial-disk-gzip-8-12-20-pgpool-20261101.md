@@ -42,7 +42,7 @@ Each optimized job used 2 OS-process commercial workers on **one** ephemeral run
 
 Each optimized job also recorded **303 authoritative commercial revision/admission SELECTs**, **4 durable replay SELECTs**, and **300 report GETs plus 3 check GETs**. Actual SQL count is **higher** than these tracked SQL categories because role/session configuration, other RPCs, transactions, fixture creation and WAL changes are not totaled here.
 
-**Across each optimized 300-report run:** **105,525,300 bytes gzip egress**, ~**838,077,?** raw-equivalent bytes (exact sum of three compressed-envelope raw groups depends on campaign label), ~**5,938,774 bytes** of temporary raw-source-plus-current-gzip files per worker, and **zero remote object/media GETs**. The independently simulated AES-manifest regression uses **one GET** of 168 bytes and **four PUTs** totaling 680 bytes.
+**Across each optimized 300-report run:** **105,525,300 bytes gzip egress**, **838,076,100 raw-equivalent bytes** across the three commercial waves, ~**5,938,774 bytes** of temporary raw-source-plus-current-gzip files per worker, and **zero remote object/media GETs**. The independently simulated AES-manifest regression uses **one GET** of 168 bytes and **four PUTs** totaling 680 bytes.
 
 ## Original commercial baseline 12-admission comparison — independent CI runners
 
