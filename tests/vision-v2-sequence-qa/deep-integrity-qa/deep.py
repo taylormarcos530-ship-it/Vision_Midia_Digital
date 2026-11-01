@@ -34,7 +34,7 @@ def counts():
         return {"database_bytes":int(v.scalar(c,"SELECT pg_database_size(current_database())")),
         "playback_index_bytes":int(v.scalar(c,"SELECT pg_indexes_size('public.playback_logs')")),
         "daily_index_bytes":int(v.scalar(c,"SELECT pg_indexes_size('qa_rpc.daily')")),
-        "outbox_bytes":int(v.scalar(c,"SELECT pg_total_relation_size('qa_v2_outbox')"))}
+        "outbox_bytes":int(v.scalar(c,"SELECT coalesce(pg_total_relation_size(to_regclass('qa_v2_outbox')),0)"))}
 def rls_audit():
     # Baseline fixture policies are *intentionally* not hardened; fail the
     # baseline audit before changing policy in the disposable database.
