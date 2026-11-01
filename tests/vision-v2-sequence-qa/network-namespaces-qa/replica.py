@@ -6,9 +6,10 @@ from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 DB=os.environ["QA_DB_DSN"]
 NODE=os.environ["QA_NODE"]
 LEASE=float(os.getenv("QA_LEASE_SECONDS","1.7"))
+RECONCILE=float(os.getenv("QA_RECONCILE_SECONDS","0.5"))
 CHANNEL="qa_vision_network_notify"
 state={"connected":False,"fresh_at":0.0,"revision":0,"reads":0,
-       "notices":0,"db_connections":0,"errors":0}
+       "notices":0,"db_connections":0,"errors":0,"periodic_reconciles":0}
 lock=threading.RLock()
 
 def snapshot():
@@ -27,6 +28,7 @@ def listener():
                     state["db_connections"]+=1
                     state["connected"]=True
                     state["fresh_at"]=time.monotonic()
+                last_reconcile=time.monotonic()
                 while True:
                     for note in c.notifies(timeout=.17,stop_after=1):
                         with lock:
@@ -37,6 +39,17 @@ def listener():
                         with lock:
                             state["revision"]=int(latest)
                             state["reads"]+=1
+                    # Bounded per-INSTANCE reconciliation (not per request).
+                    # LISTEN may silently stop delivering even on a connected
+                    # socket; this prevents stale serving after missed NOTIFY.
+                    if time.monotonic()-last_reconcile>=RECONCILE:
+                        latest=c.execute("SELECT coalesce(max(revision),1) FROM qa_network_outbox").fetchone()[0]
+                        with lock:
+                            state["revision"]=int(latest)
+                            state["reads"]+=1
+                            state["periodic_reconciles"]+=1
+                            state["fresh_at"]=time.monotonic()
+                        last_reconcile=time.monotonic()
                     # A half-open connection might never raise: force close
                     # after lease expiry, then reconnect and read outbox.
                     with lock:expired=time.monotonic()-state["fresh_at"]>LEASE
