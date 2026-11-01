@@ -40,6 +40,7 @@ class FencedServer(disk.BoundedCommercialServer):
     def __init__(self,index,keys):
         super().__init__(index,keys)
         self.RequestHandlerClass=FencedHandler
+        self.sql_slots=threading.BoundedSemaphore(PG_POOL)
         self.fence_reads=0
         self.fence_locks=0
         self.revision_checks=0
@@ -138,12 +139,13 @@ class FencedHandler(BaseHTTPRequestHandler):
             token=self.headers.get("X-QA-JWT","")
             claims=srv.keys.verify(token)
             if claims.get("company_id")!=key:raise PermissionError("cross_tenant")
-            with v.con() as db:
+            with srv.sql_slots:
+              with v.con() as db:
                 with db.transaction():
                     rev=db.execute("SELECT revision FROM qa_ordered_campaign WHERE company_id=%s",(company,)).fetchone()
                     if not rev:raise PermissionError("unknown_company")
                     txguard(db,claims,company,rev[0])
-                    srv.fence_reads+=1;srv.fence_locks+=1;srv.revision_checks+=1
+                    srv.fence_reads+=1;srv.fence_locks+=1;srv.revision_checks+=1;srv.sql_chunks+=1
             with srv.mu:existing=srv.cache.get(key)
             if not existing or existing["revision"]!=rev[0]:
                 srv.stale+=1;self.send_error(503,"stale_until_replay");return
@@ -168,7 +170,8 @@ class FencedHandler(BaseHTTPRequestHandler):
                     while True:
                         data=file.read(CHUNK)
                         if not data:break
-                        with v.con() as db:
+                        with srv.sql_slots:
+                          with v.con() as db:
                             with db.transaction():
                                 txguard(db,claims,company,rev[0])
                                 with srv.guard_mu:
