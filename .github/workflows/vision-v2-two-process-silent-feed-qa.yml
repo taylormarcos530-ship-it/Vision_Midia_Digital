@@ -1,0 +1,111 @@
+name: Vision V2 PG17 Two OS Processes Silent Feed QA - NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/process-isolation-qa/**'
+      - '.github/workflows/vision-v2-two-process-silent-feed-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  source:
+    name: Synthetic originals / encrypted archive / RPC baseline (PG17 disposable)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard branch, SQL and deployment isolation
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "$SUPABASE_URL"
+          echo "DISPOSABLE_PG17=true NO_DEPLOY=true NO_PRODUCTION=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Build synthetic source and original full RPC JSON baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/qa_archive" "$RUNNER_TEMP/qa_keys"
+          python -u tests/vision-v2-sequence-qa/compact-ondemand-qa/compact.py --mode producer --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_keys"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-process-archive
+          path: ${{ runner.temp }}/qa_archive/
+          retention-days: 1
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        with:
+          name: qa-process-ephemeral-key-not-kms
+          path: ${{ runner.temp }}/qa_keys/
+          retention-days: 1
+          if-no-files-found: error
+  two-processes:
+    needs: source
+    name: Two isolated OS PIDs / 100-300 HTTP / half-open PG17 fail-closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Refuse production credentials/deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "$SUPABASE_URL"
+          echo "NO_APK=true NO_PANEL=true NO_SITE=true NO_TVS=true NO_SUPABASE=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-process-archive
+          path: ${{ runner.temp }}/qa_archive/
+      - uses: actions/download-artifact@v4
+        with:
+          name: qa-process-ephemeral-key-not-kms
+          path: ${{ runner.temp }}/qa_keys/
+      - name: Real OS process HTTP, silent feed, revised campaign, 20K history, P95 P99
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/process-isolation-qa/process_qa.py --archive "$RUNNER_TEMP/qa_archive" --key-dir "$RUNNER_TEMP/qa_keys"
+          echo "QA_PROCESS_TWO_PIDS_PASS=true"
+      - name: Audit no production access marker
+        if: always()
+        run: echo "NO_PRODUCTION=true NO_DEPLOY=true NO_APK=true NO_SITE=true NO_TV=true NO_DELETE=true"
