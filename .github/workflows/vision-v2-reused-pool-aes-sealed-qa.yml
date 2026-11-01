@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/qa.py
-          python -u tests/vision-v2-sequence-qa/secure-pool-qa/qa.py
+          python -u tests/vision-v2-sequence-qa/secure-pool-qa/staged.py
           echo "QA_SEALED_POOL_COMMERCIAL_PASS=true"
   mixed-300:
     name: 300 concurrent clients during cutover+commercial commit+rollback, AES sealed PG pool
