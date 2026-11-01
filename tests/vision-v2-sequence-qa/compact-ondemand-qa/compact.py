@@ -205,8 +205,8 @@ def load_table(c,rows):
     with c.transaction():
         with c.cursor() as cur:
             cur.executemany(f"INSERT INTO pg_temp.qa_ondemand_events ({v.FIELDS}) VALUES ({v.INSERT_FIELDS})",
-                            ([uuid.UUID(val) if field in KEY_FIELDS else
-                              datetime.fromisoformat(val) if field in ("started_at","ended_at") and val is not None else
+                            ([None if val is None else uuid.UUID(val) if field in KEY_FIELDS else
+                              datetime.fromisoformat(val) if field in ("started_at","ended_at") else
                               Decimal(val) if field=="duration_seconds" else val
                               for field,val in zip(COLS,item)] for item in rows))
     return len(rows)
