@@ -1,0 +1,61 @@
+name: Vision V2 Strict Cutover Decision + Partial TCP PG17 QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/secure-pool-qa/strict_deadline_tcp_qa.py'
+      - '.github/workflows/vision-v2-strict-deadline-partial-tcp-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  transport:
+    name: N ${{ matrix.n }} pool ${{ matrix.pool }} chunk ${{ matrix.chunk }} strict-cutover/partial-200/halfopen-RLS
+    strategy:
+      fail-fast: false
+      matrix:
+        n: [100,300]
+        pool: [8,12,20]
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Exact branch and no official production connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${DATABASE_URL:-}"
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          echo "PG17_QUARANTINE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6'
+      - name: Complete gzip/SQL membership and real partial TCP 200/halfopen/401 with no retry
+        env:
+          QA_N: ${{ matrix.n }}
+          QA_POOL_SIZE: ${{ matrix.pool }}
+          QA_CHUNK: ${{ matrix.chunk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/strict_deadline_tcp_qa.py
+          python -u tests/vision-v2-sequence-qa/secure-pool-qa/strict_deadline_tcp_qa.py
+          echo "QA_STRICT_DEADLINE_TCP_PASS=true"
