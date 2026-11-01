@@ -144,6 +144,8 @@ class SealedServer(qa.FencedServer):
         self.version_guard=threading.RLock()
         self.version_builds=0;self.version_failures=0;self.removed_versions=0
         self.disk_encrypted_bytes=0;self.rev_lazy_rebuilds=0
+        self.revision_preheader_denials=0
+        self.revision_postheader_aborts=0
     def make_cache(self):
         os.chmod(self.root,0o700)
         for company in v.COMPANIES:
@@ -363,6 +365,9 @@ class SealedHandler(qa.FencedHandler):
         except PermissionError as ex:
             with srv.guard_mu:
                 srv.denied+=1
+                if str(ex)=="revised_during_stream":
+                    if headers:srv.revision_postheader_aborts+=1
+                    else:srv.revision_preheader_denials+=1
                 if srv.denied<=3:print("QA_FENCED_DENIED="+repr(ex),flush=True)
             if not headers:
                 # Commercial revision changed during admission: stale, not
@@ -422,6 +427,8 @@ def worker_impl(index,keys,pipe):
                         "sql_admission":service.sql_admission,
                         "sql_per_block":service.sql_chunks,
                         "sent":service.sent,"denied":service.denied,
+                        "revision_preheader_denials":service.revision_preheader_denials,
+                        "revision_postheader_aborts":service.revision_postheader_aborts,
                         "failed":service.failed,"stale":service.stale,
                         "payload_bytes":service.payload_bytes,
                         "RSS_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,

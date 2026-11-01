@@ -103,13 +103,27 @@ def main():
             replies=[f.result(timeout=65) for f in futures]
         counts={str(code):sum(x["code"]==code for x in replies) for code in (200,503,"incomplete")}
         ck(sum(counts.values())==300,("lost_client",counts))
-        # The publishing transaction must never slip between revision
-        # observation and admission fence acquisition. A permitted caller
-        # cannot receive a transient 503 from that TOCTOU window.
-        # An already-started 200 can still truncate on a later revision;
-        # it is counted as incomplete and NEVER retried or accepted as 200.
-        ck(counts["503"]==0,("commercial_admission_503_regression",counts))
-        ck(counts["200"]+counts["incomplete"]==300,
+        # A committed revision can abort an ALREADY-started gzip stream.
+        # The buffering proxy fails closed (503), with no truncated-200 retry.
+        # Admission itself must have ZERO pre-header revision TOCTOU failures.
+        with proxy.lock:
+            mixed_proxy_errors=proxy.errors
+            mixed_proxy_error_reasons=dict(getattr(proxy,"error_reasons",{}))
+        mid_stats=[c.ask(peer,"get_stats") for peer in peers]
+        preheader_denied=sum(x["revision_preheader_denials"] for x in mid_stats)
+        postheader_aborts=sum(x["revision_postheader_aborts"] for x in mid_stats)
+        ck(preheader_denied==0,("admission_revision_toctou_regressed",preheader_denied))
+        ck(counts["503"]==mixed_proxy_errors,
+           ("unclassified_503_or_proxy_failure",counts,mixed_proxy_errors))
+        allowed={"IncompleteRead","RemoteDisconnected","ConnectionResetError",
+                 "TimeoutError","BrokenPipeError"}
+        ck(set(mixed_proxy_error_reasons).issubset(allowed),
+           ("unexpected_upstream_failure_not_safe_to_classify",mixed_proxy_error_reasons))
+        ck(sum(mixed_proxy_error_reasons.values())==mixed_proxy_errors,
+           ("proxy_exception_telemetry_mismatch",mixed_proxy_error_reasons))
+        ck(postheader_aborts>=mixed_proxy_errors,
+           ("upstream_503_not_attributable_to_revocation",postheader_aborts,mixed_proxy_errors))
+        ck(counts["200"]+counts["incomplete"]+counts["503"]==300,
            ("missing_or_unclassified_response",counts))
         # Both stale after commit even if lost LISTEN. No old version may pass
         # NEW admission; HTTP 200 from old wave was admitted before commit.
@@ -130,6 +144,11 @@ def main():
             "completed_new_revision":sum(x.get("campaign")=="RACE UPDATED" for x in replies),
             "completed_old_revision":sum(x.get("campaign")=="RACE BASELINE" for x in replies),
             "mixed_300_P95_ms":pct([x["ms"] for x in replies],.95),
+            "admission_preheader_revision_denials":preheader_denied,
+            "inflight_postheader_revision_aborts":postheader_aborts,
+            "mixed_proxy_fail_closed_503":mixed_proxy_errors,
+            "mixed_proxy_503_causes":mixed_proxy_error_reasons,
+            "availability_300_of_300":counts["200"]==300,
             "mixed_300_P99_ms":pct([x["ms"] for x in replies],.99),
             "mixed_full_200_gzip_bytes":sum(x["bytes"] for x in replies if x["code"]==200),
             "pending_at_cutover":old_active,"new_router_assignments":new_started,

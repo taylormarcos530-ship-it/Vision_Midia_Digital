@@ -82,8 +82,12 @@ class CommercialRouterHandler(BaseHTTPRequestHandler):
                 if header.get(key):self.send_header(key,header[key])
             self.end_headers()
             self.wfile.write(content)
-        except Exception:
-            with proxy.lock:proxy.errors+=1
+        except Exception as ex:
+            with proxy.lock:
+                proxy.errors+=1
+                if not hasattr(proxy,"error_reasons"):proxy.error_reasons={}
+                kind=type(ex).__name__
+                proxy.error_reasons[kind]=proxy.error_reasons.get(kind,0)+1
             try:self.send_error(503,"upstream_unavailable")
             except OSError:pass
         finally:
