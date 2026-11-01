@@ -55,3 +55,49 @@ jobs:
           python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/retry_300.py
           python -u tests/vision-v2-sequence-qa/secure-pool-qa/retry_300.py
           echo "QA_RETRY_300_PASS=true"
+  aes-key-gc:
+    name: AES-GCM old-key denial, real crashed-worker orphan cleanup, sealed FD and PG pool ${{ matrix.cap }} with ${{ matrix.chunk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        cap: [8,12,20]
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict synthetic-only branch guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Key rotation, orphan after real process crash, no-follow GC, corrupted encrypted file, real SQL pool recovery
+        env:
+          QA_COMMERCIAL_ADMISSIONS: ${{ matrix.cap }}
+          QA_PG_POOL_SIZE: ${{ matrix.cap }}
+          QA_COMMERCIAL_CHUNK: ${{ matrix.chunk }}
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/rotation_gc.py tests/vision-v2-sequence-qa/secure-pool-qa/key_gc_faults.py
+          python -u tests/vision-v2-sequence-qa/secure-pool-qa/key_gc_faults.py
+          echo "QA_KEY_ROTATION_GC_PASS=true"
