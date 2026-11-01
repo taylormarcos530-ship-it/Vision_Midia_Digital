@@ -258,7 +258,15 @@ def main():
     try:
         clock=negative_epoch(*ports)
         bad=negative_transport(ports[0])
+        # The negative half-open server deliberately holds an SQL shared
+        # transaction lock for .65s. Let that transaction finish before the
+        # independent exact post-commit application-write proof, otherwise
+        # its stall is incorrectly attributed to the gated revocation case.
+        time.sleep(.78)
+        with count.get_lock():count.value=0
         protected=revocation_midstream(ports[0],first,allow,count)
+        check(protected["first_block_written_precommit"]==CHUNK,
+              ("wrong_first_chunk_instrumentation",protected,CHUNK))
         route=EpochFence(*ports)
         times=[];total=0
         def full(i):
