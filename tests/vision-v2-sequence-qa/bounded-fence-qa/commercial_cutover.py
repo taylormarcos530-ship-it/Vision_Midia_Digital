@@ -6,6 +6,7 @@ from __future__ import annotations
 import gzip,hashlib,importlib.util,json,os,resource,threading,time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from http.server import BaseHTTPRequestHandler
 from urllib import request,error
 BASE=Path(__file__).resolve().parent.parent
 s=importlib.util.spec_from_file_location("commercial_v2_source",BASE/"commit-race-http-qa"/"qa.py")
@@ -46,6 +47,49 @@ def run_wave(url,keys,n,campaign,tenant=0):
             "gzip_bytes":sum(x["gzip_bytes"] for x in data),
             "original_bytes":sum(x["original_bytes"] for x in data),
             "full_original_report_SHA_pass":True,"campaign":campaign}
+
+class CommercialRouterHandler(BaseHTTPRequestHandler):
+    """Reuse the existing guarded Router and forward the commercial SHA
+    response header, which the media-only Router intentionally omitted."""
+    def log_message(self,*args):pass
+    def do_GET(self):
+        proxy=self.server
+        if not proxy.io_bound.acquire(timeout=40):
+            self.send_error(503,"router_admission_failed")
+            return
+        with proxy.lock:
+            port=proxy.upstream
+            proxy.active+=1
+            proxy.peak_active=max(proxy.peak_active,proxy.active)
+            proxy.hits_by_port[port]=proxy.hits_by_port.get(port,0)+1
+        try:
+            url="http://127.0.0.1:"+str(port)+self.path
+            rq=request.Request(url,headers={
+                "X-QA-JWT":self.headers.get("X-QA-JWT",""),
+                "Accept-Encoding":self.headers.get("Accept-Encoding","gzip")})
+            try:
+                with request.urlopen(rq,timeout=90) as response:
+                    code=response.status
+                    content=response.read()
+                    header=response.headers
+            except error.HTTPError as ex:
+                code=ex.code
+                content=ex.read()
+                header=ex.headers
+            self.send_response(code)
+            self.send_header("Content-Length",str(len(content)))
+            for key in ("X-QA-SHA256","Content-Encoding","X-QA-Events"):
+                if header.get(key):self.send_header(key,header[key])
+            self.end_headers()
+            self.wfile.write(content)
+        except Exception:
+            with proxy.lock:proxy.errors+=1
+            try:self.send_error(503,"upstream_unavailable")
+            except OSError:pass
+        finally:
+            with proxy.lock:proxy.active-=1
+            proxy.io_bound.release()
+
 def main():
     start=time.perf_counter()
     q.init_db();p.expanded_history();a.setup_outbox();deep.rls_audit()
@@ -61,11 +105,11 @@ def main():
         for peer in peers:
             got=c.ask(peer,"sync")
             ok(got["ids"]==[committed["id"]],"baseline_event_missing")
-        proxy=c.z if False else c.z
         # Import existing stable reverse proxy, not a new production module.
         spec=importlib.util.spec_from_file_location("rolling_v2_source",BASE/"rolling-cutover-outbox-qa"/"qa.py")
         roll=importlib.util.module_from_spec(spec);spec.loader.exec_module(roll)
         proxy=roll.old.Router(peers[0][2]["port"])
+        proxy.RequestHandlerClass=CommercialRouterHandler
         loop=threading.Thread(target=proxy.serve_forever,daemon=True);loop.start()
         url="http://127.0.0.1:"+str(proxy.server_address[1])
         old_result=run_wave(url,keys,100,baseline)
