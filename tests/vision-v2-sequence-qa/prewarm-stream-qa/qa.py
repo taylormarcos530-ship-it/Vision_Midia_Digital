@@ -16,7 +16,7 @@ HERE=Path(__file__).resolve().parent
 SRC=HERE.parent/"cold-remote-qa"/"qa.py"
 spec=importlib.util.spec_from_file_location("vision_v2_remote_source_qa",SRC)
 core=importlib.util.module_from_spec(spec);spec.loader.exec_module(core)
-v,deep,a,p,q=core.v,core.deep,core.a,core.p,core.q
+v,deep,a,p,q,m=core.v,core.deep,core.a,core.p,core.q,core.m
 def check(ok,reason):assert ok,reason
 def digest(b):return hashlib.sha256(b).hexdigest()
 def percentile(vals,f):
