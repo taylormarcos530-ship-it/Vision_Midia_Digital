@@ -1,0 +1,303 @@
+name: Vision V2 Commercial Streaming Bounded JSON 8 12 20 and 64 256 NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/commercial-streaming-qa/**'
+      - '.github/workflows/vision-v2-commercial-bounded-json-admission-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  optimized-commercial:
+    name: Disk-cached full commercial HTTP 100-old/100-new/100-rollback ${{ matrix.admissions }} admissions ${{ matrix.chunk }} chunk
+    strategy:
+      fail-fast: false
+      matrix:
+        admissions: [8, 12, 20]
+        chunk: [65536, 262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Exact SQL 10K events, SHA 300 complete gzip responses, revised cache and rollback
+        env:
+          QA_COMMERCIAL_ADMISSIONS: ${{ matrix.admissions }}
+          QA_COMMERCIAL_CHUNK: ${{ matrix.chunk }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/commercial-streaming-qa/qa.py
+          python -u tests/vision-v2-sequence-qa/commercial-streaming-qa/qa.py
+          echo "QA_COMMERCIAL_STREAMING_PASS=true"
+  revoked-300:
+    name: Two concurrent revokers, 300 slow sockets, 12 SQL connections at chunk ${{ matrix.chunk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [65536, 262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: RLS/SECDEF minimum privilege, competing revokers, failure timeout and crash
+        env:
+          QA_POOL_CHUNK_BYTES: ${{ matrix.chunk }}
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/multi_revokers_pool.py
+          echo "QA_MULTI_REVOKERS_PASS=true"
+  original-cutover:
+    name: Independent full 100 and simultaneous 300 cutover rollback at 256KiB
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Original report full SHA and 300 in-flight cutover with authorization SQL
+        env:
+          QA_STREAM_CHUNK: "262144"
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/qa.py
+          echo "QA_BOUNDED_FENCE_PASS=true"
+  outbox-crash:
+    name: Multiprocess outbox all crash checkpoint boundaries PG17
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Synthetic writer consumer crash matrix
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/crash_matrix.py
+          echo "QA_CRASH_MATRIX_PASS=true"
+  concurrent-commercial:
+    name: Concurrent commercial writers and two consumers with stale HTTP fail-closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Commercial in-flight revocation negative and replay
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/commit-race-http-qa/qa.py
+          echo "QA_COMMIT_RACE_PASS=true"
+  postgres-failure:
+    name: Durable PG17 outbox and revoked TCP refused socket fail-closed
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: PG17 refused TCP and ordered outbox regression
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/ordered-replay-fence-qa/qa.py
+          echo "QA_ORDERED_FENCE_PASS=true"
+  aes-cold:
+    name: AES manifest hard-crash recovery and genuine cold 100/300 HTTP
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Strict QA branch and absent production credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "PG17_DISPOSABLE=true NO_SUPABASE=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Pinned synthetic libraries
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Simulated encrypted object GET and original SQL cold export
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
+          echo "QA_COLD_REMOTE_PASS=true"
