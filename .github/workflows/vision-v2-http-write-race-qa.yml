@@ -1,0 +1,42 @@
+name: V2 isolated PG17 HTTP write fence regression
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - .github/workflows/vision-v2-http-write-race-qa.yml
+permissions:
+  contents: read
+jobs:
+  race:
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+          POSTGRES_DB: vision_v2_quarantine_disposable
+        ports: [5432:5432]
+        options: --health-cmd "pg_isready -U postgres" --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Branch guard
+        run: test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Negative transactional in-stream commercial and JWT revoke
+        env:
+          QA_COMMERCIAL_CHUNK: ${{ matrix.chunk }}
+          QA_PG_POOL_SIZE: '12'
+          QA_COMMERCIAL_ADMISSIONS: '12'
+        run: python -u tests/vision-v2-sequence-qa/secure-pool-qa/faults.py
