@@ -7,7 +7,7 @@ Archives and manifests contain ONLY synthetic records. All original rows remain.
 from __future__ import annotations
 import argparse
 import base64
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 import hashlib
 import importlib.util
