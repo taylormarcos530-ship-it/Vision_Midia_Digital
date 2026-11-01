@@ -51,6 +51,7 @@ class FencedServer(disk.BoundedCommercialServer):
         self.inject_fail_before_rename=False
         self.pause_before_first_write=False
         self.entered=threading.Event();self.release=threading.Event()
+        self.after_first=threading.Event();self.next_allow=threading.Event()
     def build_revision(self,company,revision,campaign):
         start=time.perf_counter()
         company=str(company)
@@ -176,7 +177,7 @@ class FencedHandler(BaseHTTPRequestHandler):
                                 txguard(db,claims,company,rev[0])
                                 with srv.guard_mu:
                                     srv.fence_reads+=1;srv.fence_locks+=1
-                                    srv.revision_checks+=1
+                                    srv.revision_checks+=1;srv.sql_chunks+=1
                                 if srv.pause_before_first_write and not srv.entered.is_set():
                                     srv.entered.set()
                                     if not srv.release.wait(.24):
@@ -185,6 +186,9 @@ class FencedHandler(BaseHTTPRequestHandler):
                                 with srv.guard_mu:
                                     srv.payload_bytes+=len(data)
                                     srv.reader_bytes_max=max(srv.reader_bytes_max,len(data))
+                        if srv.pause_before_first_write and not srv.after_first.is_set():
+                            srv.after_first.set()
+                            if not srv.next_allow.wait(5):raise PermissionError('post_first_gate_timeout')
                 with srv.guard_mu:srv.sent+=1
             finally:
                 with srv.guard_mu:srv.active_streams-=1
