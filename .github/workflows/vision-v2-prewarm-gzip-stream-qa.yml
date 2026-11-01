@@ -1,0 +1,57 @@
+name: Vision V2 PG17 Prewarm Gzip JWT Streaming 100-300 QA NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/prewarm-stream-qa/**'
+      - '.github/workflows/vision-v2-prewarm-gzip-stream-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  qa-prewarm:
+    name: Disposable PG17 two workers controlled prewarm gzip full 20K streaming revocation
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 18
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Guard experimental ref and absence of production DB secrets
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo "QA_ONLY=true NO_SUPABASE=true NO_APK=true NO_DEPLOY=true"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install pinned QA-only PG17 and AES dependencies
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Syntax check
+        run: python -m py_compile tests/vision-v2-sequence-qa/prewarm-stream-qa/qa.py
+      - name: Run full prewarm, gzip 100-300, JWT-RLS during streaming, metrics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/prewarm-stream-qa/qa.py
+          echo "QA_PREWARM_STREAM_PASS=true"
+      - name: End-of-run safety scope
+        if: always()
+        run: echo "NO_PRODUCTION_CHANGE=true NO_SUPABASE=true NO_APKS=true NO_TVS=true NO_SITE=true NO_HISTORY_DELETE=true"
