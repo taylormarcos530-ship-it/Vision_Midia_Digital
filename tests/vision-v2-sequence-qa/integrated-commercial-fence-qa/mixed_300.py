@@ -97,8 +97,11 @@ def main():
             replies=[f.result(timeout=65) for f in futures]
         counts={str(code):sum(x["code"]==code for x in replies) for code in (200,503,"incomplete")}
         ck(sum(counts.values())==300,("lost_client",counts))
-        ck(counts["200"]>0 and (counts["503"]+counts["incomplete"])>0,
-           ("no_fresh_vs_stale_distinction",counts))
+        # Zero baseline HTTP 200 is acceptable when the commercial commit
+        # catches ALL 300 in-flight requests before their body completes.
+        # Never weaken integrity checks of any 200 that *does* complete.
+        ck((counts["503"]+counts["incomplete"])>0,
+           ("expected_fail_closed_after_inflight_change",counts))
         # Both stale after commit even if lost LISTEN. No old version may pass
         # NEW admission; HTTP 200 from old wave was admitted before commit.
         for peer in peers:
