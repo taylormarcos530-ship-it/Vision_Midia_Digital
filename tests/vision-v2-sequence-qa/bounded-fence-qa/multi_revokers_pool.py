@@ -14,7 +14,8 @@ m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 CHUNK=int(os.environ.get("QA_POOL_CHUNK_BYTES","65536"))
 assert CHUNK in (65536,262144)
 SOCKET_TIMEOUT=.105
-POOL_SIZE=12
+POOL_SIZE=int(os.environ.get('QA_PG_POOL_SIZE','12'))
+assert POOL_SIZE in (8,12,20), 'invalid QA pool size'
 TASKS=300
 def check(ok,msg):assert ok,msg
 def now():return time.perf_counter()
