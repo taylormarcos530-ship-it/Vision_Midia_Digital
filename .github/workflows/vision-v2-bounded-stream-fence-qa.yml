@@ -164,3 +164,45 @@ jobs:
           set -euo pipefail
           python -u tests/vision-v2-sequence-qa/cold-remote-qa/qa.py
           echo "QA_AES_REMOTE_PASS=true"
+  crash-matrix:
+    name: PG17 durable outbox every crash boundary including after committed acknowledgment
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Production and branch guard
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Syntax
+        run: python -m py_compile tests/vision-v2-sequence-qa/bounded-fence-qa/crash_matrix.py
+      - name: Verify committed producer and three interrupted subscriber boundaries with persistent exact-once receipts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/bounded-fence-qa/crash_matrix.py
+          echo "QA_CRASH_MATRIX_PASS=true"
+      - name: Safety scope
+        if: always()
+        run: echo "NO_PRODUCTION=true NO_APK=true NO_DEPLOY=true NO_SUPABASE=true"
