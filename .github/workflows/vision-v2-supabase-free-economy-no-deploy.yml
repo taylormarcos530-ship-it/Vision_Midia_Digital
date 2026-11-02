@@ -1,0 +1,51 @@
+name: Vision V2 Supabase Free Economic Guardrails NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/economy-guardrails/**'
+      - '.github/workflows/vision-v2-supabase-free-economy-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  free-budget-qa:
+    name: Zero-cost Free 10 100 300 TVs and HTTP402 ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Assert branch and no official credentials, NO DEPLOY
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - name: Node test; forbidden 300-TV Free model must FAIL admission while all tests PASS
+        run: node --test tests/vision-v2-sequence-qa/economy-guardrails/cost-guardrails.test.cjs
+      - name: Print 10/100/300 monthly quota scenarios
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const {monthly}=require('./tests/vision-v2-sequence-qa/economy-guardrails/cost-guardrails.cjs');
+          for(const tvs of [10,100,300]){
+            for(const x of [{label:'cycle_2min',opt:{}},{label:'proof_only_50',opt:{cycleEveryMinutes:10000}},
+              {label:'media_170MB',opt:{mediaMbPerTv:170,mediaRefreshes:1}}]){
+              const result=monthly({tvs,...x.opt});
+              console.log('QA_ECONOMY_JSON='+JSON.stringify({tvs,scenario:x.label,...result}));
+            }
+          }
+          NODE
