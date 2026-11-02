@@ -174,3 +174,33 @@ test('Free reserve is NOT a promise even when only heartbeat is bundled',()=>{
  assert.equal(SAFE.edge-a.measurements.monthlyProofBatchCalls,4400);
  assert.equal(a.approval,'NO_GO_BUDGET'); // DB and reports still exceed reserve.
 });
+
+test('300 TVs: 90-second near-realtime Edge polling would consume 8.64M calls monthly',()=>{
+ const p=projection(300,{cycleEveryMinutes:1.5,reportDownloadsPerTvPerDay:0});
+ assert.equal(p.measurements.monthlyCycles,8640000);
+ assert.equal(p.measurements.monthlyEdgeCallsLowerBound,8640000);
+ assert.equal(p.approval,'NO_GO_BUDGET');
+});
+test('300 TVs: 30-minute Edge heartbeat still uses 432k calls, exceeds 350k reserve',()=>{
+ const p=projection(300,{cycleEveryMinutes:30,reportDownloadsPerTvPerDay:0});
+ assert.equal(p.measurements.monthlyCycles,432000);
+ assert(p.checks.edge.withinReserve===false);
+});
+test('300 TVs: hourly encrypted archive upload alone =216k Edge calls, not proof of whole system',()=>{
+ const tvs=300,hours=24,days=30;
+ const hourlyArchiveCalls=tvs*hours*days;
+ const marginRemaining=SAFE.edge-hourlyArchiveCalls;
+ assert.equal(hourlyArchiveCalls,216000);
+ assert.equal(marginRemaining,134000);
+ const controlPollsEvery15Min=tvs*hours*days*4;
+ assert.equal(controlPollsEvery15Min,864000);
+ assert(hourlyArchiveCalls+controlPollsEvery15Min>FREE.edge);
+});
+test('300 TVs cannot have 90s guaranteed offline indicator from hourly polling alone',()=>{
+ const requiredLastSeenSeconds=90;
+ const hourlyCycleSeconds=3600;
+ assert(hourlyCycleSeconds>requiredLastSeenSeconds);
+ const pollsFor30Days=Math.ceil(300*30*86400/requiredLastSeenSeconds);
+ assert.equal(pollsFor30Days,8640000);
+ assert(pollsFor30Days>FREE.edge);
+});
