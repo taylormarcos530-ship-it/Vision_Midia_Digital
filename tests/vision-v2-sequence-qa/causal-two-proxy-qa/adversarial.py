@@ -70,21 +70,30 @@ def timing_barriers():
           "deadline_exceeded_ms":round((passed-cutoff)*1000,3),
           "expired_request_rejected":True})
     return results
+class SecondaryOrigin(c.Upstream):
+    def do_GET(self):
+        with self.server.served_mu:self.server.served+=1
+        return super().do_GET()
 def start_servers():
     upstream,thread=c.start(c.Upstream)
     upstream.first_block=threading.Event()
     upstream.release_block=threading.Event()
+    secondary,secondary_thread=c.start(SecondaryOrigin)
+    secondary.first_block=threading.Event()
+    secondary.release_block=threading.Event()
+    secondary.release_block.set()
+    secondary.served_mu=threading.Lock();secondary.served=0
     proxies=[c.start(c.Proxy),c.start(c.Proxy)]
     for i,(server,_) in enumerate(proxies):
         server.upstream="http://127.0.0.1:"+str(upstream.server_address[1])
         server.sql_pool=c.PROXY_SQL[i]
-    return upstream,thread,proxies
+    return upstream,thread,secondary,secondary_thread,proxies
 def main():
     initial=time.perf_counter()
     wal0=c.fixture()
     policy=policy_negative_proof()
     clocks=timing_barriers()
-    upstream,ut,proxies=start_servers()
+    upstream,ut,secondary,secondary_thread,proxies=start_servers()
     try:
         ps=[p.stats() for p in c.ALL_SQL_POOLS]
         ck(len(ps)==3 and ps[0]["name"]=="origin" and ps[1]["name"]=="proxy_0" and ps[2]["name"]=="proxy_1","pools_share_identity")
@@ -107,7 +116,12 @@ def main():
             def mutation(kind):
                 gate.wait(timeout=5)
                 started=time.perf_counter()
-                if kind=="gate":c.update_gate(False)
+                if kind=="gate":
+                    c.update_gate(False)
+                    # Cutover is a REAL upstream socket-port change to a
+                    # SECOND origin HTTP server, not merely a gate boolean.
+                    new_addr="http://127.0.0.1:"+str(secondary.server_address[1])
+                    for proxy,_ in proxies:proxy.upstream=new_addr
                 else:c.update_member(False)
                 results[kind]=round((time.perf_counter()-started)*1000,3)
             a=threading.Thread(target=mutation,args=("gate",),daemon=True)
@@ -130,6 +144,9 @@ def main():
                "new_application_writes_after_revoke_commit")
         c.update_member(True)
         for node,_ in proxies:c.expect(node,"/normal",200,"ok")
+        ck(secondary.served>=4,("second_origin_not_reached_after_route_cutover",secondary.served))
+        ck(all(p.upstream.endswith(":"+str(secondary.server_address[1])) for p,_ in proxies),
+           "proxies_not_using_new_origin")
         # Every logical get() is exactly one physical GET; no retry even
         # with network failures, 401, 200 truncate, or wall-clock jumps.
         ledger=c.LEDGER
@@ -166,6 +183,8 @@ def main():
          "SQL_pools":capacities,"FORCE_RLS_adversarial":policy,
          "late_clock_with_wall_skew":clocks,
          "two_proxy_simultaneous_gate_revoke_commit_ms":results,
+         "real_route_switch_to_second_HTTP_origin":True,
+         "second_origin_requests_after_switch":secondary.served,
          "actual_TCP_RST_probes":2,"actual_TCP_halfopen_probes":2,
          "app_bytes_after_revocation_commit":0,
          "GET_count":len(ledger),"GET_normal_complete":300,
@@ -189,7 +208,7 @@ def main():
         print("QA_INDEPENDENT_NEGATIVE_PASS=true",flush=True)
     finally:
         upstream.release_block.set()
-        for server,t in proxies+[(upstream,ut)]:
+        for server,t in proxies+[(upstream,ut),(secondary,secondary_thread)]:
             server.shutdown();server.server_close();t.join(4)
         for p in c.ALL_SQL_POOLS:p.close()
 if __name__=="__main__":main()
