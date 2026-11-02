@@ -3,7 +3,8 @@ Physical load: 1 hour x 15 sec x 10/100/300 TVs. 8/12/18/24-hour monthly
 values are projections, not executions. No production URLs or credentials.
 """
 from __future__ import annotations
-import argparse,base64,gzip,hashlib,json,os,resource,signal,sqlite3,subprocess,sys,tempfile,time
+import argparse,base64,gzip,hashlib,json,os,resource,signal,sqlite3,subprocess,sys,tempfile,time,threading,urllib.request,urllib.error
+from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
 from collections import defaultdict
 from pathlib import Path
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
@@ -184,24 +185,54 @@ def offline(root):
   c.execute('CREATE TABLE retry(device TEXT PRIMARY KEY,until_ms BIGINT,level INT,reason INT)')
   c.execute("""INSERT INTO proofs(device,seq,tenant,day,campaign,media,completed,seconds,event_id)
    VALUES('tv-000',241,'company-0','2026-11-02','camp-x','media-x',1,15,'offline-241')""")
-  c.execute('SAVEPOINT quota_injection')
-  try:raise sqlite3.OperationalError('database or disk is full')
-  except sqlite3.OperationalError:c.execute('ROLLBACK TO quota_injection')
-  c.execute('RELEASE SAVEPOINT quota_injection')
+ # SQLite ENGINE raises SQLITE_FULL, not merely a Python-manufactured exception.
+ with sqlite3.connect(root/'quota.sqlite') as qc:
+  qc.execute('PRAGMA page_size=1024')
+  qc.execute('VACUUM')
+  qc.execute('CREATE TABLE pressure(v BLOB)')
+  pages=qc.execute('PRAGMA page_count').fetchone()[0]
+  qc.execute(f'PRAGMA max_page_count={pages+1}')
+  try:qc.execute('INSERT INTO pressure VALUES(?)',(b'x'*1000000,))
+  except sqlite3.OperationalError as exc:
+   assert exc.sqlite_errorcode==sqlite3.SQLITE_FULL,('wrong_sqlite_error',str(exc))
+  else:raise AssertionError('SQLite did not return SQLITE_FULL')
+ statuses=[402,402,429,503,401,403]
+ class LocalStatus(BaseHTTPRequestHandler):
+  def do_POST(self):
+   status=self.server.responses.pop(0)
+   self.send_response(status)
+   self.send_header('Content-Length','0')
+   self.end_headers()
+  def log_message(self,*args):pass
+ server=ThreadingHTTPServer(('127.0.0.1',0),LocalStatus)
+ server.responses=statuses.copy()
+ thread=threading.Thread(target=server.serve_forever,daemon=True)
+ thread.start()
  now=1_000_000
- for i,status in enumerate((402,402,429,503,401,403)):
-  seconds=([21600,43200][i] if i<2 else 300 if status==429 else 60 if status==503 else 86400*365)
-  with q(root) as c:
-   assert c.execute("SELECT count(*) FROM proofs WHERE device='tv-000' AND ack=0").fetchone()[0]==1
-   until=now+seconds*1000
-   c.execute('INSERT INTO retry VALUES(?,?,?,?) ON CONFLICT(device) DO UPDATE SET until_ms=EXCLUDED.until_ms,level=EXCLUDED.level,reason=EXCLUDED.reason',('tv-000',until,i+1,status))
-  with q(root) as c:
-   assert c.execute("SELECT until_ms,reason FROM retry WHERE device='tv-000'").fetchone()==(until,status)
-   assert c.execute("SELECT count(*) FROM proofs WHERE device='tv-000' AND ack=0").fetchone()[0]==1
-  now=until
- return {'402_429_503_401_403_durable_backoff':'PASS','one_unacked_offline_proof':1,
-  'SQLITE_FULL_exception_injected':True,'actual_disk_full_tested':False,
-  'actual_HTTP_gateway_tested':False}
+ try:
+  for i,status in enumerate(statuses):
+   req=urllib.request.Request(f'http://127.0.0.1:{server.server_address[1]}/qa',
+       data=b'unacked-synthetic-proof',method='POST')
+   try:urllib.request.urlopen(req,timeout=3)
+   except urllib.error.HTTPError as http_error:
+    assert http_error.code==status,('unexpected_http_status',http_error.code,status)
+   else:raise AssertionError('negative status accepted')
+   seconds=([21600,43200][i] if i<2 else 300 if status==429 else 60 if status==503 else 86400*365)
+   with q(root) as c:
+    assert c.execute("SELECT count(*) FROM proofs WHERE device='tv-000' AND ack=0").fetchone()[0]==1
+    until=now+seconds*1000
+    c.execute('INSERT INTO retry VALUES(?,?,?,?) ON CONFLICT(device) DO UPDATE SET until_ms=EXCLUDED.until_ms,level=EXCLUDED.level,reason=EXCLUDED.reason',
+      ('tv-000',until,i+1,status))
+   with q(root) as c:
+    assert c.execute("SELECT until_ms,reason FROM retry WHERE device='tv-000'").fetchone()==(until,status)
+    assert c.execute("SELECT count(*) FROM proofs WHERE device='tv-000' AND ack=0").fetchone()[0]==1
+   now=until
+ finally:
+  server.shutdown();server.server_close();thread.join(timeout=3)
+ assert not server.responses,'HTTP test incomplete'
+ return {'HTTP_402_429_503_401_403_real_loopback':'PASS',
+  'SQLite_REAL_SQLITE_FULL_via_page_quota':'PASS','one_unacked_offline_proof':1,
+  'physical_host_disk_exhaustion_tested':False,'production_gateway_tested':False}
 def run(tvs,entropy):
  check_environment();root=Path(tempfile.mkdtemp(prefix='qa_v2_encrypted_'))
  start=time.monotonic();init(root,tvs,entropy)
