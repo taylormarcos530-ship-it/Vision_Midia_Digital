@@ -144,7 +144,8 @@ async def run(tvs):
   messages=state.heartbeat_messages
   assert state.stale_dropped==tvs+len(disconnected)
   assert state.denied==1
-  assert state.commands==1
+  # tv-0000 acknowledges a command once before reconnect and once after.
+  assert state.commands==2,('command_count',state.commands)
   elapsed=round(time.monotonic()-start,3)
   # Financial modeling of one message sent per TV per 90s, independently
   # of whether Realtime websocket or custom gateway is chosen.
