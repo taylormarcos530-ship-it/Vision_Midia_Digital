@@ -214,7 +214,11 @@ class Proxy(Quiet):
                 if code==200:
                     if size<0:raise ValueError("missing_content_length")
                     while got<size:
-                        piece=upstream.read(min(65536,size-got))
+                        # read1 returns *available* bytes without waiting to
+                        # fill the requested block. This preserves the 7KiB
+                        # already delivered by an adversarial half-open TCP
+                        # response before its subsequent socket timeout.
+                        piece=upstream.read1(min(65536,size-got))
                         if not piece:raise http.client.IncompleteRead(b"",size-got)
                         pieces.append(piece);got+=len(piece)
                     body=b"".join(pieces)
