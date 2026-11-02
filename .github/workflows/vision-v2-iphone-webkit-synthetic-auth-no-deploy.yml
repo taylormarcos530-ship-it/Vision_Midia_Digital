@@ -4,6 +4,7 @@ on:
     branches:
       - experiment/vision-v2-sequence-watermark-qa-20261031
     paths:
+      - 'app.js'
       - 'tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-server.cjs'
       - 'tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-audit.cjs'
       - '.github/workflows/vision-v2-iphone-webkit-synthetic-auth-no-deploy.yml'
@@ -54,6 +55,12 @@ jobs:
         run: |
           set -euo pipefail
           node tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-audit.cjs | tee qa-iphone-auth.log
+      - name: Existing Node unit regression suite (independent PASS FAIL)
+        if: always()
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test | tee qa-iphone-node-regression.log
       - name: Preserve full logs JSON and WebKit screenshots even FAIL
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +70,7 @@ jobs:
             qa-iphone-auth-webkit.json
             qa-iphone-auth.log
             qa-iphone-auth-server.log
+            qa-iphone-node-regression.log
             qa-iphone-auth-screens/
           retention-days: 14
           if-no-files-found: warn
