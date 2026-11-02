@@ -90,6 +90,7 @@ class Child:
     def __init__(self,ident):
         env=os.environ.copy()
         env.update(QA_WORKER_ID=str(ident),QA_PROCESS_POOL=str(POOL//2),QA_CHUNK=str(CHUNK),
+                   QA_WORKER_WALL_SKEW_SEC=str(-86400 if ident==0 else 86400),
                    QA_STREAM_GUARD_GROUP="1")
         self.p=subprocess.Popen([sys.executable,"-u",str(Path(__file__).with_name("worker.py"))],
                                 stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
@@ -169,6 +170,11 @@ def main():
     try:
         w=[Child(0),Child(1)]
         check(w[0].info["pid"]!=w[1].info["pid"],"not_distinct_OS_process")
+        check([ch.info["wall_skew_seconds"] for ch in w]==[-86400,86400],
+              "per_process_clock_skew_not_applied")
+        clocks=[ch.command("deadline") for ch in w]
+        check(all(x["expired"] and x["overdue_ms"]>=20 for x in clocks),
+              ("monotonic_deadline_failed_under_wall_skew",clocks))
         check(w[0].info["report_sha"]==w[1].info["report_sha"],"different_report_hash")
         report_size=w[0].info["report_gzip_bytes"]
         check(report_size>262144,"fixture_too_small")
@@ -241,9 +247,15 @@ def main():
         # already been released. SIGKILL on an active HTTP /halfopen uses
         # the in-flight socket, never retrying the returned 503.
         w[1].command("switch",port=w[0].info["origin"])
+        baseline_kill_bytes=w[0].command("stats")["metrics"].get("written",0)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
             victim=pool.submit(get,w[1].info["proxy"],"/halfopen")
-            time.sleep(.06)
+            cut=time.monotonic()+.12
+            while time.monotonic()<cut:
+                have=w[0].command("stats")["metrics"].get("written",0)-baseline_kill_bytes
+                if have>=7000:break
+                time.sleep(.002)
+            check(have>=7000,("SIGKILL_not_inflight_after_7000_prebuffered",have))
             w[0].kill();signaled=True
             aborted=victim.result(timeout=15)
             check(aborted["status"]==503 and aborted["cause"] in ("reset","timeout","incomplete"),
@@ -301,6 +313,10 @@ def main():
             ived_raw_gets=300,process_SIGKILL_real=signaled,
             restart_correct_authorization=True,
             stale_gate_rejected=True,monotonic_gate_epoch=revoked_epoch,
+            independent_worker_wall_skews_seconds=[-86400,86400],
+            monotonic_deadline_under_clock_skew=clocks,
+            pre_SIGKILL_upstream_application_bytes=have,
+            post_SIGKILL_upstream_bytes_in_proxy_ledger=aborted["discarded_upstream"],
             revoke_cutover_race=results,new_writes_after_revoke_commit=0,
             FIN_RST_halfopen_real=True,all_401_and_truncated_200_no_retry=True,
             SQL_guard_calls=sum(s["metrics"].get("gate_sql",0)+s["metrics"].get("membership_sql",0) for s in checks),
