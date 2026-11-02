@@ -187,6 +187,30 @@ def main():
             wave=list(pool.map(lambda i:get(w[i%2].info["proxy"]),range(N)))
         check(len(wave)==N and all(z["status"]==200 and z["body_bytes"]==report_size for z in wave),
               "300_valid_original_reports")
+        # NEGATIVE PROOF: route is still chosen AFTER the PG gate guard
+        # transaction exits. Close gate and rebind after the old shared
+        # lock is RELEASED but before TCP connect. Expected real 200 is
+        # a TOCTOU safety FAILURE, never a promotion criterion.
+        with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+            raced_fut=pool.submit(get,w[0].info["proxy"],"/pause_after_gate")
+            tlim=time.monotonic()+6
+            while time.monotonic()<tlim:
+                snap=w[0].command("stats")
+                if snap["metrics"].get("gate_toctou_ready",0)>0:break
+                time.sleep(.004)
+            check(snap["metrics"].get("gate_toctou_ready",0)>0,"TOCTOU_barrier_not_reached")
+            check(not raced_fut.done(),"TOCTOU_was_not_actually_paused")
+            closed_epoch=write_gate(False)
+            check(current_gate()==(False,closed_epoch),"gate_did_not_commit_closed")
+            w[0].command("switch",port=w[1].info["origin"])
+            w[0].command("resume-admission")
+            raced=raced_fut.result(timeout=12)
+        check(raced["status"]==200 and raced["cause"]=="ok",
+              ("TOCTOU_expected_counterexample_not_reproduced",raced))
+        check(current_gate()==(False,closed_epoch),"gate_reopened_without_commit")
+        # Restore the test fixture state before other independent probes.
+        w[0].command("switch",port=w[0].info["origin"])
+        write_gate(True)
         for ch in w:
             port=ch.info["proxy"]
             expect(port,"/rst",503,"reset")
@@ -256,6 +280,12 @@ def main():
                 if have>=7000:break
                 time.sleep(.002)
             check(have>=7000,("SIGKILL_not_inflight_after_7000_prebuffered",have))
+            # Capture BOTH live process counters immediately before SIGKILL:
+            # parent baseline cannot query its victim AFTER death.
+            prekill_samples=[ch.command("stats") for ch in w]
+            check(prekill_samples[0]["proc_pid"]==w[0].info["pid"],"victim_checkpoint_wrong_pid")
+            check(prekill_samples[0]["metrics"]["written"]-baseline_kill_bytes>=7000,
+                  "prekill_sample_missing_TCP_bytes")
             w[0].kill();signaled=True
             aborted=victim.result(timeout=15)
             check(aborted["status"]==503 and aborted["cause"] in ("reset","timeout","incomplete"),
@@ -291,6 +321,17 @@ def main():
         check({z["ledger_id"] for z in ledger}==set(range(1,len(ledger)+1)),
               "ledger_not_contiguous")
         check(sum(z["body_bytes"] for z in wave)==N*report_size,"original_egress_incomplete")
+        # Exact instrumented counter across each observed process lifetime:
+        # old victim (last snapshot), surviving child (final snapshot),
+        # restarted victim (final snapshot). All processes on one runner.
+        checkpointed_guards=prekill_samples[0]["sql_guard_count"]+checks[0]["sql_guard_count"]+checks[1]["sql_guard_count"]
+        check(checkpointed_guards>=sum(x["sql_guard_count"] for x in checks),
+              "checkpointed_total_guard_count_regressed")
+        check(prekill_samples[0]["proc_pid"]!=checks[0]["proc_pid"],"victim_not_restarted")
+        # Compare pre-SIGKILL victim measurement to the recovered process
+        # rather than reporting replacement RSS as the original's peak.
+        all_lifetimes=[prekill_samples[0],checks[0],checks[1]]
+        check(len({v["proc_pid"] for v in all_lifetimes})==3,"missing_process_lifetime")
         with con() as db:
             dbbytes,indexbytes,wal=db.execute("""SELECT
               pg_database_size(current_database()),
@@ -310,6 +351,11 @@ def main():
             P99_normal_ms=pct([z["duration_ms"] for z in wave],.99),
             bytes_client_bodies=sum(z["body_bytes"] for z in ledger),
             bytes_upstream_discarded=sum(z["discarded_upstream"] for z in ledger),
+            TOCTOU_gate_closed_but_HTTP200=raced["status"]==200,
+            TOCTOU_counterexample_status="FAIL_REPRODUCED",
+            TOCTOU_gate_closed_epoch=closed_epoch,
+            TOCTOU_cross_process_new_route=True,
+            security_verdict="FAIL_NO_GO",
             ived_raw_gets=300,process_SIGKILL_real=signaled,
             restart_correct_authorization=True,
             stale_gate_rejected=True,monotonic_gate_epoch=revoked_epoch,
@@ -319,11 +365,22 @@ def main():
             post_SIGKILL_upstream_bytes_in_proxy_ledger=aborted["discarded_upstream"],
             revoke_cutover_race=results,new_writes_after_revoke_commit=0,
             FIN_RST_halfopen_real=True,all_401_and_truncated_200_no_retry=True,
-            SQL_guard_calls=sum(s["metrics"].get("gate_sql",0)+s["metrics"].get("membership_sql",0) for s in checks),
+            SQL_guard_calls=checkpointed_guards,
+            SQL_guard_calls_living_only=sum(s["sql_guard_count"] for s in checks),
+            SQL_guard_calls_victim_pre_SIGKILL=prekill_samples[0]["sql_guard_count"],
+            SQL_measurement_limitation="instrumented guards only; final victim 7KB snapshot before SIGKILL; not all SQL statements",
+            process_lifetime_checkpoints=[{"pid":v["proc_pid"],
+                "worker":v["worker"],"guards":v["sql_guard_count"],
+                "RSS_KiB":v["rss_kib"],"bytes_written":v["metrics"].get("written",0),
+                "proxy_GETs":v["metrics"].get("proxy_gets",0),
+                "upstream_GETs":v["metrics"].get("origin_gets",0)}
+                for v in all_lifetimes],
             SQL_pool_pids=[s[part]["pids"] for s in checks for part in ("proxy_pool","origin_pool")],
             WAL_after_fixture_bytes=int(wal),
             db_bytes=dbbytes,index_bytes=indexbytes,
             worker_RSS_KiB=[s["rss_kib"] for s in checks],
+            victim_pre_SIGKILL_RSS_KiB=prekill_samples[0]["rss_kib"],
+            max_observed_worker_RSS_KiB=max(v["rss_kib"] for v in all_lifetimes),
             controller_RSS_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
             SQL_all_statements_measured=False,real_two_hosts=False,
             TCP_bytes_prebuffered_not_recallable=True,
