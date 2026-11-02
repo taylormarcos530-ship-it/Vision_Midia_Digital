@@ -1,0 +1,58 @@
+name: Vision V2 iPhone Offline Fix Baseline Node Tests NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - '.github/workflows/vision-v2-iphone-node-baseline-comparison-20261102.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compare-node:
+    name: Node baseline comparison ${{ matrix.name }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: baseline-c3568f9
+            sha: c3568f928447a027fb714e21d0d7ed1c0c325ccc
+          - name: offline-fix-3cba8f3
+            sha: 3cba8f3a0ce8533dc5e9786490aa250b5492a630
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Absolute no-production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          echo "BASELINE_VARIANT=${{ matrix.name }}" > qa-node-variant.txt
+          echo "CHECKED_COMMIT=$(git rev-parse HEAD)" >> qa-node-variant.txt
+      - name: Install pinned local Node dependencies
+        run: npm ci --ignore-scripts
+      - name: Preserve exact raw Node baseline PASS FAIL
+        shell: bash
+        run: |
+          set -o pipefail
+          npm test 2>&1 | tee qa-node-baseline.log
+      - name: Save logs even for existing FAIL
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-node-comparison-${{ matrix.name }}
+          path: |
+            qa-node-variant.txt
+            qa-node-baseline.log
+          if-no-files-found: warn
+          retention-days: 14
