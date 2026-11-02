@@ -9,15 +9,38 @@ const TIERS=Object.freeze({
  'pro-no-cap':Object.freeze({peakConnections:10_000,realtimeMessages:5_000_000,edgeInvocations:2_000_000})
 });
 function safe(n,name){if(!Number.isSafeInteger(n)||n<=0)throw Error('invalid_'+name);return n}
-function rendezvous(device,shards){
- // Stable for same list; adding shards can remap devices, by design.
- let best=-1,bestScore=-1;
- for(let i=0;i<shards;i++){
-  let h=2166136261;
-  for(let c of device+'#'+i)h=Math.imul(h^c.charCodeAt(0),16777619)>>>0;
-  if(h>bestScore){best=i;bestScore=h}
+const crypto=require('node:crypto');
+function rankedShards(device,shards){
+ const scores=Array.from({length:shards},(_,i)=>({
+  shard:i,score:crypto.createHash('sha256').update(device+'#'+i).digest('hex')
+ }));
+ scores.sort((a,b)=>b.score.localeCompare(a.score));
+ return scores.map(x=>x.shard);
+}
+function rendezvous(device,shards){return rankedShards(device,shards)[0]}
+class CapacityGate{
+ constructor(shards,hardCap=250){
+  safe(shards,'shards');safe(hardCap,'hardCap');
+  this.shards=shards;this.hardCap=hardCap;
+  this.counts=Array(shards).fill(0);
+  this.leases=new Map();this.nextLease=0;
  }
- return best;
+ admit(device){
+  if(typeof device!=='string'||!device)throw Error('invalid_device');
+  if(this.leases.has(device))return {ok:false,reason:'ALREADY_CONNECTED'};
+  const shard=rankedShards(device,this.shards).find(i=>this.counts[i]<this.hardCap);
+  if(shard===undefined)return {ok:false,reason:'CAPACITY_EXHAUSTED'};
+  const lease=++this.nextLease;
+  this.leases.set(device,{shard,lease});this.counts[shard]++;
+  return {ok:true,shard,lease};
+ }
+ release(device,lease){
+  const active=this.leases.get(device);
+  if(!active||active.lease!==lease)return false;
+  this.counts[active.shard]--;this.leases.delete(device);return true;
+ }
+ snapshot(){return {shards:this.shards,hardCap:this.hardCap,counts:[...this.counts],
+    active:this.leases.size,highWater:Math.max(...this.counts)}}
 }
 function plan({tvs,tier='free',heartbeatSeconds=90,onlineHours=24,
  presenceTransport='gateway',shardCapacity=250,tenantCount=1,
@@ -39,7 +62,9 @@ function plan({tvs,tier='free',heartbeatSeconds=90,onlineHours=24,
  const rtMessages=presenceTransport==='supabase-realtime'?hb*(1+realtimeRecipients):0;
  // Supabase Realtime broadcast counts outgoing plus recipients. Presence can differ.
  const rtConnectionHeadroom=Math.floor(limits.peakConnections*(1-reservedConnectionFraction));
- const requiredShards=Math.ceil(tvs/shardCapacity);
+ // 70% occupancy target to absorb shard skew, reconnections and temporary imbalance.
+ const shardTarget=Math.max(1,Math.floor(shardCapacity*0.7));
+ const requiredShards=Math.ceil(tvs/shardTarget);
  const gatewayByteEstimate=hb*100; // illustrative messages 100B; not network measurement
  const canUseRealtime=presenceTransport==='supabase-realtime' && tvs<=rtConnectionHeadroom;
  const exceedsRealtimeIncluded=rtMessages>limits.realtimeMessages;
@@ -48,8 +73,8 @@ function plan({tvs,tier='free',heartbeatSeconds=90,onlineHours=24,
  const operationsApproved=presenceTransport==='gateway' && externalGatewayBudgetApproved;
  return {protocol:PROTOCOL,tier,tvs,presenceTransport,onlineHours,heartbeatSeconds,
   capacity:{maxPeakConnections:limits.peakConnections,safeRealtimeConnections:rtConnectionHeadroom,
-   gatewayShardCapacity:shardCapacity,requiredGatewayShards:requiredShards,
-   peakConnectionsPerGateway:Math.ceil(tvs/requiredShards),tenantCount},
+   gatewayShardCapacity:shardCapacity,gatewayShardTarget:shardTarget,requiredGatewayShards:requiredShards,
+   averageConnectionsPerGateway:Math.ceil(tvs/requiredShards),requiresHardAdmissionGate:true,tenantCount},
   usage:{heartbeatMessages:hb,estimatedRealtimeBillableMessages:rtMessages,
    estimatedEdgeInvocations:edgeCalls,estimatedGatewayWireBytes:gatewayByteEstimate,
    gatewayEdgeHeartbeatCalls:0},
@@ -63,4 +88,4 @@ function plan({tvs,tier='free',heartbeatSeconds=90,onlineHours=24,
    'Realtime message billing depends on recipients and actual provider protocol',
    'No proven 90s multi-host failover or server-side auth integration']};
 }
-module.exports={PROTOCOL,TIERS,plan,rendezvous};
+module.exports={PROTOCOL,TIERS,plan,rendezvous,rankedShards,CapacityGate};
