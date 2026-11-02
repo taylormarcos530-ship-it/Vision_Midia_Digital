@@ -137,17 +137,23 @@ async function main(){
    await record(model+' client offline flag and local dashboard retained',async()=>{
      await appNav(page,'dashboard');
      await c.setOffline(true);
-     await page.evaluate(()=>window.dispatchEvent(new Event('offline')));
+     await page.evaluate(()=>{
+       Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>false});
+       window.dispatchEvent(new Event('offline'));
+     });
      await page.waitForTimeout(120);
      check((await page.locator('#connection-status').innerText()).includes('Sem internet'),
        'offline status absent');
      check(await page.locator('#app-shell').isVisible(),'shell disappears offline');
      await c.setOffline(false);
-     await page.evaluate(()=>window.dispatchEvent(new Event('online')));
+     await page.evaluate(()=>{
+       Object.defineProperty(navigator,'onLine',{configurable:true,get:()=>true});
+       window.dispatchEvent(new Event('online'));
+     });
      await page.waitForTimeout(250);
      check((await page.locator('#connection-status').innerText()).includes('Conectado'),
        'online recovery absent');
-     return 'UI state only; true data recovery from remote outage not simulated';
+     return 'Browser network disabled plus deterministic navigator.onLine override; true remote outage recovery not proven';
    });
    await record(model+' client app nav logout and session clear',async()=>{
      let logout=page.locator('#logout-button');
