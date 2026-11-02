@@ -22,66 +22,71 @@ KW=dict(host="127.0.0.1",port=5432,dbname="vision_v2_quarantine_disposable",
 LOCK_USER=63918941;LOCK_GATE=63918942
 def check(pred,label):assert pred,label
 def con():return psycopg.connect(**KW)
+CONTROLLER_SQL_LOCK=threading.Lock()
+CONTROLLER_SQL_EXPLICIT=[0]
+def sql(db,*args,**kwargs):
+    with CONTROLLER_SQL_LOCK:CONTROLLER_SQL_EXPLICIT[0]+=1
+    return db.execute(*args,**kwargs)
 def pct(values,p):
     z=sorted(values);v=(len(z)-1)*p;lo=int(v);hi=min(lo+1,len(z)-1)
     return round(z[lo]*(hi-v)+z[hi]*(v-lo),3)
 def prepare():
     with con() as db:
-        check(170000<=int(db.execute("SHOW server_version_num").fetchone()[0])<180000,"not_postgres17")
-        db.execute("CREATE ROLE qa_mproc_reader NOLOGIN")
-        db.execute("CREATE TABLE qa_mproc_membership(tenant text PRIMARY KEY,allowed boolean NOT NULL)")
-        db.execute("INSERT INTO qa_mproc_membership VALUES('synthetic',true)")
-        db.execute("ALTER TABLE qa_mproc_membership ENABLE ROW LEVEL SECURITY")
-        db.execute("ALTER TABLE qa_mproc_membership FORCE ROW LEVEL SECURITY")
-        db.execute("CREATE POLICY member ON qa_mproc_membership FOR SELECT TO qa_mproc_reader USING(tenant=current_setting('qa.tenant',true) AND allowed)")
-        db.execute("GRANT USAGE ON SCHEMA public TO qa_mproc_reader")
-        db.execute("GRANT SELECT ON qa_mproc_membership TO qa_mproc_reader")
-        db.execute("CREATE TABLE qa_mproc_gate(id int PRIMARY KEY,enabled boolean NOT NULL,epoch bigint NOT NULL)")
-        db.execute("INSERT INTO qa_mproc_gate VALUES(1,true,1)")
-        db.execute("GRANT SELECT ON qa_mproc_gate TO qa_mproc_reader")
-        db.execute("REVOKE UPDATE,INSERT,DELETE ON qa_mproc_gate,qa_mproc_membership FROM qa_mproc_reader")
-        return db.execute("SELECT pg_current_wal_lsn()").fetchone()[0]
+        check(170000<=int(sql(db,"SHOW server_version_num").fetchone()[0])<180000,"not_postgres17")
+        sql(db,"CREATE ROLE qa_mproc_reader NOLOGIN")
+        sql(db,"CREATE TABLE qa_mproc_membership(tenant text PRIMARY KEY,allowed boolean NOT NULL)")
+        sql(db,"INSERT INTO qa_mproc_membership VALUES('synthetic',true)")
+        sql(db,"ALTER TABLE qa_mproc_membership ENABLE ROW LEVEL SECURITY")
+        sql(db,"ALTER TABLE qa_mproc_membership FORCE ROW LEVEL SECURITY")
+        sql(db,"CREATE POLICY member ON qa_mproc_membership FOR SELECT TO qa_mproc_reader USING(tenant=current_setting('qa.tenant',true) AND allowed)")
+        sql(db,"GRANT USAGE ON SCHEMA public TO qa_mproc_reader")
+        sql(db,"GRANT SELECT ON qa_mproc_membership TO qa_mproc_reader")
+        sql(db,"CREATE TABLE qa_mproc_gate(id int PRIMARY KEY,enabled boolean NOT NULL,epoch bigint NOT NULL)")
+        sql(db,"INSERT INTO qa_mproc_gate VALUES(1,true,1)")
+        sql(db,"GRANT SELECT ON qa_mproc_gate TO qa_mproc_reader")
+        sql(db,"REVOKE UPDATE,INSERT,DELETE ON qa_mproc_gate,qa_mproc_membership FROM qa_mproc_reader")
+        return sql(db,"SELECT pg_current_wal_lsn()").fetchone()[0]
 def write_member(allowed):
     with con() as db:
         with db.transaction():
-            db.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_USER,))
-            db.execute("UPDATE qa_mproc_membership SET allowed=%s WHERE tenant='synthetic'",(allowed,))
+            sql(db,"SELECT pg_advisory_xact_lock(%s)",(LOCK_USER,))
+            sql(db,"UPDATE qa_mproc_membership SET allowed=%s WHERE tenant='synthetic'",(allowed,))
 def write_gate(enabled):
     with con() as db:
         with db.transaction():
-            db.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_GATE,))
-            db.execute("UPDATE qa_mproc_gate SET enabled=%s,epoch=epoch+1 WHERE id=1",(enabled,))
-            return db.execute("SELECT epoch FROM qa_mproc_gate WHERE id=1").fetchone()[0]
+            sql(db,"SELECT pg_advisory_xact_lock(%s)",(LOCK_GATE,))
+            sql(db,"UPDATE qa_mproc_gate SET enabled=%s,epoch=epoch+1 WHERE id=1",(enabled,))
+            return sql(db,"SELECT epoch FROM qa_mproc_gate WHERE id=1").fetchone()[0]
 def current_gate():
-    with con() as db:return db.execute("SELECT enabled,epoch FROM qa_mproc_gate WHERE id=1").fetchone()
+    with con() as db:return sql(db,"SELECT enabled,epoch FROM qa_mproc_gate WHERE id=1").fetchone()
 def negative_rls():
     with con() as db:
-        flags=db.execute("SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='qa_mproc_membership'::regclass").fetchone()
+        flags=sql(db,"SELECT relrowsecurity,relforcerowsecurity FROM pg_class WHERE oid='qa_mproc_membership'::regclass").fetchone()
         check(flags==(True,True),"RLS_not_FORCED")
-        role=db.execute("SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='qa_mproc_reader'").fetchone()
+        role=sql(db,"SELECT rolsuper,rolbypassrls FROM pg_roles WHERE rolname='qa_mproc_reader'").fetchone()
         check(role==(False,False),"reader_bypassrls")
         with db.transaction():
-            db.execute("SET LOCAL ROLE qa_mproc_reader")
-            db.execute("SELECT set_config('qa.tenant','other',true)")
-            check(db.execute("SELECT tenant FROM qa_mproc_membership").fetchall()==[],"cross_tenant_data_exposed")
-            db.execute("SELECT set_config('qa.tenant','synthetic',true)")
-            check(len(db.execute("SELECT tenant FROM qa_mproc_membership").fetchall())==1,"allowed_tenant_hidden")
+            sql(db,"SET LOCAL ROLE qa_mproc_reader")
+            sql(db,"SELECT set_config('qa.tenant','other',true)")
+            check(sql(db,"SELECT tenant FROM qa_mproc_membership").fetchall()==[],"cross_tenant_data_exposed")
+            sql(db,"SELECT set_config('qa.tenant','synthetic',true)")
+            check(len(sql(db,"SELECT tenant FROM qa_mproc_membership").fetchall())==1,"allowed_tenant_hidden")
     denied=False
     try:
         with con() as db:
             with db.transaction():
-                db.execute("SET LOCAL ROLE qa_mproc_reader")
-                db.execute("SELECT set_config('qa.tenant','synthetic',true)")
-                db.execute("SET LOCAL row_security=off")
-                db.execute("SELECT tenant FROM qa_mproc_membership").fetchall()
+                sql(db,"SET LOCAL ROLE qa_mproc_reader")
+                sql(db,"SELECT set_config('qa.tenant','synthetic',true)")
+                sql(db,"SET LOCAL row_security=off")
+                sql(db,"SELECT tenant FROM qa_mproc_membership").fetchall()
     except psycopg.Error:denied=True
     check(denied,"RLS_disabled_successfully")
     denied=False
     try:
         with con() as db:
             with db.transaction():
-                db.execute("SET LOCAL ROLE qa_mproc_reader")
-                db.execute("UPDATE qa_mproc_membership SET allowed=false")
+                sql(db,"SET LOCAL ROLE qa_mproc_reader")
+                sql(db,"UPDATE qa_mproc_membership SET allowed=false")
     except psycopg.Error:denied=True
     check(denied,"reader_updated_membership")
     return True
@@ -333,7 +338,7 @@ def main():
         all_lifetimes=[prekill_samples[0],checks[0],checks[1]]
         check(len({v["proc_pid"] for v in all_lifetimes})==3,"missing_process_lifetime")
         with con() as db:
-            dbbytes,indexbytes,wal=db.execute("""SELECT
+            dbbytes,indexbytes,wal=sql(db,"""SELECT
               pg_database_size(current_database()),
               pg_indexes_size('qa_mproc_membership'),
               pg_wal_lsn_diff(pg_current_wal_lsn(),%s)""",(wal0,)).fetchone()
@@ -366,11 +371,18 @@ def main():
             revoke_cutover_race=results,new_writes_after_revoke_commit=0,
             FIN_RST_halfopen_real=True,all_401_and_truncated_200_no_retry=True,
             SQL_guard_calls=checkpointed_guards,
+            SQL_explicit_worker_calls_lifetime_captured=sum(
+                v["metrics"].get("sql_explicit_execute",0) for v in all_lifetimes),
+            SQL_explicit_controller_calls=CONTROLLER_SQL_EXPLICIT[0],
+            SQL_explicit_total_instrumented=CONTROLLER_SQL_EXPLICIT[0]+sum(
+                v["metrics"].get("sql_explicit_execute",0) for v in all_lifetimes),
+            SQL_explicit_not_entire_PG_protocol=True,
             SQL_guard_calls_living_only=sum(s["sql_guard_count"] for s in checks),
             SQL_guard_calls_victim_pre_SIGKILL=prekill_samples[0]["sql_guard_count"],
             SQL_measurement_limitation="instrumented guards only; final victim 7KB snapshot before SIGKILL; not all SQL statements",
             process_lifetime_checkpoints=[{"pid":v["proc_pid"],
                 "worker":v["worker"],"guards":v["sql_guard_count"],
+                "SQL_explicit":v["metrics"].get("sql_explicit_execute",0),
                 "RSS_KiB":v["rss_kib"],"bytes_written":v["metrics"].get("written",0),
                 "proxy_GETs":v["metrics"].get("proxy_gets",0),
                 "upstream_GETs":v["metrics"].get("origin_gets",0)}
