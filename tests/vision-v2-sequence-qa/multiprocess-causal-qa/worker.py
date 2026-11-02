@@ -20,6 +20,12 @@ CAP=int(os.environ["QA_PROCESS_POOL"])
 assert CAP in (4,6,10)
 IDENT=os.environ["QA_WORKER_ID"]
 assert IDENT in ("0","1")
+# QA-only wall clock offsets in each INDEPENDENT child process.
+# Never change the runner/system clock; PG transaction fences remain monotonic.
+WALL_OFFSET=int(os.environ.get("QA_WORKER_WALL_SKEW_SEC","0"))
+assert WALL_OFFSET in (-86400,86400)
+_REAL_WALL=time.time
+time.time=lambda: _REAL_WALL()+WALL_OFFSET
 REPORT=[{"event":i,"sha":hashlib.sha256(("mproc-original-"+str(i)).encode()).hexdigest(),"original":True} for i in range(10000)]
 RAW=json.dumps({"original_full_report":{"export":REPORT},"company":"synthetic",
                 "version":1},sort_keys=True,separators=(",",":")).encode()
@@ -63,7 +69,9 @@ class State:
         with self.mu:data=dict(self.metrics)
         return {"worker":IDENT,"metrics":data,"proxy_pool":self.proxy_pool.stats(),
                 "origin_pool":self.origin_pool.stats(),"route_port":self.route_port,
-                "rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss}
+                "rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "process_wall_skew_seconds":WALL_OFFSET,
+                "simulated_wall_epoch":round(time.time(),3)}
 STATE=State()
 def can(pool,gate=False):
     with pool.borrow() as c:
@@ -196,7 +204,8 @@ def main():
     STATE.route_port=STATE.origin.server_address[1]
     print(json.dumps({"type":"READY","pid":os.getpid(),"worker":IDENT,
       "proxy":STATE.proxy.server_address[1],"origin":STATE.origin.server_address[1],
-      "report_gzip_bytes":len(WIRE),"report_sha":SHA}),flush=True)
+      "report_gzip_bytes":len(WIRE),"report_sha":SHA,
+      "wall_skew_seconds":WALL_OFFSET}),flush=True)
     try:
         for line in sys.stdin:
             cmd=json.loads(line);kind=cmd["cmd"]
@@ -207,6 +216,15 @@ def main():
                 STATE.hold_release.set();result={"type":"ACK","cmd":kind,"worker":IDENT}
             elif kind=="stats":
                 result={"type":"STATS",**STATE.snapshot()}
+            elif kind=="deadline":
+                started=time.monotonic()
+                deadline=started+.025
+                time.sleep(.055)
+                now=time.monotonic()
+                result={"type":"ACK","cmd":kind,"worker":IDENT,
+                        "expired":now>deadline,
+                        "overdue_ms":round((now-deadline)*1000,3),
+                        "wall_skew_seconds":WALL_OFFSET}
             elif kind=="stop":
                 result={"type":"ACK","cmd":kind}
                 print(json.dumps(result),flush=True);break
