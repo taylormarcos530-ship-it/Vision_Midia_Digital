@@ -1,0 +1,71 @@
+name: Vision V2 PG17 Two Real Processes Cutover SIGKILL NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/multiprocess-causal-qa/**'
+      - '.github/workflows/vision-v2-multiprocess-cutover-pg17-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  two-process-qa:
+    name: PG17 p${{ matrix.pool }} chunk${{ matrix.chunk }} SIGKILL RLS 300
+    strategy:
+      fail-fast: false
+      matrix:
+        pool: [8,12,20]
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: No official database credentials or deploy permitted
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          echo 'NO_DEPLOY=true DISPOSABLE_PG17=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Real child processes, two HTTP proxies/origins, 300 GETs, SIGKILL
+        env:
+          QA_POOL: ${{ matrix.pool }}
+          QA_CHUNK: ${{ matrix.chunk }}
+          QA_STREAM_GUARD_GROUP: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/multiprocess-causal-qa/*.py
+          python -u tests/vision-v2-sequence-qa/multiprocess-causal-qa/controller.py | tee qa-mproc.log
+      - name: Preserve PASS FAIL and every HTTP ledger entry
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-mproc-p${{ matrix.pool }}-c${{ matrix.chunk }}
+          path: |
+            qa-mproc.log
+            qa-mproc-ledger.json
+          if-no-files-found: warn
+          retention-days: 14
