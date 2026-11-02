@@ -118,12 +118,20 @@ async function main(){
       await ctx.close();return {status,errors};
     });
   }
-  await run('Missing PWA manifest (known production artifact gap)',async()=>{
+  await run('PWA manifest and 192/512 icons resolve locally',async()=>{
     const {page,ctx}=await pageFor(browser,'iPhone 13','/index.html');
     const r=await page.request.get(BASE+'/manifest.webmanifest');
+    ensure(r.status()===200,'index references absent manifest, HTTP '+r.status());
+    const data=await r.json();
+    ensure(data.display==='standalone','PWA is not standalone');
+    ensure(data.start_url.includes('index.html'),'PWA start route wrong');
+    ensure(data.icons.length>=2,'PWA icons missing');
+    for(const icon of data.icons){
+      const response=await page.request.get(new URL(icon.src,BASE+'/').href);
+      ensure(response.status()===200,'broken PWA icon: '+icon.src);
+    }
     await ctx.close();
-    ensure(r.status()===200,'index links manifest.webmanifest but repository responds '+r.status());
-    return 'manifest available';
+    return {display:data.display,icons:data.icons.length,start_url:data.start_url};
   });
   await run('No official network requests allowed (strict QA)',async()=>{
     ensure(unexpectedExternal.length===0,JSON.stringify(unexpectedExternal.slice(0,8)));
