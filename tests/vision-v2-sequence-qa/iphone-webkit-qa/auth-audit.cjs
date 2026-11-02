@@ -23,8 +23,18 @@ async function setup(browser,name,route){
  await page.goto(BASE+route,{waitUntil:'domcontentloaded',timeout:25000});
  return {page,c,errors};
 }
+async function dismissInstallInvite(page){
+ const invite=page.locator('.vision-install-invite');
+ if(await invite.count() && await invite.isVisible()){
+   await invite.locator('[data-dismiss]').click({timeout:4500});
+   check(await invite.count()===0,'PWA install invite did not dismiss');
+   return true;
+ }
+ return false;
+}
 async function clientLogin(page){
  await waitShown(page,'#login-form');
+ await dismissInstallInvite(page);
  await page.locator('#login-email').fill('cliente-qa@example.invalid');
  await page.locator('#login-password').fill('qa-password');
  await page.locator('#login-submit').click();
@@ -34,6 +44,7 @@ async function clientLogin(page){
 }
 async function masterLogin(page){
  await waitShown(page,'#master-login-form');
+ await dismissInstallInvite(page);
  await page.locator('#master-login-email').fill('master-qa@example.invalid');
  await page.locator('#master-login-password').fill('qa-password');
  await page.locator('#master-login-submit').click();
