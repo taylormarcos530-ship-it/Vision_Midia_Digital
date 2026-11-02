@@ -259,9 +259,16 @@ def main():
         expect(restart.info["proxy"],"/normal",503,"gate_closed")
         check(current_gate()==(False,revoked_epoch),"stale_gate_epoch_reversed")
         write_gate(True)
+        # A still-stale route to the SIGKILLed origin fails CLOSED with
+        # 503, not 401: no reachable upstream exists to evaluate a token.
+        stale=get(w[1].info["proxy"],"/normal")
+        check(stale["status"]==503 and stale["cause"] in ("reset","timeout"),
+              ("unavailable_stale_route_wrongly_accepted",stale))
+        # Rebind the surviving proxy to the freshly restarted origin before
+        # asserting definitive member revocation 401.
+        w[1].command("switch",port=restart.info["origin"])
         for ch in w:expect(ch.info["proxy"],"/normal",401)
         write_member(True)
-        w[1].command("switch",port=restart.info["origin"])
         for ch in w:expect(ch.info["proxy"],"/normal",200,"ok")
         checks=[ch.command("stats") for ch in w]
         active=sum(s["proxy_pool"]["active"]+s["origin_pool"]["active"] for s in checks)
