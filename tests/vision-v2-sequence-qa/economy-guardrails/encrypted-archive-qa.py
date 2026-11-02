@@ -38,7 +38,7 @@ def atomic(path,data,kill=False):
   f.write(data);f.flush();os.fsync(f.fileno())
  if kill:os.kill(os.getpid(),signal.SIGKILL)
  os.replace(tmp,path);fsyncdir(path.parent)
-def init(root,tvs):
+def init(root,tvs,entropy):
  root.mkdir(parents=True,exist_ok=True)
  atomic(root/'qa-key',os.urandom(32))
  with q(root) as c:
@@ -46,7 +46,7 @@ def init(root,tvs):
   for i in range(tvs):
    device=f'tv-{i:03d}'
    c.executemany('INSERT INTO proofs(device,seq,tenant,day,campaign,media,completed,seconds,event_id) VALUES(?,?,?,?,?,?,?,?,?)',[
-    (device,n,f'company-{i%2}','2026-11-02',f'camp-{n%3}',f'media-{n%5}',int(n%7!=0),15,f'{device}:{n}') for n in range(1,N+1)])
+    (device,n,f'company-{i%2}','2026-11-02',f'camp-{n%3}',f'media-{n%5}',int(n%7!=0),15,(sha(f'{device}:{n}:high-entropy-provenance'.encode()) if entropy=='high' else f'{device}:{n}')) for n in range(1,N+1)])
  with con() as c:
   c.execute('CREATE SCHEMA qa_economy_archive')
   c.execute('''CREATE TABLE qa_economy_archive.segments(
@@ -202,9 +202,9 @@ def offline(root):
  return {'402_429_503_401_403_durable_backoff':'PASS','one_unacked_offline_proof':1,
   'SQLITE_FULL_exception_injected':True,'actual_disk_full_tested':False,
   'actual_HTTP_gateway_tested':False}
-def run(tvs):
+def run(tvs,entropy):
  check_environment();root=Path(tempfile.mkdtemp(prefix='qa_v2_encrypted_'))
- start=time.monotonic();init(root,tvs)
+ start=time.monotonic();init(root,tvs,entropy)
  with con() as c:wal0=c.execute('SELECT pg_current_wal_insert_lsn()').fetchone()[0]
  faults=[]
  for i,stage in enumerate(('after_tmp_fsync','after_file_fsync','after_pg_commit')):
@@ -235,7 +235,7 @@ def run(tvs):
     'hourly_Edge_upload_calls_hypothetical':uploadcalls,
     'two_minute_Edge_cycles_hypothetical':cycles,
     'two_minute_calls_exceed_350k_reserve':cycles>350000})
- result={'outcome':'PASS_ISOLATED_QA_ONLY','tvs':tvs,'physical_hours':1,
+ result={'outcome':'PASS_ISOLATED_QA_ONLY','tvs':tvs,'entropy_fixture':entropy,'physical_hours':1,
    'proof_cadence_s':15,'metrics':physical,'faults':faults,'offline':offline_result,
    'projected_8_12_18_24_hours':projections,
    'full_original_report_rpc_executed_here':False,
@@ -247,8 +247,9 @@ def run(tvs):
  print('QA_SEGMENTED_ECONOMY_JSON='+json.dumps(result,sort_keys=True),flush=True)
 def main():
  p=argparse.ArgumentParser();p.add_argument('--tvs',type=int,choices=(10,100,300),default=10)
+ p.add_argument('--entropy',choices=('low','high'),default='low')
  p.add_argument('--worker',nargs=3);args=p.parse_args()
  if args.worker:
   check_environment();archive(Path(args.worker[0]),args.worker[1],args.worker[2])
- else:run(args.tvs)
+ else:run(args.tvs,args.entropy)
 if __name__=='__main__':main()
