@@ -142,3 +142,35 @@ test('model never equates playback event rows to 5GB egress or 500MB file Storag
  assert.equal(r.checks.egress.exceedsFree,false); // 3.934 GB < 5 GB, but > safety margin.
  assert.equal(r.checks.egress.withinReserve,false);
 });
+
+test('300 TVs with only 12h/day still exceed Free proof-invocation cap at 50/batch',()=>{
+ const a=projection(300,{onlineHours:12,cycleEveryMinutes:10000});
+ assert.equal(a.measurements.monthlyProofs,25920000);
+ assert.equal(a.measurements.monthlyProofBatchCalls,518400);
+ assert.equal(a.checks.edge.exceedsFree,true);
+ assert.equal(a.approval,'NO_GO_BUDGET');
+});
+test('300 TVs with 18h/day still need 777600 proof batches if using legacy 50 cap',()=>{
+ const a=projection(300,{onlineHours:18,cycleEveryMinutes:10000});
+ assert.equal(a.measurements.monthlyProofs,38880000);
+ assert.equal(a.measurements.monthlyProofBatchCalls,777600);
+ assert.equal(a.approval,'NO_GO_BUDGET');
+});
+test('Bundling one Edge HTTP cycle does not remove underlying old monitoring SQL writes',()=>{
+ const source=fs.readFileSync(path.join(root,'supabase/functions/device-bundle-stable/index.ts'),'utf8');
+ const start=source.indexOf('async function runExistingMonitoringAction(');
+ const end=source.indexOf('\nasync function ',start+1);
+ const segment=source.slice(start,end<0?undefined:end);
+ assert.ok(start>=0);
+ assert.match(segment,/\.from\('devices'\)\.update\(\{/);
+ assert.match(segment,/last_seen_at:\s*now/);
+ assert.match(segment,/\.from\('device_heartbeats'\)/);
+ assert.match(source,/const lastOfflineSweepByCompany = new Map\(\)/);
+});
+test('Free reserve is NOT a promise even when only heartbeat is bundled',()=>{
+ const a=projection(300,{onlineHours:8,cycleEveryMinutes:10000});
+ assert.equal(a.measurements.monthlyProofBatchCalls,345600);
+ // Only 4400 Edge invocations remain to our internal reserve before other actions.
+ assert.equal(SAFE.edge-a.measurements.monthlyProofBatchCalls,4400);
+ assert.equal(a.approval,'NO_GO_BUDGET'); // DB and reports still exceed reserve.
+});
