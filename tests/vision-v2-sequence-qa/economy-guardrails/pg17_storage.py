@@ -44,7 +44,7 @@ def seed(c):
     started=time.perf_counter()
     c.execute("""INSERT INTO qa_economy.proofs(device,sequence,client_event_id,media_id,played_at,digest)
       SELECT
-        'tv-' || lpad(((g-1)%300)::text,3,'0'),
+        'tv-' || lpad(((g-1)%%300)::text,3,'0'),
         ((g-1)/300+1)::bigint,
         md5('event-'||g::text),
         'media-' || ((g-1)%21)::text,
