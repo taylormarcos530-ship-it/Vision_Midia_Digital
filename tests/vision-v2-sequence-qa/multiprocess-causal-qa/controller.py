@@ -95,7 +95,7 @@ class Child:
                                 stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,
                                 text=True,bufsize=1,env=env)
         line=self.p.stdout.readline()
-        check(bool(line),("child_startup_failure",ident,self.p.poll(),self.p.stderr.read()[:900]))
+        check(bool(line),("child_startup_failure",ident,self.p.poll()))
         self.info=json.loads(line)
         check(self.info["type"]=="READY" and self.info["worker"]==str(ident),"wrong_child_ready")
         self.ident=ident
@@ -198,17 +198,16 @@ def main():
         # Freeze first old body chunk. Use real PostgreSQL transactions to
         # COMMIT revocation and cutover concurrently, not client clock.
         # The proxy will buffer upstream until complete, never emit truncated 200.
+        baseline_written=w[0].command("stats")["metrics"].get("written",0)
         with concurrent.futures.ThreadPoolExecutor(max_workers=1) as threads:
             future=threads.submit(get,w[0].info["proxy"],"/hold")
             cutoff=time.monotonic()+5
             while time.monotonic()<cutoff:
                 m=w[0].command("stats")["metrics"]
-                if m.get("written",0)>=report_size*(150+2)+CHUNK:break
+                if m.get("written",0)>=baseline_written+CHUNK:break
                 time.sleep(.003)
-            # A child can complete one write before the controller reads its
-            # metrics; the deterministic /hold barrier is confirmed by verifying
-            # the stream is pending AND exact one new block before mutation.
-            pre=w[0].command("stats")
+            check(m.get("written",0)>=baseline_written+CHUNK,
+                  "old_stream_first_block_not_written")
             check(not future.done(),"hold_request_not_pending")
             barrier=threading.Barrier(3);results={}
             def mutate(kind):
@@ -253,6 +252,7 @@ def main():
         revoked_epoch=write_gate(False)
         write_member(False)
         expect(w[1].info["proxy"],"/normal",503,"gate_closed")
+        w[0].close()
         restart=Child(0)
         w[0]=restart
         check(restart.info["pid"]!=w[1].info["pid"],"restart_process_collision")
