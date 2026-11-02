@@ -11,11 +11,12 @@ permissions:
   contents: read
 jobs:
   archive:
-    name: Immutable AES-GCM SIGKILL ${{ matrix.tvs }} TVs 15s
+    name: Immutable AES-GCM SIGKILL ${{ matrix.tvs }} TVs ${{ matrix.entropy }} entropy
     strategy:
       fail-fast: false
       matrix:
         tvs: [10, 100, 300]
+        entropy: [low, high]
     runs-on: ubuntu-latest
     timeout-minutes: 22
     services:
@@ -54,13 +55,13 @@ jobs:
           QA_STREAM_GUARD_GROUP: '1'
         run: |
           set -euo pipefail
-          python -u tests/vision-v2-sequence-qa/economy-guardrails/encrypted-archive-qa.py --tvs ${{ matrix.tvs }} | tee qa-economy-archive-${{ matrix.tvs }}.log
+          python -u tests/vision-v2-sequence-qa/economy-guardrails/encrypted-archive-qa.py --tvs ${{ matrix.tvs }} --entropy ${{ matrix.entropy }} | tee qa-economy-archive-${{ matrix.tvs }}-${{ matrix.entropy }}.log
       - name: Preserve logs even FAIL
         uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: qa-economy-archive-${{ matrix.tvs }}
-          path: qa-economy-archive-${{ matrix.tvs }}.log
+          name: qa-economy-archive-${{ matrix.tvs }}-${{ matrix.entropy }}
+          path: qa-economy-archive-${{ matrix.tvs }}-${{ matrix.entropy }}.log
           if-no-files-found: warn
           retention-days: 14
 
