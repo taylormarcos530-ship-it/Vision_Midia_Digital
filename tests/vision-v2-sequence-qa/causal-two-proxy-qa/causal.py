@@ -228,7 +228,7 @@ def expect(node,path,status,cause,token="synthetic-valid"):
     x=get(node,path,token)
     ck((x["status"],x["cause"])==(status,cause),("causal_failure_wrong",path,x))
 def main():
-    start=time.perf_counter();wal0=fixture()
+    started_at=time.perf_counter();wal0=fixture()
     upstream,ut=start(Upstream)
     upstream.first_block=threading.Event()
     upstream.release_block=threading.Event()
@@ -304,7 +304,7 @@ def main():
             "no_new_socket_writes_post_revoke":True,"total_SQL_statements_measured":False,
             "real_supabase_or_TVs_tested":False,"cross_host_coordination_proven":False,
             "costs_R_measured":False,"production_GO":False,
-            "elapsed_seconds":round(time.perf_counter()-start,3)}
+            "elapsed_seconds":round(time.perf_counter()-started_at,3)}
         Path("qa-causal-ledger.json").write_text(json.dumps({"summary":summary,"attempts":LEDGER},sort_keys=True))
         print("QA_CAUSAL_TWO_PROXY_SUMMARY_JSON="+json.dumps(summary,sort_keys=True),flush=True)
         print("QA_CAUSAL_TWO_PROXY_PASS=true",flush=True)
