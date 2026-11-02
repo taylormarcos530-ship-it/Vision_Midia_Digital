@@ -39,7 +39,7 @@ def atomic(path,data,kill=False):
  if kill:os.kill(os.getpid(),signal.SIGKILL)
  os.replace(tmp,path);fsyncdir(path.parent)
 def init(root,tvs):
- root.mkdir(parents=True)
+ root.mkdir(parents=True,exist_ok=True)
  atomic(root/'qa-key',os.urandom(32))
  with q(root) as c:
   c.execute('CREATE TABLE proofs(device TEXT,seq INT,tenant TEXT,day TEXT,campaign TEXT,media TEXT,completed INT,seconds INT,event_id TEXT,ack INT DEFAULT 0,PRIMARY KEY(device,seq))')
