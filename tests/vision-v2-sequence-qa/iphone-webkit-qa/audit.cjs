@@ -59,6 +59,11 @@ async function main(){
         const info=await page.evaluate(()=>({width:innerWidth,scrollWidth:document.documentElement.scrollWidth,
           height:innerHeight,title:document.title}));
         ensure(info.title.length>0,'document title missing');
+        if(device==='iPhone 13'){
+          fs.mkdirSync('qa-iphone-screens',{recursive:true});
+          const filename=item.route.replace(/[^a-z0-9]+/gi,'-').replace(/^-|-$/g,'')+'.png';
+          await page.screenshot({path:'qa-iphone-screens/'+filename,fullPage:false});
+        }
         await ctx.close();
         screens.push({device,page:item.name,route:item.route,...info,jsErrors:errors});
         return info;
@@ -118,6 +123,18 @@ async function main(){
       await ctx.close();return {status,errors};
     });
   }
+  await run('iPhone horizontal layout overflow audit, all 24 screens',async()=>{
+    const bad=screens.filter(z=>z.scrollWidth>z.width+4);
+    ensure(bad.length===0,'horizontal overflow: '+JSON.stringify(bad.map(x=>({
+      device:x.device,route:x.route,scrollWidth:x.scrollWidth,width:x.width}))));
+    return {screens:screens.length,globalOverflow:0};
+  });
+  await run('iPhone uncaught JavaScript exception audit, all 24 screens',async()=>{
+    const bad=screens.filter(z=>z.jsErrors.length);
+    ensure(bad.length===0,'JavaScript exceptions: '+JSON.stringify(bad.map(x=>({
+      device:x.device,route:x.route,errors:x.jsErrors}))));
+    return {screens:screens.length,pageErrors:0};
+  });
   await run('PWA manifest and 192/512 icons resolve locally',async()=>{
     const {page,ctx}=await pageFor(browser,'iPhone 13','/index.html');
     const r=await page.request.get(BASE+'/manifest.webmanifest');
