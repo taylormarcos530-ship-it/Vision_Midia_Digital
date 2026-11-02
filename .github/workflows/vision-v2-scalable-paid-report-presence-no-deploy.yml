@@ -6,6 +6,8 @@ on:
     paths:
       - 'tests/vision-v2-sequence-qa/economy-guardrails/original-report-archive-bridge.py'
       - 'tests/vision-v2-sequence-qa/economy-guardrails/persistent-presence-qa.py'
+      - 'tests/vision-v2-sequence-qa/economy-guardrails/scalable-capacity-policy.cjs'
+      - 'tests/vision-v2-sequence-qa/economy-guardrails/scalable-capacity-policy.test.cjs'
       - '.github/workflows/vision-v2-scalable-paid-report-presence-no-deploy.yml'
   workflow_dispatch:
 permissions:
@@ -107,4 +109,40 @@ jobs:
         with:
           name: qa-presence-${{ matrix.tvs }}
           path: qa-presence-${{ matrix.tvs }}.log
+          retention-days: 14
+
+  paid-plan-policy:
+    name: Paid-plan scalable 10/100/300/600/1000 clients ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Strict no-production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - name: Test stable protocol and tier-aware gateway/Realtime budgets
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/vision-v2-sequence-qa/economy-guardrails/scalable-capacity-policy.test.cjs | tee qa-paid-scaling-policy.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-paid-scaling-policy-node-${{ matrix.node }}
+          path: qa-paid-scaling-policy.log
           retention-days: 14
