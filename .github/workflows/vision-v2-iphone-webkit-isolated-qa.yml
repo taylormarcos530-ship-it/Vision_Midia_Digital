@@ -24,6 +24,7 @@ jobs:
         with:
           node-version: '22'
       - name: Refuse production credentials
+        shell: bash
         run: |
           set -euo pipefail
           test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
