@@ -1,4 +1,5 @@
 name: Vision V2 PG17 Two Proxy Causal 503 Classification NO DEPLOY
+# Revalidate corrected causal harness HEAD with six isolated PG17 jobs.
 on:
   push:
     branches:
