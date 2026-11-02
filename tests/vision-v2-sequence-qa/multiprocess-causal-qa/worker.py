@@ -76,17 +76,23 @@ class State:
                 "process_wall_skew_seconds":WALL_OFFSET,
                 "simulated_wall_epoch":round(time.time(),3)}
 STATE=State()
+def sql(db,*args,**kwargs):
+    # Counts every explicit psycopg execute() in this child lifetime,
+    # including SET ROLE, set_config, advisory locks and SELECT.
+    # Implicit BEGIN/COMMIT and protocol traffic remain excluded.
+    STATE.add("sql_explicit_execute")
+    return db.execute(*args,**kwargs)
 def can(pool,gate=False):
     with pool.borrow() as c:
         with c.transaction():
-            c.execute("SET LOCAL ROLE qa_mproc_reader")
-            c.execute("SELECT set_config('qa.tenant','synthetic',true)")
-            c.execute("SELECT pg_advisory_xact_lock_shared(%s)",(LOCK_GATE if gate else LOCK_USER,))
+            sql(c,"SET LOCAL ROLE qa_mproc_reader")
+            sql(c,"SELECT set_config('qa.tenant','synthetic',true)")
+            sql(c,"SELECT pg_advisory_xact_lock_shared(%s)",(LOCK_GATE if gate else LOCK_USER,))
             if gate:
-                row=c.execute("SELECT enabled,epoch FROM qa_mproc_gate WHERE id=1").fetchone()
+                row=sql(c,"SELECT enabled,epoch FROM qa_mproc_gate WHERE id=1").fetchone()
                 STATE.add("gate_sql")
                 return bool(row and row[0])
-            row=c.execute("SELECT allowed FROM qa_mproc_membership WHERE tenant='synthetic'").fetchone()
+            row=sql(c,"SELECT allowed FROM qa_mproc_membership WHERE tenant='synthetic'").fetchone()
             STATE.add("membership_sql")
             return bool(row)
 
@@ -139,10 +145,10 @@ class Origin(Quiet):
         for i in range(0,len(WIRE),CHUNK):
             with STATE.origin_pool.borrow() as c:
                 with c.transaction():
-                    c.execute("SET LOCAL ROLE qa_mproc_reader")
-                    c.execute("SELECT set_config('qa.tenant','synthetic',true)")
-                    c.execute("SELECT pg_advisory_xact_lock_shared(%s)",(LOCK_USER,))
-                    allowed=c.execute("SELECT allowed FROM qa_mproc_membership WHERE tenant='synthetic'").fetchone()
+                    sql(c,"SET LOCAL ROLE qa_mproc_reader")
+                    sql(c,"SELECT set_config('qa.tenant','synthetic',true)")
+                    sql(c,"SELECT pg_advisory_xact_lock_shared(%s)",(LOCK_USER,))
+                    allowed=sql(c,"SELECT allowed FROM qa_mproc_membership WHERE tenant='synthetic'").fetchone()
                     STATE.add("membership_sql")
                     if not allowed:
                         STATE.add("stream_revoked")
