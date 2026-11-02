@@ -4,10 +4,10 @@ const {webkit,devices}=require('playwright');
 const BASE='http://127.0.0.1:8876',results=[],screens=[],external=[];
 function check(ok,msg){assert.ok(ok,msg)}
 async function record(name,fn){
- try{const detail=await fn();results.push({name,result:'PASS',detail:detail||null});}
- catch(e){results.push({name,result:'FAIL',reason:String(e.stack||e)});}
+ try{const detail=await fn();results.push({name,result:'PASS',detail:detail||null});return true;}
+ catch(e){results.push({name,result:'FAIL',reason:String(e.stack||e)});return false;}
 }
-async function waitShown(page,id,t=9000){await page.locator(id).waitFor({state:'visible',timeout:t})}
+async function waitShown(page,id,t=5000){await page.locator(id).waitFor({state:'visible',timeout:t})}
 async function setup(browser,name,route){
  const c=await browser.newContext({...devices[name],serviceWorkers:'block',acceptDownloads:false,
  permissions:[],locale:'pt-BR',timezoneId:'America/Sao_Paulo'});
@@ -18,6 +18,7 @@ async function setup(browser,name,route){
   await r.abort('blockedbyclient');
  });
  const page=await c.newPage(),errors=[];
+ page.setDefaultTimeout(5000);
  page.on('pageerror',e=>errors.push(String(e.message)));
  await page.goto(BASE+route,{waitUntil:'domcontentloaded',timeout:25000});
  return {page,c,errors};
@@ -27,7 +28,7 @@ async function clientLogin(page){
  await page.locator('#login-email').fill('cliente-qa@example.invalid');
  await page.locator('#login-password').fill('qa-password');
  await page.locator('#login-submit').click();
- await waitShown(page,'#app-shell',10000);
+ await waitShown(page,'#app-shell',7000);
  check(!(await page.locator('#app-shell').evaluate(el=>el.classList.contains('hidden'))),
        'login did not expose app shell');
 }
@@ -36,7 +37,7 @@ async function masterLogin(page){
  await page.locator('#master-login-email').fill('master-qa@example.invalid');
  await page.locator('#master-login-password').fill('qa-password');
  await page.locator('#master-login-submit').click();
- await waitShown(page,'#master-shell',10000);
+ await waitShown(page,'#master-shell',7000);
 }
 async function appNav(page,view){
  const btn=page.locator('.nav-item[data-view="'+view+'"]');
@@ -59,11 +60,12 @@ async function main(){
   for(const model of ['iPhone SE','iPhone 13']){
    const tag=model.replace(/[^A-Za-z0-9]/g,'-');
    const {page,c,errors}=await setup(browser,model,'/index.html');
-   await record(model+' actual client login with synthetic HTTP token',async()=>{
+   const clientOK=await record(model+' actual client login with synthetic HTTP token',async()=>{
     await clientLogin(page);
     check((await page.locator('#sidebar-company-name').innerText()).includes('Empresa QA'),'wrong synthetic tenant');
     return 'Actual app.js login and 15 synthetic REST table requests';
    });
+   if(clientOK){
    for(const [view,selector,expected] of [
     ['dashboard','#metric-devices','1'],['devices','#devices-grid [data-device-card]','TV Sintética'],
     ['media','#media-grid [data-media-card]','Imagem QA'],
@@ -142,18 +144,24 @@ async function main(){
    await record(model+' client no uncaught exception',async()=>{
      check(errors.length===0,JSON.stringify(errors.slice(0,7)));return errors.length;
    });
+   }else{
+     for(const name of ['client views','playlists','inbox mutations','upload picker','offline UI','logout']){
+       results.push({name:model+' '+name,result:'NOT_TESTED',reason:'prior login failed; avoid cascade'});
+     }
+   }
    fs.mkdirSync('qa-iphone-auth-screens',{recursive:true});
-   await page.screenshot({path:'qa-iphone-auth-screens/'+tag+'-logout.png'});
+   await page.screenshot({path:'qa-iphone-auth-screens/'+tag+'-client.png'});
    screens.push({model,page:'client logout'});
    await c.close();
 
    const {page:master,c:mc,errors:me}=await setup(browser,model,'/master.html');
-   await record(model+' actual Master login and role verification',async()=>{
+   const masterOK=await record(model+' actual Master login and role verification',async()=>{
      await masterLogin(master);
      check((await master.locator('#master-role-label').innerText()).includes('Master'),
        'Master role not verified');
      return 'whoami super_admin + dashboard mock';
    });
+   if(masterOK){
    for(const view of ['dashboard','clients','plans','audit']){
     await record(model+' Master '+view+' navigation',async()=>{
      await masterNav(master,view);
@@ -196,6 +204,11 @@ async function main(){
    await record(model+' Master no uncaught exception',async()=>{
     check(me.length===0,JSON.stringify(me.slice(0,6)));return me.length;
    });
+   }else{
+     for(const name of ['Master views','Master client search','Master notification','Master offline state']){
+       results.push({name:model+' '+name,result:'NOT_TESTED',reason:'prior Master login failed; avoid cascade'});
+     }
+   }
    await master.screenshot({path:'qa-iphone-auth-screens/'+tag+'-master.png'});
    screens.push({model,page:'master'});
    await mc.close();
@@ -225,7 +238,7 @@ async function main(){
  ].map(name=>({name,result:'NOT_TESTED'}));
  const full=[...results,...untested];
  const sum={total:full.length,pass:full.filter(x=>x.result==='PASS').length,
- fail:full.filter(x=>x.result==='FAIL').length,not_tested:untested.length,
+ fail:full.filter(x=>x.result==='FAIL').length,not_tested:full.filter(x=>x.result==='NOT_TESTED').length,
  attempted:results.length,profiles:['iPhone SE','iPhone 13'],localhostOnly:true,
  screenshots:screens,external,security_TOCTOU_status:'FAIL_NO_GO',
  deployment:false,details:full};
