@@ -337,6 +337,8 @@ def main():
         # rather than reporting replacement RSS as the original's peak.
         all_lifetimes=[prekill_samples[0],checks[0],checks[1]]
         check(len({v["proc_pid"] for v in all_lifetimes})==3,"missing_process_lifetime")
+        check(all(v["linux_proc_memory"]["VmHWM_KiB"]>=v["linux_proc_memory"]["VmRSS_KiB"]>0
+                  for v in all_lifetimes),"Linux_RSS_attribution_invalid")
         with con() as db:
             dbbytes,indexbytes,wal=sql(db,"""SELECT
               pg_database_size(current_database()),
@@ -383,7 +385,10 @@ def main():
             process_lifetime_checkpoints=[{"pid":v["proc_pid"],
                 "worker":v["worker"],"guards":v["sql_guard_count"],
                 "SQL_explicit":v["metrics"].get("sql_explicit_execute",0),
-                "RSS_KiB":v["rss_kib"],"bytes_written":v["metrics"].get("written",0),
+                "RSS_KiB":v["rss_kib"],
+                "LinuxVmHWM_KiB":v["linux_proc_memory"]["VmHWM_KiB"],
+                "LinuxVmRSS_KiB":v["linux_proc_memory"]["VmRSS_KiB"],
+                "bytes_written":v["metrics"].get("written",0),
                 "proxy_GETs":v["metrics"].get("proxy_gets",0),
                 "upstream_GETs":v["metrics"].get("origin_gets",0)}
                 for v in all_lifetimes],
@@ -394,6 +399,10 @@ def main():
             victim_pre_SIGKILL_RSS_KiB=prekill_samples[0]["rss_kib"],
             max_observed_worker_RSS_KiB=max(v["rss_kib"] for v in all_lifetimes),
             controller_RSS_KiB=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+            controller_LinuxVmHWM_KiB=next(int(x.split(":")[1].strip().split()[0])
+                for x in open("/proc/self/status",encoding="utf-8") if x.startswith("VmHWM:")),
+            controller_LinuxVmRSS_KiB=next(int(x.split(":")[1].strip().split()[0])
+                for x in open("/proc/self/status",encoding="utf-8") if x.startswith("VmRSS:")),
             SQL_all_statements_measured=False,real_two_hosts=False,
             TCP_bytes_prebuffered_not_recallable=True,
             real_supabase_cost_R_measured=False,production_GO=False,
