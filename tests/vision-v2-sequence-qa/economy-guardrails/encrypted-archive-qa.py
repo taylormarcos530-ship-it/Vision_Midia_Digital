@@ -6,7 +6,8 @@ from __future__ import annotations
 import argparse,base64,gzip,hashlib,json,os,resource,signal,sqlite3,subprocess,sys,tempfile,time
 from collections import defaultdict
 from pathlib import Path
-from cryptography.hazmat.primitives.ciphers.aead import AESGCM,InvalidTag
+from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+from cryptography.exceptions import InvalidTag
 import psycopg
 N=240
 DB='vision_v2_quarantine_disposable'
