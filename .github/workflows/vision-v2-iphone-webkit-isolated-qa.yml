@@ -13,6 +13,8 @@ jobs:
   iphone-webkit:
     name: WebKit iPhone SE 13 13ProMax local only
     runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
     timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
@@ -28,10 +30,8 @@ jobs:
           test -z "${SUPABASE_URL:-}"
           test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
           test -z "${DATABASE_URL:-}"
-      - name: Install isolated WebKit
-        run: |
-          npm install --no-save playwright@1.56.1
-          npx playwright install --with-deps webkit
+      - name: Install matching WebKit client in official Playwright image
+        run: npm install --no-save playwright@1.56.1
       - name: Serve QA-only copies without any live API
         shell: bash
         run: |
