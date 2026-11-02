@@ -131,7 +131,7 @@ def archive(root,device,kill=None):
  return manifest
 def checks(root,tvs,wal0):
  with con() as c:
-  total=c.execute('SELECT sum(started) FROM qa_economy_archive.daily').fetchone()[0]
+  total=int(c.execute('SELECT sum(started) FROM qa_economy_archive.daily').fetchone()[0])
   assert total==tvs*N
   manifests=[r[0] for r in c.execute('SELECT manifest FROM qa_economy_archive.segments ORDER BY device')]
   sqlgroups={tuple(r[:5]):list(r[5:]) for r in c.execute('SELECT tenant,device,day,campaign,media,started,completed,seconds FROM qa_economy_archive.daily')}
