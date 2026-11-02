@@ -124,6 +124,8 @@ class Quiet(BaseHTTPRequestHandler):
     def respond(self,code,cause,body=b"",sha=False):
         self.send_response(code);self.send_header("Content-Length",str(len(body)))
         self.send_header("X-QA-Cause",cause)
+        if hasattr(self,"_upstream_partial"):
+            self.send_header("X-QA-Upstream-Discarded-Bytes",str(self._upstream_partial))
         if sha:
             self.send_header("Content-Encoding","gzip")
             self.send_header("X-QA-SHA256",SHA)
@@ -202,16 +204,32 @@ class Proxy(Quiet):
         rq=request.Request(self.server.upstream+self.path,
                            headers={"X-QA-Token":self.headers.get("X-QA-Token","")})
         code=None;body=b"";headers=None
+        # Read in explicitly counted blocks. urllib.read() may throw after
+        # receiving data; a proxy-side HTTP 503 body alone misses those bytes.
+        got=0;pieces=[]
         try:
             with request.urlopen(rq,timeout=.15 if self.path in ("/timeout","/halfopen") else 12) as upstream:
-                body=upstream.read();code=upstream.status;headers=upstream.headers
+                code=upstream.status;headers=upstream.headers
+                size=int(headers.get("Content-Length","-1"))
+                if code==200:
+                    if size<0:raise ValueError("missing_content_length")
+                    while got<size:
+                        piece=upstream.read(min(65536,size-got))
+                        if not piece:raise http.client.IncompleteRead(b"",size-got)
+                        pieces.append(piece);got+=len(piece)
+                    body=b"".join(pieces)
+                else:
+                    body=upstream.read();got=len(body)
         except error.HTTPError as ex:
             code=ex.code;body=ex.read();headers=ex.headers
         except (TimeoutError,socket.timeout) as ex:
+            self._upstream_partial=got
+            MET.add("discarded_upstream_partial_bytes",got)
             MET.add("upstream_timeout");self.respond(503,"upstream_timeout");return
         except http.client.IncompleteRead as ex:
+            self._upstream_partial=got+len(ex.partial)
             MET.add("upstream_incomplete")
-            MET.add("discarded_upstream_partial_bytes",len(ex.partial))
+            MET.add("discarded_upstream_partial_bytes",self._upstream_partial)
             self.respond(503,"upstream_incomplete");return
         except (ConnectionResetError,BrokenPipeError,http.client.RemoteDisconnected) as ex:
             MET.add("upstream_reset");self.respond(503,"upstream_reset");return
@@ -225,6 +243,7 @@ class Proxy(Quiet):
             MET.add("unexpected_status");self.respond(503,"unexpected_status");return
         ck(headers.get("X-QA-SHA256")==SHA,"upstream_header_sha_invalid")
         ck(hashlib.sha256(gzip.decompress(body)).hexdigest()==SHA,"upstream_body_sha_invalid")
+        ck(got==len(body),"proxy_buffer_account_mismatch")
         MET.add("proxied_complete_bytes",len(body))
         self.respond(200,"ok",body,sha=True)
 def start(handler):
@@ -245,7 +264,8 @@ def get(node,path,token="synthetic-valid"):
     cause=headers.get("X-QA-Cause","missing")
     result={"path":path,"proxy":node.server_address[1],"status":status,"cause":cause,
             "body_bytes":len(payload),"duration_ms":round((time.perf_counter()-t)*1000,3),
-            "attempt":1,"retried":False}
+            "attempt":1,"retried":False,
+            "upstream_discarded_bytes":int(headers.get("X-QA-Upstream-Discarded-Bytes","0"))}
     if status==200:
         raw=gzip.decompress(payload)
         ck(hashlib.sha256(raw).hexdigest()==headers.get("X-QA-SHA256"),"client_sha")
@@ -321,6 +341,8 @@ def main():
         ck(stats.get("upstream_attempts")==len(LEDGER)-stats.get("proxy_local",0)-stats.get("proxy_gate",0),
            "proxy_to_upstream_attempt_gap")
         ck(stats.get("discarded_upstream_partial_bytes",0)>=21000,"missing_discarded_partial_accounting")
+        ck(sum(row["upstream_discarded_bytes"] for row in LEDGER)==stats.get("discarded_upstream_partial_bytes",0),
+           "upstream_discarded_bytes_not_in_ledger")
         summary={"status":"PASS","clients":N,"pool":POOL,"chunk_bytes":CHUNK,
             "http_proxy_instances":2,"upstream_instances":1,"actual_http_sockets":True,
             "one_python_process":True,"shared_coordinator":"local disposable PostgreSQL17",
