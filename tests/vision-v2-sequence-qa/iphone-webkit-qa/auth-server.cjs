@@ -71,7 +71,9 @@ const server=http.createServer((req,res)=>{
     return json(res,401,{message:'qa unauthorized'});
    }
    if(p.startsWith('/__qa_api/rest/v1/')){
-    const table=p.split('/').pop();
+    // PostgreSQL REST RPC names include the "rpc/" prefix.
+    // pop() would discard it and accidentally return a generic POST fixture.
+    const table=p.slice('/__qa_api/rest/v1/'.length);
     if(table==='rpc/current_user_is_platform_admin')return json(res,200,false);
     if(table==='rpc/get_playback_report')return json(res,200,{
       summary:{started:3,completed:3,completion_rate:100,total_seconds:30,devices:1,media:1},
