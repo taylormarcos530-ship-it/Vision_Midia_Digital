@@ -1,0 +1,68 @@
+name: Vision V2 PG17 Proxy Drain vs Revocation Priority NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/secure-pool-qa/drain_revocation_priority_qa.py'
+      - '.github/workflows/vision-v2-drain-priority-revoke-pg17-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  priority:
+    name: PG17 independent revocation under stalled drain chunk ${{ matrix.chunk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        chunk: [65536,262144]
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Local test boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          echo "QA_ONLY=1 NO_DEPLOY=1"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Actual PostgreSQL17 membership revoke while route drain waits
+        env:
+          QA_COMMERCIAL_CHUNK: ${{ matrix.chunk }}
+          QA_PG_POOL_SIZE: '12'
+          QA_COMMERCIAL_ADMISSIONS: '12'
+          QA_STREAM_GUARD_GROUP: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/secure-pool-qa/drain_revocation_priority_qa.py
+          python -u tests/vision-v2-sequence-qa/secure-pool-qa/drain_revocation_priority_qa.py | tee revocation-priority.log
+      - name: Preserve evidence and failures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pg17-revoke-priority-chunk-${{ matrix.chunk }}
+          path: revocation-priority.log
+          if-no-files-found: warn
+          retention-days: 14
