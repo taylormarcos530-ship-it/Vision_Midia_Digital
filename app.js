@@ -3659,7 +3659,8 @@
   function updateConnectionStatus(force) {
     const el = $('#connection-status');
     if (!el) return;
-    const online = force ?? navigator.onLine;
+    // Event listeners pass an Event object; only explicit booleans override navigator.onLine.
+    const online = typeof force === 'boolean' ? force : navigator.onLine;
     el.className = `status-badge ${online ? 'online' : 'offline'}`;
     el.textContent = online ? '● Conectado' : '● Sem internet';
   }
