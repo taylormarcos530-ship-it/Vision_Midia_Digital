@@ -21,6 +21,9 @@ PG_POOL=qa.PG_POOL
 guarded_publish=qa.guarded_publish
 txguard=qa.txguard
 CHUNK=qa.CHUNK
+# Isolated A/B candidate, defaults to original behavior. NEVER production.
+STREAM_GROUP=int(os.environ.get("QA_STREAM_GUARD_GROUP","1"))
+assert STREAM_GROUP in (1,2), "only bounded 1-or-2-block candidates allowed"
 MFD_ALLOW_SEALING=getattr(os,"MFD_ALLOW_SEALING",2)
 SEALS=fcntl.F_SEAL_WRITE|fcntl.F_SEAL_GROW|fcntl.F_SEAL_SHRINK|fcntl.F_SEAL_SEAL
 FRAME=65536
@@ -146,6 +149,7 @@ class SealedServer(qa.FencedServer):
         self.disk_encrypted_bytes=0;self.rev_lazy_rebuilds=0
         self.revision_preheader_denials=0
         self.revision_postheader_aborts=0
+        self.guard_groups=0;self.max_guard_group=0
     def make_cache(self):
         os.chmod(self.root,0o700)
         for company in v.COMPANIES:
@@ -339,23 +343,37 @@ class SealedHandler(qa.FencedHandler):
             try:
                 with srv.sealed_reader(ready) as file:
                     while True:
-                        data=file.read(CHUNK)
-                        if not data:break
+                        # Original STREAM_GROUP=1 is unchanged in effect.
+                        # Candidate group=2 holds ONE shared commercial lock
+                        # for <= 2 blocks, but still rechecks auth/revision
+                        # for every block with READ COMMITTED statements.
+                        # The writer (including urgent revoke) waits for this
+                        # bounded group; do not present this as zero latency.
+                        blocks=[]
+                        for _ in range(STREAM_GROUP):
+                            data=file.read(CHUNK)
+                            if not data:break
+                            blocks.append(data)
+                        if not blocks:break
                         with srv.sql_slots:
                           with srv.pool.borrow() as db:
                             with db.transaction():
-                                txguard(db,claims,company,rev[0])
+                                for data in blocks:
+                                    txguard(db,claims,company,rev[0])
+                                    with srv.guard_mu:
+                                        srv.fence_reads+=1;srv.fence_locks+=1
+                                        srv.revision_checks+=1;srv.sql_chunks+=1
+                                    if srv.pause_before_first_write and not srv.entered.is_set():
+                                        srv.entered.set()
+                                        if not srv.release.wait(.24):
+                                            raise PermissionError("bounded_prewrite_pause_timeout")
+                                    self.wfile.write(data);self.wfile.flush()
+                                    with srv.guard_mu:
+                                        srv.payload_bytes+=len(data)
+                                        srv.reader_bytes_max=max(srv.reader_bytes_max,len(data))
                                 with srv.guard_mu:
-                                    srv.fence_reads+=1;srv.fence_locks+=1
-                                    srv.revision_checks+=1;srv.sql_chunks+=1
-                                if srv.pause_before_first_write and not srv.entered.is_set():
-                                    srv.entered.set()
-                                    if not srv.release.wait(.24):
-                                        raise PermissionError("bounded_prewrite_pause_timeout")
-                                self.wfile.write(data);self.wfile.flush()
-                                with srv.guard_mu:
-                                    srv.payload_bytes+=len(data)
-                                    srv.reader_bytes_max=max(srv.reader_bytes_max,len(data))
+                                    srv.guard_groups+=1
+                                    srv.max_guard_group=max(srv.max_guard_group,len(blocks))
                         if srv.pause_before_first_write and not srv.after_first.is_set():
                             srv.after_first.set()
                             if not srv.next_allow.wait(5):raise PermissionError('post_first_gate_timeout')
@@ -426,6 +444,9 @@ def worker_impl(index,keys,pipe):
                         "sql_background":service.sql_background,
                         "sql_admission":service.sql_admission,
                         "sql_per_block":service.sql_chunks,
+                        "stream_guard_group":STREAM_GROUP,
+                        "stream_guard_transactions":service.guard_groups,
+                        "max_guard_blocks":service.max_guard_group,
                         "sent":service.sent,"denied":service.denied,
                         "revision_preheader_denials":service.revision_preheader_denials,
                         "revision_postheader_aborts":service.revision_postheader_aborts,
