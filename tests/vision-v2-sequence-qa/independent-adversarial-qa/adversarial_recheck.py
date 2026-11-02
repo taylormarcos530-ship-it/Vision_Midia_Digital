@@ -28,6 +28,11 @@ def clean_db():
         ver=int(c.execute("SELECT current_setting('server_version_num')").fetchone()[0])
         assert 170000<=ver<180000,("not_pg17",ver)
         c.execute('DROP DATABASE IF EXISTS "vision_v2_quarantine_disposable" WITH (FORCE)')
+        # PostgreSQL roles are CLUSTER-scoped, not database-scoped.
+        # They are synthetic and created only by exact-rpc-qa/scaffold.sql.
+        # Without this cleanup the second 300-client replay fails with
+        # DuplicateObject despite a fresh disposable database.
+        c.execute('DROP ROLE IF EXISTS authenticated, anon')
         c.execute('CREATE DATABASE "vision_v2_quarantine_disposable"')
 def run(file,prefix,options):
     env={**os.environ,**options,"PYTHONUNBUFFERED":"1"}
