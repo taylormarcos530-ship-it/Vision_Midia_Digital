@@ -52,8 +52,13 @@ async function masterLogin(page){
 }
 async function appNav(page,view){
  const btn=page.locator('.nav-item[data-view="'+view+'"]');
- // WebKit mobile sidebar may hide buttons until hamburger opens.
- if(!(await btn.isVisible()))await page.locator('#menu-button').click();
+ // A transform-offscreen sidebar satisfies isVisible() despite being outside viewport.
+ const sidebar=page.locator('#sidebar');
+ if(!(await sidebar.evaluate(el=>el.classList.contains('open')))){
+   await page.locator('#menu-button').click({timeout:5000});
+   check(await sidebar.evaluate(el=>el.classList.contains('open')),
+     'mobile hamburger did not open sidebar');
+ }
  await btn.click({timeout:7000});
  await waitShown(page,'#view-'+view);
  check((await page.locator('#view-title').innerText()).length>0,'view title empty');
@@ -146,7 +151,8 @@ async function main(){
    });
    await record(model+' client app nav logout and session clear',async()=>{
      let logout=page.locator('#logout-button');
-     if(!(await logout.isVisible()))await page.locator('#menu-button').click();
+     if(!(await page.locator('#sidebar').evaluate(el=>el.classList.contains('open'))))
+       await page.locator('#menu-button').click();
      await logout.click();
      await waitShown(page,'#auth-screen');
      check((await page.evaluate(()=>localStorage.getItem('vision_midia_session_v1')))===null,
@@ -204,7 +210,7 @@ async function main(){
     await mc.setOffline(true);
     await master.evaluate(()=>window.dispatchEvent(new Event('offline')));
     await master.waitForTimeout(200);
-    check((await master.locator('#master-connection').innerText()).includes('Sem internet'),
+    check(/Servidor indisponível|Sem conexão/.test(await master.locator('#master-connection').innerText()),
       'Master offline indicator missing');
     await mc.setOffline(false);
     await master.evaluate(()=>window.dispatchEvent(new Event('online')));
