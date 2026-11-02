@@ -1,0 +1,75 @@
+name: Vision V2 Independent Adversarial PG17 300 TCP Commercial NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/independent-adversarial-qa/**'
+      - '.github/workflows/vision-v2-independent-adversarial-pg17-qa.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  adversarial:
+    name: "PG17 300 pool ${{ matrix.pool }} chunk ${{ matrix.chunk }} rounds ${{ matrix.rounds }} no deploy"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {pool: 8, chunk: 65536, rounds: 1}
+          - {pool: 8, chunk: 262144, rounds: 1}
+          - {pool: 12, chunk: 65536, rounds: 1}
+          - {pool: 12, chunk: 262144, rounds: 1}
+          - {pool: 20, chunk: 65536, rounds: 1}
+          - {pool: 20, chunk: 262144, rounds: 1}
+          - {pool: 12, chunk: 262144, rounds: 3}
+    runs-on: ubuntu-latest
+    timeout-minutes: 26
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 3s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Fail closed against official credentials, nonexperimental branch, or deploy
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          echo 'DISPOSABLE_PG17_ONLY=true NO_PRODUCTION=true NO_DEPLOY=true'
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Exact synthetic-only Python dependencies
+        run: python -m pip install --disable-pip-version-check 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Independent adversarial HTTP PG17 matrix with deterministic buffer and commit
+        shell: bash
+        env:
+          QA_POOL: ${{ matrix.pool }}
+          QA_CHUNK: ${{ matrix.chunk }}
+          QA_ROUNDS: ${{ matrix.rounds }}
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/independent-adversarial-qa/adversarial_recheck.py
+          python -u tests/vision-v2-sequence-qa/independent-adversarial-qa/adversarial_recheck.py | tee qa-adversarial-results.log
+      - name: Preserve synthetic test logs, including FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-pg17-${{ matrix.pool }}-${{ matrix.chunk }}-r${{ matrix.rounds }}
+          path: qa-adversarial-results.log
+          if-no-files-found: warn
+          retention-days: 14
