@@ -1,4 +1,5 @@
 name: Vision V2 PG17 Causal Audit Original Commercial AES TCP NO DEPLOY
+# Independent adversarial revalidation; previous workflow retained unchanged in git history.
 on:
   push:
     branches:
