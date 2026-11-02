@@ -47,7 +47,7 @@ def seed(c):
         'tv-' || lpad(((g-1)%%300)::text,3,'0'),
         ((g-1)/300+1)::bigint,
         md5('event-'||g::text),
-        'media-' || ((g-1)%21)::text,
+        'media-' || ((g-1)%%21)::text,
         '2026-11-01T00:00:00+00'::timestamptz + ((g-1)/300)*interval '15 second',
         md5('synthetic-proof-' || g::text)
       FROM generate_series(1,%s) AS g""",(N,))
