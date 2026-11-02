@@ -1,0 +1,68 @@
+name: Vision V2 iPhone WebKit Synthetic Auth Client Master NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-server.cjs'
+      - 'tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-audit.cjs'
+      - '.github/workflows/vision-v2-iphone-webkit-synthetic-auth-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  iphone-auth:
+    name: WebKit iPhone client Master synthetic isolated only
+    runs-on: ubuntu-latest
+    container:
+      image: mcr.microsoft.com/playwright:v1.56.1-noble
+    timeout-minutes: 22
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Absolute production boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          echo 'NO_DEPLOY=true QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=true'
+      - name: Install WebKit client matching official container
+        run: npm install --no-save playwright@1.56.1
+      - name: Start localhost only synthetic auth and REST server
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-server.cjs >qa-iphone-auth-server.log 2>&1 &
+          echo $! >qa-iphone-auth-server.pid
+          for i in $(seq 1 40); do
+            if curl -fsS http://127.0.0.1:8876/index.html >/dev/null; then exit 0; fi
+            sleep 0.25
+          done
+          cat qa-iphone-auth-server.log
+          exit 1
+      - name: Real browser interactions and strict FAIL PASS
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/vision-v2-sequence-qa/iphone-webkit-qa/auth-audit.cjs | tee qa-iphone-auth.log
+      - name: Preserve full logs JSON and WebKit screenshots even FAIL
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: qa-iphone-auth-synthetic
+          path: |
+            qa-iphone-auth-webkit.json
+            qa-iphone-auth.log
+            qa-iphone-auth-server.log
+            qa-iphone-auth-screens/
+          retention-days: 14
+          if-no-files-found: warn
