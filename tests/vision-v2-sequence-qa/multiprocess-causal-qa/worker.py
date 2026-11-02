@@ -59,6 +59,7 @@ class State:
     def __init__(self):
         self.mu=threading.Lock();self.metrics={}
         self.hold_first=threading.Event();self.hold_release=threading.Event()
+        self.admission_ready=threading.Event();self.admission_release=threading.Event()
         self.route_port=None
         self.proxy_pool=Pool(IDENT+"-proxy",max(1,CAP//2))
         self.origin_pool=Pool(IDENT+"-origin",CAP-max(1,CAP//2))
@@ -70,6 +71,8 @@ class State:
         return {"worker":IDENT,"metrics":data,"proxy_pool":self.proxy_pool.stats(),
                 "origin_pool":self.origin_pool.stats(),"route_port":self.route_port,
                 "rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "proc_pid":os.getpid(),
+                "sql_guard_count":data.get("gate_sql",0)+data.get("membership_sql",0),
                 "process_wall_skew_seconds":WALL_OFFSET,
                 "simulated_wall_epoch":round(time.time(),3)}
 STATE=State()
@@ -161,6 +164,15 @@ class Proxy(Quiet):
         STATE.add("proxy_gets")
         if not can(STATE.proxy_pool,gate=True):
             self.answer(503,"gate_closed");return
+        if self.path=="/pause_after_gate":
+            # Deterministic negative test only: AFTER shared PG gate lock
+            # released, BEFORE route selection or TCP connect. Demonstrate
+            # whether a previously checked gate can authorize a request
+            # AFTER the closing COMMIT on another process.
+            STATE.add("gate_toctou_ready")
+            STATE.admission_ready.set()
+            if not STATE.admission_release.wait(timeout=9):
+                self.answer(503,"gate_pause_expired");return
         with STATE.mu:port=STATE.route_port
         if not port:
             self.answer(503,"route_missing");return
@@ -216,6 +228,9 @@ def main():
                 STATE.hold_release.set();result={"type":"ACK","cmd":kind,"worker":IDENT}
             elif kind=="stats":
                 result={"type":"STATS",**STATE.snapshot()}
+            elif kind=="resume-admission":
+                STATE.admission_release.set()
+                result={"type":"ACK","cmd":kind,"worker":IDENT}
             elif kind=="deadline":
                 started=time.monotonic()
                 deadline=started+.025
