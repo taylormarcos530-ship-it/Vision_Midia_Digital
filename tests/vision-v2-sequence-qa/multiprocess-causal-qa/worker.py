@@ -33,6 +33,17 @@ WIRE=gzip.compress(RAW,compresslevel=3)
 SHA=hashlib.sha256(RAW).hexdigest()
 assert len(WIRE)>262144
 
+def linux_proc_memory_kib():
+    # Read Linux /proc rather than treating inherited ru_maxrss as uniquely
+    # attributable process RSS. Measured while each PID is alive.
+    result={}
+    with open("/proc/self/status",encoding="utf-8") as stream:
+        for line in stream:
+            if line.startswith(("VmRSS:","VmHWM:")):
+                key,val=line.split(":",1)
+                result[key+"_KiB"]=int(val.strip().split()[0])
+    assert result.get("VmRSS_KiB",0)>0 and result.get("VmHWM_KiB",0)>0
+    return result
 class Pool:
     def __init__(self,name,n):
         self.name=name;self.n=n;self.q=queue.LifoQueue(n);self.mu=threading.Lock()
@@ -71,6 +82,7 @@ class State:
         return {"worker":IDENT,"metrics":data,"proxy_pool":self.proxy_pool.stats(),
                 "origin_pool":self.origin_pool.stats(),"route_port":self.route_port,
                 "rss_kib":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
+                "linux_proc_memory":linux_proc_memory_kib(),
                 "proc_pid":os.getpid(),
                 "sql_guard_count":data.get("gate_sql",0)+data.get("membership_sql",0),
                 "process_wall_skew_seconds":WALL_OFFSET,
