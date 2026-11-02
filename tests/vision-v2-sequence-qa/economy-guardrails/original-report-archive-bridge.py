@@ -46,15 +46,15 @@ def source_extra(c,n=10_000,tvs=300):
  c.execute("""INSERT INTO qa_commercial.playback(
  company_id,device_id,seq,client_event_id,campaign_id,playlist_id,media_id,
  device_name,campaign_name,playlist_name,media_name,started_at,play_day,seconds,completed,hash_sha256)
- SELECT CASE WHEN g%2=0 THEN 'company-A' ELSE 'company-B' END,
- 'new-tv-' || lpad((g% """+str(tvs)+""")::text,4,'0'),
+ SELECT CASE WHEN g%%2=0 THEN 'company-A' ELSE 'company-B' END,
+ 'new-tv-' || lpad((g%% """+str(tvs)+""")::text,4,'0'),
  100000+g, 'arch-event-'||g,
- 'camp-'||(g%3), 'playlist-'||(g%4), 'media-'||(g%5),
- CASE WHEN g%7=0 THEN 'TV nome antigo' ELSE 'TV nome atual' END,
- CASE WHEN g%11=0 THEN 'Campanha anterior' ELSE 'Campanha atual' END,
+ 'camp-'||(g%%3), 'playlist-'||(g%%4), 'media-'||(g%%5),
+ CASE WHEN g%%7=0 THEN 'TV nome antigo' ELSE 'TV nome atual' END,
+ CASE WHEN g%%11=0 THEN 'Campanha anterior' ELSE 'Campanha atual' END,
  'Playlist retrospectiva','Mídia histórica',
- '2026-10-31T10:00:00Z'::timestamptz + (g%3)*interval '1 day' + (g%3600)*interval '1 second',
- DATE '2026-10-31'+(g%3), 15+(g%4), g%7<>0,
+ '2026-10-31T10:00:00Z'::timestamptz + (g%%3)*interval '1 day' + (g%%3600)*interval '1 second',
+ DATE '2026-10-31'+(g%%3), 15+(g%%4), g%%7<>0,
  md5('synthetic-archive-'||g)
  FROM generate_series(1,%s) AS g""",(n,))
 def rebuild_daily(c):
