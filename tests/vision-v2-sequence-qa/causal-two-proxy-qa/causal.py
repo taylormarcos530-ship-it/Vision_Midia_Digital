@@ -4,7 +4,7 @@ Proxy coordination uses one real PostgreSQL gate, NOT shared Python gate state.
 No official credentials, endpoints, Supabase, TVs, APKs, or production data.
 """
 from __future__ import annotations
-import contextlib,gzip,hashlib,http.client,json,os,queue,resource,socket,statistics,threading,time
+import contextlib,gzip,hashlib,http.client,json,os,queue,resource,socket,struct,statistics,threading,time
 from collections import Counter
 from concurrent.futures import ThreadPoolExecutor
 from http.server import BaseHTTPRequestHandler,ThreadingHTTPServer
@@ -59,7 +59,8 @@ def update_gate(enabled):
             db.execute("SELECT pg_advisory_xact_lock(%s)",(LOCK_GATE,))
             db.execute("UPDATE qa_causal_gate SET enabled=%s,epoch=epoch+1 WHERE id=1",(enabled,))
 class Pool:
-    def __init__(self,n):
+    def __init__(self,n,name):
+        self.name=name;self.capacity=n
         self.q=queue.LifoQueue(n);self.mu=threading.Lock();self.borrows=0;self.peak=0;self.active=0
         for _ in range(n):self.q.put(pg())
     @contextlib.contextmanager
@@ -74,7 +75,8 @@ class Pool:
     def close(self):
         while not self.q.empty():self.q.get_nowait().close()
     def stats(self):
-        return dict(created=POOL,borrowed=self.borrows,peak=self.peak)
+        return dict(name=self.name,created=self.capacity,borrowed=self.borrows,peak=self.peak,active=self.active,
+                    backend_pids=sorted(conn.info.backend_pid for conn in list(self.q.queue)))
 class Counters:
     def __init__(self):
         self.lock=threading.Lock();self.count=Counter()
@@ -82,10 +84,19 @@ class Counters:
         with self.lock:self.count[key]+=n
     def snapshot(self):
         with self.lock:return dict(self.count)
-POOL_SQL=Pool(POOL)
+# No shared SQL connection pool between the origin or the two HTTP proxies.
+# Total connections still sum to the originally requested pool budget.
+UPS_CAP=POOL//2
+PR1_CAP=(POOL-UPS_CAP)//2
+PR2_CAP=POOL-UPS_CAP-PR1_CAP
+UPSTREAM_SQL=Pool(UPS_CAP,"origin")
+PROXY_SQL=[Pool(PR1_CAP,"proxy_0"),Pool(PR2_CAP,"proxy_1")]
+ALL_SQL_POOLS=[UPSTREAM_SQL,*PROXY_SQL]
+assert sum(p.capacity for p in ALL_SQL_POOLS)==POOL
+assert len({pid for p in ALL_SQL_POOLS for pid in p.stats()["backend_pids"]})==POOL
 MET=Counters()
 def sql_allowed():
-    with POOL_SQL.borrow() as db:
+    with UPSTREAM_SQL.borrow() as db:
         with db.transaction():
             db.execute("SET LOCAL ROLE qa_causal_reader")
             db.execute("SELECT set_config('qa.tenant','synthetic-tenant',true)")
@@ -93,8 +104,8 @@ def sql_allowed():
             row=db.execute("SELECT permitted FROM qa_causal_membership WHERE tenant='synthetic-tenant'").fetchone()
             MET.add("membership_guards")
             return row is not None
-def route_allowed():
-    with POOL_SQL.borrow() as db:
+def route_allowed(pool):
+    with pool.borrow() as db:
         with db.transaction():
             db.execute("SET LOCAL ROLE qa_causal_reader")
             db.execute("SELECT pg_advisory_xact_lock_shared(%s)",(LOCK_GATE,))
@@ -127,6 +138,12 @@ class Upstream(Quiet):
             self.respond(401,"revoked_401");return
         if self.path=="/upstream503":
             self.respond(503,"upstream_http");return
+        if self.path=="/reset":
+            MET.add("upstream_reset_injected")
+            self.close_connection=True
+            self.connection.setsockopt(socket.SOL_SOCKET,socket.SO_LINGER,struct.pack("ii",1,0))
+            self.connection.close()
+            return
         if self.path=="/timeout":
             time.sleep(.6);self.respond(503,"too_late");return
         self.send_response(200)
@@ -134,6 +151,16 @@ class Upstream(Quiet):
         self.send_header("Content-Encoding","gzip")
         self.send_header("X-QA-SHA256",SHA)
         self.end_headers()
+        if self.path=="/halfopen":
+            # Advertised 200, a real partial chunk, then no further write
+            # until AFTER the proxy's shorter monotonic network deadline.
+            self.wfile.write(WIRE[:7000]);self.wfile.flush()
+            MET.add("upstream_body_written",7000)
+            time.sleep(.6)
+            self.close_connection=True
+            try:self.connection.shutdown(socket.SHUT_WR)
+            except OSError:pass
+            return
         if self.path=="/truncate":
             self.wfile.write(WIRE[:7000]);self.wfile.flush()
             MET.add("upstream_body_written",7000)
@@ -144,7 +171,7 @@ class Upstream(Quiet):
         try:
             for i in range(0,len(WIRE),CHUNK):
                 # One DB transaction and authorization fence PER CHUNK.
-                with POOL_SQL.borrow() as db:
+                with UPSTREAM_SQL.borrow() as db:
                     with db.transaction():
                         db.execute("SET LOCAL ROLE qa_causal_reader")
                         db.execute("SELECT set_config('qa.tenant','synthetic-tenant',true)")
@@ -170,20 +197,24 @@ class Proxy(Quiet):
         MET.add("proxy_attempts")
         if self.path=="/proxy503":
             MET.add("proxy_local");self.respond(503,"proxy_local");return
-        if not route_allowed():
+        if not route_allowed(self.server.sql_pool):
             MET.add("proxy_gate");self.respond(503,"proxy_gate");return
         rq=request.Request(self.server.upstream+self.path,
                            headers={"X-QA-Token":self.headers.get("X-QA-Token","")})
         code=None;body=b"";headers=None
         try:
-            with request.urlopen(rq,timeout=.15 if self.path=="/timeout" else 12) as upstream:
+            with request.urlopen(rq,timeout=.15 if self.path in ("/timeout","/halfopen") else 12) as upstream:
                 body=upstream.read();code=upstream.status;headers=upstream.headers
         except error.HTTPError as ex:
             code=ex.code;body=ex.read();headers=ex.headers
         except (TimeoutError,socket.timeout) as ex:
             MET.add("upstream_timeout");self.respond(503,"upstream_timeout");return
         except http.client.IncompleteRead as ex:
-            MET.add("upstream_incomplete");self.respond(503,"upstream_incomplete");return
+            MET.add("upstream_incomplete")
+            MET.add("discarded_upstream_partial_bytes",len(ex.partial))
+            self.respond(503,"upstream_incomplete");return
+        except (ConnectionResetError,BrokenPipeError,http.client.RemoteDisconnected) as ex:
+            MET.add("upstream_reset");self.respond(503,"upstream_reset");return
         except (error.URLError,ConnectionError,OSError) as ex:
             MET.add("other_upstream_exception");self.respond(503,"unexpected_upstream_exception");return
         if code==401:
@@ -222,7 +253,9 @@ def get(node,path,token="synthetic-valid"):
         ck(cause=="ok","success_cause_mismatch")
     else:
         ck(not payload,("error_body_unexpected",cause,len(payload)))
-    with LEDGER_MU:LEDGER.append(result)
+    with LEDGER_MU:
+        result["ledger_id"]=len(LEDGER)+1
+        LEDGER.append(result)
     return result
 def expect(node,path,status,cause,token="synthetic-valid"):
     x=get(node,path,token)
@@ -233,7 +266,9 @@ def main():
     upstream.first_block=threading.Event()
     upstream.release_block=threading.Event()
     nodes=[start(Proxy),start(Proxy)]
-    for server,_ in nodes:server.upstream="http://127.0.0.1:"+str(upstream.server_address[1])
+    for index,(server,_) in enumerate(nodes):
+        server.upstream="http://127.0.0.1:"+str(upstream.server_address[1])
+        server.sql_pool=PROXY_SQL[index]
     try:
         def wave(i):
             return get(nodes[i%2][0],"/normal")
@@ -279,7 +314,13 @@ def main():
         ck(stats.get("upstream_timeout")==2 and stats.get("upstream_http503")==2,"cause_telemetry")
         ck(stats.get("proxy_local")==2 and stats.get("proxy_gate")==2,"proxy_telemetry")
         ck(stats.get("aborted_after_revoke")==1,"revocation_chunk_not_enforced")
-        ck(POOL_SQL.stats()["peak"]<=POOL,"pool_capacity_violated")
+        ck(all(p.stats()["peak"]<=p.capacity for p in ALL_SQL_POOLS),"pool_capacity_violated")
+        ck(all(p.stats()["active"]==0 for p in ALL_SQL_POOLS),"borrowed_connection_leaked")
+        ck({row["ledger_id"] for row in LEDGER}==set(range(1,len(LEDGER)+1)),"ledger_ids_gapped")
+        ck(stats.get("proxy_attempts")==len(LEDGER),"proxy_attempt_count_mismatch")
+        ck(stats.get("upstream_attempts")==len(LEDGER)-stats.get("proxy_local",0)-stats.get("proxy_gate",0),
+           "proxy_to_upstream_attempt_gap")
+        ck(stats.get("discarded_upstream_partial_bytes",0)>=21000,"missing_discarded_partial_accounting")
         summary={"status":"PASS","clients":N,"pool":POOL,"chunk_bytes":CHUNK,
             "http_proxy_instances":2,"upstream_instances":1,"actual_http_sockets":True,
             "one_python_process":True,"shared_coordinator":"local disposable PostgreSQL17",
@@ -295,7 +336,11 @@ def main():
             "SQL_membership_guards":stats.get("membership_guards",0),
             "WAL_bytes_after_fixture":int(wal),"db_bytes":dbbytes,"membership_index_bytes":idx,
             "RSS_runner_Python_KiB":resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
-            "pool_stats":POOL_SQL.stats(),"upstream_incomplete":stats.get("upstream_incomplete"),
+            "pool_stats":{"total_capacity":POOL,"separate":True,"instances":[p.stats() for p in ALL_SQL_POOLS]},
+            "discarded_upstream_partial_bytes":stats.get("discarded_upstream_partial_bytes",0),
+            "upstream_attempts":stats.get("upstream_attempts",0),
+            "proxy_attempts":stats.get("proxy_attempts",0),
+            "upstream_incomplete":stats.get("upstream_incomplete"),
             "proxy_local":stats.get("proxy_local"),"proxy_gate":stats.get("proxy_gate"),
             "upstream_http503":stats.get("upstream_http503"),"upstream_timeout":stats.get("upstream_timeout"),
             "upstream_bytes_written":stats.get("upstream_body_written",0),
@@ -312,6 +357,6 @@ def main():
         upstream.release_block.set()
         for server,t in nodes+[(upstream,ut)]:
             server.shutdown();server.server_close();t.join(5)
-        POOL_SQL.close()
+        for pool in ALL_SQL_POOLS:pool.close()
 if __name__=="__main__":main()
 
