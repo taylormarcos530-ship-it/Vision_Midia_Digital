@@ -58,5 +58,6 @@ jobs:
             qa-iphone-webkit-results.json
             qa-iphone-webkit.log
             qa-iphone-server.log
+            qa-iphone-screens/
           if-no-files-found: warn
           retention-days: 14
