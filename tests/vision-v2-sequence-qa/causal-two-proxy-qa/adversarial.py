@@ -144,6 +144,13 @@ def main():
         ck(snapshot.get("aborted_after_revoke")==1,"revocation_authorization_not_checked_per_chunk")
         ck(snapshot.get("upstream_body_written",0)>0,"no_real_socket_bytes_written")
         ck(sum(x["upstream_discarded_bytes"] for x in ledger)==snapshot.get("discarded_upstream_partial_bytes",0),"incomplete_byte_ledger")
+        # Two real half-open sockets each emitted 7000 bytes before timing
+        # out. The revoked midstream 200 wrote one full CHUNK. All three
+        # discarded partials must be in their own GET ledger records.
+        ck(snapshot.get("discarded_upstream_partial_bytes",0)==c.CHUNK+14000,
+           ("halfopen_or_revoke_partial_bytes_lost",snapshot.get("discarded_upstream_partial_bytes",0),c.CHUNK))
+        ck(sum(x["upstream_discarded_bytes"]==7000 for x in ledger if x["cause"]=="upstream_timeout")==2,
+           "per_request_halfopen_bytes_not_recorded")
         ck(all(x["body_bytes"]==0 for x in ledger if x["status"]!=200),"incomplete_200_accepted")
         ck(all(x["body_bytes"]==len(c.WIRE) for x in ledger if x["status"]==200),"complete_200_miscounted")
         ck(all(x["upstream_discarded_bytes"]==0 for x in ledger if x["status"]==200),"complete_body_misclassified")
