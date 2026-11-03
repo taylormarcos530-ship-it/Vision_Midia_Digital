@@ -125,7 +125,8 @@ async def negative_auth(port,ctx):
 async def run(tvs,cert,key):
  check_env()
  t0=time.monotonic()
- shards=max(2,math.ceil(tvs/175))
+ # N+1 redundancy: all TVs must still fit with one whole instance SIGKILLed.
+ shards=max(2,math.ceil(tvs/175)+1)
  assert shards>=2
  ports=list(range(19950,19950+shards))
  ctx=ssl.create_default_context(cafile=cert)
