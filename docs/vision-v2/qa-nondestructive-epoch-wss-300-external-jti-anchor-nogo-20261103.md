@@ -18,6 +18,14 @@
 
 **Historical intermediate CI failures preserved:** [41699758721](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41699758721) due to incorrectly escaped workflow matrix fields, [41699807708](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41699807708) due to using `Connection.executemany` instead of `cursor.executemany`, and [41699972502](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41699972502) passed but had an incorrect P95/P99 interpolation function; corrected and independently rerun [41700208749](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41700208749). An earlier external anchor workflow [41700443868](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41700443868) used missing environment field names; corrected and rerun [41700468100](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41700468100). These harness faults are NOT counted as security passes.
 
+## Final regressions rerun after all new changes
+
+The last independent CI run completed [41700677750](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41700677750) **7/7 PASS**: WSS original TLS/Redis7/PostgreSQL17 capacity matrices **100/300/600/1000 TVs**, Node20 and Node22 each **46/46 tests PASS**, and original synthetic **10,090** AES-GCM receipts reconstructed with **200 group comparisons** and SHA-256 **exactly** `161ef8434e8b718b74c77cadd7501e853eff5fb6c62ae7c48b7ded7ad6923d18`. The unchanged original gateway is what this run tests: NOT a 1,000-TVs scalability claim for the NEW extra-per-heartbeat central authority candidate.
+
+Another independent [41700686492](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41700686492) completed **4/4 PASS** on the original block-fence HTTP protocol: 100/300 GETs, 64/256 KiB, FIN/RST/half-open, real SIGKILL and response-length/SHA rejection of truncated HTTP 200. This is an isolated baseline and does not prove physical TCP delivery cutoff.
+
+**Explicit gates still FAIL**: legacy reader bypass of the new epoch, full rollback of canonical JTI/owner authority, two separate anchor split brain, and genuine multi-host worst-case 750ms revocation/ACK delivery.
+
 ## 1. Non-destructive alternative while 100/300 old lock holders remain alive
 
 Test fixture creates original `qa_mproc_gate` and 100/300 separate, actual PG17 backend transactions each holding `pg_advisory_xact_lock_shared` with verifiable distinct PIDs in `pg_locks`, in two real holder OS processes. It adds a **disjoint** `qa_nd_fence(enabled,epoch)` row independent of the original advisory lock. HTTP candidate worker copies (never production) check `SELECT enabled,epoch ... FOR SHARE` on each bounded chunk. A new writer updates this row in a regular transaction and COMMIT; the original 100/300 locks stay granted. No SIGKILL required.
