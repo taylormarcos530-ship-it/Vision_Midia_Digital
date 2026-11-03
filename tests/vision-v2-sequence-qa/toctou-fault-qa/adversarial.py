@@ -35,7 +35,7 @@ def try_close(timeout_ms):
     try:
         with p.con() as c:
             with c.transaction():
-                c.execute("SET LOCAL lock_timeout=%s",(str(timeout_ms)+"ms",))
+                c.execute("SELECT set_config('lock_timeout',%s,true)",(str(timeout_ms)+"ms",))
                 c.execute("SELECT pg_advisory_xact_lock(%s)",(p.LOCK_GATE,))
                 c.execute("UPDATE qa_mproc_gate SET enabled=false,epoch=epoch+1 WHERE id=1")
         return dict(committed=True,elapsed_ms=(time.monotonic()-start)*1000)
@@ -60,7 +60,7 @@ def abort_sock(s):
     except OSError:pass
     s.close()
 def main():
-    p.setup();w=[p.Child(0),p.Child(1)]
+    started=time.monotonic();p.setup();w=[p.Child(0),p.Child(1)]
     summary=dict(QA_expected_failure="FAIL_REPRODUCED",production_GO=False,
         original_positive_suite_unchanged=True,redis_not_used_in_pg_fault_job=True,
         pool=int(os.environ["QA_POOL"]),chunk=int(os.environ["QA_CHUNK"]),
@@ -148,7 +148,7 @@ def main():
             crashed_client_result=str(response),remaining_proxy_HTTP503=True)
         summary["security_verdict"]="FAIL_NO_GO_BOUNDED_REVOCATION"
         summary["CI_validation_passes_only_if_security_failure_is_reproduced"]=True
-        summary["total_seconds"]=round(time.monotonic()-start,3) if (start:=time.monotonic()) else None
+        summary["total_seconds"]=round(time.monotonic()-started,3)
         Path("qa-v2-pg-adversarial.json").write_text(json.dumps(summary,indent=2,sort_keys=True))
         print("QA_PG_ADVERSARIAL_JSON="+json.dumps(summary,sort_keys=True),flush=True)
     finally:
