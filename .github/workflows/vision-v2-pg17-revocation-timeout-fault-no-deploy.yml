@@ -1,0 +1,87 @@
+name: Vision V2 PG17 Revocation Deadline Negative TCP SIGKILL NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/toctou-fault-qa/**'
+      - 'tests/vision-v2-sequence-qa/toctou-continuous-qa/**'
+      - '.github/workflows/vision-v2-pg17-revocation-timeout-fault-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  pg-revocation-negative:
+    name: PG17 real TCP fault and bounded revocation p${{ matrix.pool }} c${{ matrix.chunk }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {pool: 8, chunk: 65536}
+          - {pool: 12, chunk: 262144}
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Prove isolated ref and no official credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'QA_ONLY=1 PRODUCTION_NO_GO=1 DRAIN_DISABLED=1'
+      - run: python -m pip install 'psycopg[binary]==3.2.6'
+      - name: Syntax check independent negative tests
+        run: |
+          python -m py_compile tests/vision-v2-sequence-qa/toctou-fault-qa/adversarial.py
+          python -m py_compile tests/vision-v2-sequence-qa/toctou-continuous-qa/worker.py
+      - name: Reproduce bounded-revocation failure and actual TCP failure modes
+        env:
+          QA_TVS: '100'
+          QA_POOL: ${{ matrix.pool }}
+          QA_CHUNK: ${{ matrix.chunk }}
+          QA_STREAM_GUARD_GROUP: '1'
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/toctou-fault-qa/adversarial.py | tee qa-pg17-revocation-fault.log
+      - name: Fail if reproduced vulnerability is wrongly called secure
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open("qa-v2-pg-adversarial.json"))
+          assert x["production_GO"] is False
+          assert x["security_verdict"]=="FAIL_NO_GO_BOUNDED_REVOCATION"
+          assert x["stalled_gate_writer"]["gate_still_open_after_timeout"] is True
+          assert x["slow_tcp_reader"]["status"]=="SECURITY_FAIL_REVOKE_WAIT_EXCEEDS_750MS"
+          assert x["SIGKILL_during_shared_lock"]["writer_committed"] is True
+          assert x["FIN_RST_halfopen"]["observed_503"]==6
+          print("QA_REPRODUCTION_PASS=true SECURITY_VERDICT=FAIL_NO_GO")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pg17-negative-p${{ matrix.pool }}-c${{ matrix.chunk }}
+          path: |
+            qa-pg17-revocation-fault.log
+            qa-v2-pg-adversarial.json
+          retention-days: 14
