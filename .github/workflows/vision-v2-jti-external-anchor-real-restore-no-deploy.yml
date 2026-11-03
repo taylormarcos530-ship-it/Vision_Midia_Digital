@@ -105,7 +105,9 @@ jobs:
           QA_STREAM_GUARD_GROUP: '1'
           QA_CERT: qa-restore-certs/local.pem
           QA_KEY: qa-restore-certs/local.key
-          QA_WITNESS_CONTAINER: ${{ job.services.postgres_witness.id }}
+          QA_PRIMARY_CONTAINER: ${{ job.services.postgres_witness.id }}
+          QA_SECONDARY_CONTAINER: ${{ job.services.postgres_shadow.id }}
+          QA_ANCHOR_CONTAINER: ${{ job.services.postgres_anchor.id }}
           QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
         run: |
           set -euo pipefail
