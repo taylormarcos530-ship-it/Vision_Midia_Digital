@@ -125,7 +125,7 @@ def patch(dsn,redisport,destination):
  old_ack="await ws.send(json.dumps({'type':'heartbeat_ack','seq':seq,'command':json.loads(cmd) if cmd else None}))"
  assert fragment.count(old_ack)==1
  fragment=fragment.replace(old_ack,
-    "await asyncio.wait_for(ws.send(json.dumps({'type':'heartbeat_ack','seq':seq,'command':json.loads(cmd) if cmd else None})),timeout=.150)\\n"
+    "await asyncio.wait_for(ws.send(json.dumps({'type':'heartbeat_ack','seq':seq,'command':json.loads(cmd) if cmd else None})),timeout=.150)\n"
     "     if n==77:await asyncio.sleep(.12)")
  wrapped="".join("  "+line if line.strip() else line for line in fragment.splitlines(keepends=True))
  fenced="""    async with self.authpool.connection(timeout=2) as authority:
