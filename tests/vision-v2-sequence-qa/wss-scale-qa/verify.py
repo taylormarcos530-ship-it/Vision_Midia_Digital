@@ -19,12 +19,17 @@ class Client:
   self.ws=None;self.nonce=None;self.session=None;self.seq=0
   self.read_lock=asyncio.Lock();self.last_active=time.monotonic()
   self.up=True
+  self.sent_bytes=0;self.received_bytes=0
  async def open(self,slot=None,timeout=20):
   slot=self.idx if slot is None else slot
   ws=await asyncio.wait_for(connect('wss://localhost:'+str(self.ports[slot]),ssl=self.sslctx,
    max_size=2048,ping_interval=None,open_timeout=12,close_timeout=1),timeout)
-  await ws.send(json.dumps({'type':'auth','token':token(self.tenant,self.device)},separators=(',',':')))
-  reply=json.loads(await asyncio.wait_for(ws.recv(),timeout=timeout))
+  auth=json.dumps({'type':'auth','token':token(self.tenant,self.device)},separators=(',',':'))
+  self.sent_bytes+=len(auth.encode())
+  await ws.send(auth)
+  payload=await asyncio.wait_for(ws.recv(),timeout=timeout)
+  self.received_bytes+=len(payload.encode())
+  reply=json.loads(payload)
   assert reply['type']=='ready',(self.device,reply)
   assert reply['protocol']=='vision.presence.v1'
   self.ws=ws;self.nonce=reply['nonce'];self.session=reply['session'];self.seq=0
@@ -34,8 +39,12 @@ class Client:
   async with self.read_lock:
    if not self.up:return None
    try:
-    await self.ws.send(json.dumps(frame,separators=(',',':')))
-    resp=json.loads(await asyncio.wait_for(self.ws.recv(),timeout=timeout))
+    payload=json.dumps(frame,separators=(',',':'))
+    self.sent_bytes+=len(payload.encode())
+    await self.ws.send(payload)
+    response=await asyncio.wait_for(self.ws.recv(),timeout=timeout)
+    self.received_bytes+=len(response.encode())
+    resp=json.loads(response)
     self.last_active=time.monotonic()
     return resp
    except (ConnectionClosed,ConnectionResetError,TimeoutError,OSError):
@@ -48,8 +57,12 @@ class Client:
     seq=self.seq+1
     frame={'type':'heartbeat','seq':seq,'nonce':self.nonce}
     start=time.perf_counter_ns()
-    await self.ws.send(json.dumps(frame,separators=(',',':')))
-    response=json.loads(await asyncio.wait_for(self.ws.recv(),timeout=15))
+    payload=json.dumps(frame,separators=(',',':'))
+    self.sent_bytes+=len(payload.encode())
+    await self.ws.send(payload)
+    reply=await asyncio.wait_for(self.ws.recv(),timeout=15)
+    self.received_bytes+=len(reply.encode())
+    response=json.loads(reply)
     if response.get('type')!='heartbeat_ack' or response.get('seq')!=seq:
      raise AssertionError((self.device,response))
     self.seq=seq;self.last_active=time.monotonic()
@@ -153,6 +166,7 @@ async def run(tvs,cert,key):
  try:
   await asyncio.gather(*(wait_ready(port,proc) for port,proc in zip(ports,processes)))
   neg=await negative_auth(ports[0],ctx)
+  redis_commands_start=int((await redis.info('stats')).get('total_commands_processed',0))
   count_before=psycopg.connect(DSN,autocommit=True)
   wal0=count_before.execute('SELECT pg_current_wal_insert_lsn()').fetchone()[0]
   count_before.close()
@@ -228,7 +242,18 @@ async def run(tvs,cert,key):
    relation_bytes=c.execute("SELECT pg_total_relation_size('qa_wss.status')").fetchone()[0]
   # Quota accounting uses measured application payload sizes, not invented TLS
   # network-wire egress, which cannot be measured here.
-  bytes_user_sent=round(sum((c.seq)*80 for c in clients))
+  bytes_user_sent=sum(c.sent_bytes for c in clients)
+  bytes_user_recv=sum(c.received_bytes for c in clients)
+  redis_commands_delta=int((await redis.info('stats')).get('total_commands_processed',0))-redis_commands_start
+  per_gateway_rss=[]
+  for i,p in enumerate(processes):
+   if p.returncode is not None:continue
+   status=Path('/proc')/str(p.pid)/'status'
+   values={}
+   for line in status.read_text().splitlines():
+    if line.startswith(('VmRSS:','VmHWM:')):
+     k,v=line.split(':',1);values[k]=int(v.strip().split()[0])
+   per_gateway_rss.append({'shard':i,'pid':p.pid,**values})
   # Actual SQL status transitions (connect/disconnect) are not heartbeat writes.
   response={'result':'PASS_DISPOSABLE_WSS_QA_ONLY','tvs':tvs,'instances':shards,
    'transport':'WSS over TLS1.2+ with trusted temporary self-signed cert',
@@ -244,7 +269,9 @@ async def run(tvs,cert,key):
    'wal_bytes':wal_bytes,'sql_status_relation_bytes':relation_bytes,
    'p95_heartbeat_rtt_ms':percentile(lat,95),'p99_heartbeat_rtt_ms':percentile(lat,99),
    'latency_samples':len(lat),'estimated_application_send_bytes':bytes_user_sent,
-   'actual_wire_egress_measured':False,'edge_invocations_for_heartbeat':0,
+   'actual_application_ingress_bytes':bytes_user_sent,'actual_application_egress_bytes':bytes_user_recv,
+   'redis_commands_processed_delta':redis_commands_delta,'survivor_gateway_process_memory_KiB':per_gateway_rss,
+   'actual_TLS_ciphertext_and_frame_overhead_measured':False,'edge_invocations_for_heartbeat':0,
    'supabase_realtime_messages_sent':0,'PG_reader_RLS_tenant_isolation':'PASS',
    'rss_controller_KiB':resource.getrusage(resource.RUSAGE_SELF).ru_maxrss,
    'elapsed_s':round(time.monotonic()-t0,3),'remaining_security_FAIL':['TOCTOU_gate_unresolved',
