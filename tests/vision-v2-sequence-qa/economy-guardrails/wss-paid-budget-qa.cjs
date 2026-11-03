@@ -32,6 +32,7 @@ function compute(tvs,{hours=24,interval=HB,protocol='vision.presence.v1'}={}){
   encryptedProofFilesGBLinearEstimate:+fileGB.toFixed(4),
   forecastWithinProStorageIncludedIfNoOtherStorage:fileGB<=PRO.storageGBIncluded,
   gatewayMinShardsWithHeadroom:capacity.capacity.requiredGatewayShards,
+  gatewayMinShardsNplusOne:Math.max(2,capacity.capacity.requiredGatewayShards+1),
   proRealtimePeakIncludedWouldFit:tvs<=PRO.realtimePeakIncluded,
   freeRealtimePeakIncludedWouldFit:tvs<=FREE.realtimePeakIncluded,
   gatewayHostedElsewhere:true,gatewayHostingUSD:null,
@@ -43,6 +44,9 @@ const results=[100,300,600,1000,3000].map(tvs=>compute(tvs));
 for(const r of results){
  assert.equal(r.archiveUploadEdgeCalls,r.tvs*720);
  assert(r.gatewayMinShardsWithHeadroom>=Math.ceil(r.tvs/175));
+ assert.equal(r.gatewayMinShardsNplusOne,Math.max(2,Math.ceil(r.tvs/175)+1));
+ assert((r.gatewayMinShardsNplusOne-1)*250>=r.tvs,
+  'N+1 survivors could not accommodate all TVs');
  assert(r.heartbeats>0 && r.proofs>0);
  assert(r.billingApproved===false && r.securityApproved===false);
  assert.equal(r.wireProtocol,'vision.presence.v1');
