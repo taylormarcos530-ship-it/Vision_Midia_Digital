@@ -141,6 +141,7 @@ def main():
    msg=json.loads(line);cmd=msg["cmd"]
    if cmd=="stats":res=dict(type="STATS",metrics=S.snapshot())
    elif cmd=="resume":S.pause.set();res=dict(type="ACK")
+   elif cmd=="reset_pause":S.pause.clear();res=dict(type="ACK")
    elif cmd=="stop":print(json.dumps(dict(type="ACK")),flush=True);break
    else:res=dict(type="ERROR",cmd=cmd)
    print(json.dumps(res),flush=True)
