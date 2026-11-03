@@ -36,6 +36,7 @@ def verify(raw):
   assert body.get('iat',0)<=now and body.get('exp',0)-now<=3600
   assert body.get('company') in ['company-A','company-B']
   assert isinstance(body.get('device'),str) and body['device'].startswith('tv-')
+  assert isinstance(body.get('jti'),str) and len(body['jti'])>=24
   return body
  except Exception:raise PermissionError('UNAUTHENTICATED') from None
 REFRESH="""if redis.call('GET',KEYS[1]) == ARGV[1] then
@@ -90,6 +91,11 @@ class Gateway:
    owner=await self.redis.hget('qa:owners',device)
    if owner!=tenant:raise PermissionError('TENANT_MISMATCH')
    if len(self.active)>=self.max_connections:raise PermissionError('CAPACITY_EXHAUSTED')
+   # Consume JWT jti once per expiry, atomically across every gateway. A reused
+   # bearer credential is rejected instead of replacing another TV session.
+   ttl=max(1,int(claims['exp'])-int(time.time()))
+   accepted=await self.redis.set('qa:spent-jti:'+claims['jti'],'1',ex=ttl,nx=True)
+   if not accepted:raise PermissionError('JWT_REPLAY')
    lease=secrets.token_hex(18)
    await self.redis.set(self.key(tenant,device),lease,px=HEARTBEAT_TTL_MS)
    await self.update_status(tenant,device,lease,True)
