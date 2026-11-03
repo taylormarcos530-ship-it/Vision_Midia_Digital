@@ -1,0 +1,98 @@
+name: Vision V2 Global JTI PG17 Candidate Independent No Deploy
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/redis-wss-fault-qa/postgres-jti-candidate.py'
+      - '.github/workflows/vision-v2-global-jti-pg17-candidate-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  global-jti-candidate:
+    name: PostgreSQL17 JTI fence with 2 Redis7 authorities and joint rollback
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_primary:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_secondary:
+        image: redis:7.4-alpine
+        ports: [6380:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refuse all official interfaces
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'NO_DEPLOY=1 JOINT_ROLLBACK_EXPECTED_FAIL=1'
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
+      - name: Prepare ephemeral TLS
+        run: |
+          set -euo pipefail
+          mkdir -p qa-auth-certs
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout qa-auth-certs/local.key -out qa-auth-certs/local.pem \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          chmod 600 qa-auth-certs/local.key
+      - name: Assert syntax and execute single shared PostgreSQL JTI authority
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+          QA_CERT: qa-auth-certs/local.pem
+          QA_KEY: qa-auth-certs/local.key
+          QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/redis-wss-fault-qa/postgres-jti-candidate.py
+          python -u tests/vision-v2-sequence-qa/redis-wss-fault-qa/postgres-jti-candidate.py | tee qa-pg17-jti-candidate.log
+      - name: Verify both local FIX and joint rollback FAIL
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open('qa-v2-pg-auth-jti-candidate.json'))
+          assert x['production_GO'] is False
+          assert x['cross_Redis_replay_candidate']['exactly_one_of_two_concurrent_auths_accepted']
+          assert x['Redis_only_rollback']['reused_JTI_rejected_after_volatile_state_loss']
+          assert x['authority_table_unavailable']['authentication_rejected_without_SQL_authority']
+          assert x['joint_SQL_Redis_rollback']['same_JTI_accepted_after_both_authorities_rolled_back']
+          assert x['security_verdict']=='NO_GO_JOINT_ROLLBACK_AND_REAL_IDENTITY_UNPROVEN'
+          print('LOCAL_CANDIDATE_PASS=true JOINT_ROLLBACK_SECURITY_FAIL=true PRODUCTION_NO_GO=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pg17-global-jti-candidate-with-negative
+          path: |
+            qa-pg17-jti-candidate.log
+            qa-v2-pg-auth-jti-candidate.json
+          retention-days: 14
