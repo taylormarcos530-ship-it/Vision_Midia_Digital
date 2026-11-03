@@ -56,6 +56,7 @@ def patch_source(dest):
  dest.write_text(source)
  import py_compile;py_compile.compile(str(dest),doraise=True)
 def slow_open(port):
+ began=time.monotonic()
  s=socket.socket()
  s.setsockopt(socket.SOL_SOCKET,socket.SO_RCVBUF,1024)
  s.settimeout(22)
@@ -71,12 +72,12 @@ def slow_open(port):
   before,_,body=head.partition(b"\r\n\r\n")
   check(b"HTTP/1.1 200" in before,("expected status 200",before[:100]))
   check(b"X-QA-SHA256:" in before, "missing SHA advertised")
-  return s,body
+  return s,body,round((time.monotonic()-began)*1000,3),began
  except Exception:
   s.close()
   raise
 def receive_rest(pair):
- s,initial=pair;data=bytearray(initial);event=None
+ s,initial,header_ms,began=pair;data=bytearray(initial);event=None
  try:
   s.settimeout(3)
   while True:
@@ -87,7 +88,7 @@ def receive_rest(pair):
    data.extend(chunk)
    if len(data)>1024*1024:raise AssertionError("unexpected excess bytes")
  finally:s.close()
- return dict(bytes=len(data),transport=event)
+ return dict(bytes=len(data),transport=event,total_ms=round((time.monotonic()-began)*1000,3))
 def cleanup(pair):
  try:
   s=pair[0]
@@ -152,6 +153,10 @@ def run_burst(workers,n,mode):
    started_while_gate_open=True,all_HTTP_200_headers=True,
    max_worker_RSS_KiB=max_rss,
    header_setup_ms=round(setup_ms,3),
+   header_p95_ms=qa.base.pct([p[2] for p in pairs],.95),
+   header_p99_ms=qa.base.pct([p[2] for p in pairs],.99),
+   body_cutoff_p95_ms=qa.base.pct([x['total_ms'] for x in tails],.95),
+   body_cutoff_p99_ms=qa.base.pct([x['total_ms'] for x in tails],.99),
    close_commit_ms=closed["ms"],within_750ms=closed["ms"]<750,
    response_tail_bytes_total=sum(x["bytes"] for x in tails),
    complete_report_count_after_commit=sum(x["bytes"]>=a.meta["gzip_bytes"] for x in tails),
@@ -163,6 +168,7 @@ def run_burst(workers,n,mode):
    pg_baseline=startpg,pg_at_commit=pg_after_commit,
    pg_WAL_delta_bytes_until_COMMIT=wal_delta(startpg,pg_after_commit),
    PG_database_stats_delta=[pg_after_commit["db_stats"][i]-startpg["db_stats"][i] for i in range(6)],
+   estimated_SQL_execute_lower_bound=6*sum(after[i].get('gate_reads',0)-before[i].get('gate_reads',0) for i in range(2)),
    previous_200_bytes_may_arrive_post_commit=True)
   check(metrics["pg_WAL_delta_bytes_until_COMMIT"]>=0,"invalid PG WAL delta")
   return metrics
