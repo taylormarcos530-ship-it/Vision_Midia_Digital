@@ -223,7 +223,15 @@ class Proxy(Quiet):
                     if hashlib.sha256(gzip.decompress(contents)).hexdigest()!=SHA:
                         raise ValueError("upstream_sha_mismatch")
                     STATE.add("proxy_completed_bytes",len(contents))
-                    self.answer(200,"ok",contents,complete=True)
+                    if self.path=="/slow_client":
+                        # QA fault injection ONLY: force a genuine TCP backpressure
+                        # against a connected client that intentionally stops recv().
+                        # Keep the existing long PG shared lock while writing.
+                        self.connection.setsockopt(socket.SOL_SOCKET,socket.SO_SNDBUF,4096)
+                        STATE.add("slow_client_send_started")
+                        self.answer(200,"slow_client_unbounded",contents*128)
+                    else:
+                        self.answer(200,"ok",contents,complete=True)
             except error.HTTPError as ex:
                 if ex.code==401:self.answer(401,"revoked_or_invalid")
                 else:self.answer(503,"upstream_http_error")
