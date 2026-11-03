@@ -51,8 +51,10 @@ def gate_allowed(c):
  c.execute("SELECT set_config('qa.tenant','synthetic',true)")
  c.execute("SELECT pg_advisory_xact_lock_shared(%s)",(LOCK,))
  row=c.execute("SELECT enabled FROM qa_mproc_gate WHERE id=1").fetchone()
+ c.execute("SELECT pg_advisory_xact_lock_shared(%s)",(63918941,))
+ member=c.execute("SELECT allowed FROM qa_mproc_membership WHERE tenant='synthetic'").fetchone()
  S.add("gate_reads")
- return bool(row and row[0])
+ return bool(row and row[0] and member and member[0])
 class Handler(BaseHTTPRequestHandler):
  protocol_version="HTTP/1.1"
  def log_message(self,*args):pass
