@@ -134,7 +134,11 @@ async def negative_auth(port,ctx):
  assert 'UNAUTHENTICATED' in (await attempt(bad))['error']
  assert (await attempt(token('company-B','tv-0000')))['error']=='TENANT_MISMATCH'
  assert (await attempt(token('company-A','tv-0000',seconds=-10)))['type']=='error'
- return 3
+ # The same valid signed JWT cannot be used again across gateway processes.
+ replay=token('company-A','tv-0000')
+ assert (await attempt(replay))['type']=='ready'
+ assert (await attempt(replay))['error']=='JWT_REPLAY'
+ return 4
 async def run(tvs,cert,key):
  check_env()
  t0=time.monotonic()
@@ -258,7 +262,7 @@ async def run(tvs,cert,key):
   response={'result':'PASS_DISPOSABLE_WSS_QA_ONLY','tvs':tvs,'instances':shards,
    'transport':'WSS over TLS1.2+ with trusted temporary self-signed cert',
    'full_TLS_client_certificate_verification':True,'JWT_HS256_device_and_tenant':True,
-   'JWT_expired_forged_cross_tenant_rejected':neg,'redis_CAS_session_lease':True,
+   'JWT_expired_forged_cross_tenant_and_replay_rejected':neg,'redis_CAS_session_lease':True,
    'two_or_more_independent_OS_processes':True,'SIGKILL_detected':True,
    'killed_connections':kill_count,'reconnected_after_TTL':len(reconnected),
    'offline_after_TTL_verified':True,'existing_clients_stayed_during_plan_change':True,
