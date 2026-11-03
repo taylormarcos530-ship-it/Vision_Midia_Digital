@@ -1,0 +1,171 @@
+name: Vision V2 Final Post Fenced WSS 7 Job Original Regression NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - '.github/workflows/vision-v2-post-wss-fenced-final-regression-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  wss-old-code:
+    name: Original WSS TLS Redis PG17 SIGKILL ${{ matrix.tvs }} TVs
+    strategy:
+      fail-fast: false
+      matrix:
+        tvs: [100,300,600,1000]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Confirm isolation and no live credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
+      - name: Copy original unchanged WSS files into disposable path; patch ONLY branch guard
+        run: |
+          set -euo pipefail
+          mkdir qa-original-wss
+          cp tests/vision-v2-sequence-qa/wss-scale-qa/gateway.py qa-original-wss/gateway.py
+          cp tests/vision-v2-sequence-qa/wss-scale-qa/verify.py qa-original-wss/verify.py
+          sed -i 's@experiment/vision-v2-sequence-watermark-qa-20261031@experiment/vision-v2-toctou-continuous-guard-qa-20261102@g' qa-original-wss/{gateway.py,verify.py}
+          python -m py_compile qa-original-wss/gateway.py qa-original-wss/verify.py
+          mkdir -p qa-old-tls
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout qa-old-tls/local.key -out qa-old-tls/local.pem \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          chmod 600 qa-old-tls/local.key
+      - name: Run unchanged WSS capacity and SIGKILL protocol in disposable copy
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+        run: |
+          set -euo pipefail
+          python -u qa-original-wss/verify.py --tvs ${{ matrix.tvs }} \
+            --cert qa-old-tls/local.pem --key qa-old-tls/local.key \
+            | tee qa-original-wss-${{ matrix.tvs }}.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-wss-regression-${{ matrix.tvs }}
+          path: qa-original-wss-${{ matrix.tvs }}.log
+          retention-days: 14
+  economy:
+    name: Original 46 capacity tests and WSS budget Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Reject real infrastructure credentials
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+      - name: Original economy and paid forecast, untouched
+        run: |
+          set -euo pipefail
+          node --test tests/vision-v2-sequence-qa/economy-guardrails/cost-guardrails.test.cjs \
+            tests/vision-v2-sequence-qa/economy-guardrails/scalable-capacity-policy.test.cjs \
+            | tee qa-original-budget-tests.log
+          node tests/vision-v2-sequence-qa/economy-guardrails/wss-paid-budget-qa.cjs \
+            | tee qa-original-paid-estimate.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: original-economy-node-${{ matrix.node }}
+          path: |
+            qa-original-budget-tests.log
+            qa-original-paid-estimate.log
+          retention-days: 14
+  commercial:
+    name: Original 10090 commercial AES-GCM proofs PostgreSQL17
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Isolated only and exact QA branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+      - run: python -m pip install 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Copy archive bridge adjacent to original unchanged source and patch branch guard ONLY
+        run: |
+          set -euo pipefail
+          cp tests/vision-v2-sequence-qa/economy-guardrails/original-report-archive-bridge.py \
+             tests/vision-v2-sequence-qa/economy-guardrails/recheck-branch-only.py
+          sed -i 's@experiment/vision-v2-sequence-watermark-qa-20261031@experiment/vision-v2-toctou-continuous-guard-qa-20261102@g' \
+             tests/vision-v2-sequence-qa/economy-guardrails/recheck-branch-only.py
+      - name: Reconstruct unchanged historical groupings and AES-GCM SHA
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/economy-guardrails/recheck-branch-only.py \
+            | tee qa-commercial-reconstruction.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: commercial-aes-original-recheck
+          path: qa-commercial-reconstruction.log
+          retention-days: 14
