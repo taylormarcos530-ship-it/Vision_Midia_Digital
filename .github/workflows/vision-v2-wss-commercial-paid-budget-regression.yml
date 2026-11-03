@@ -1,0 +1,97 @@
+name: Vision V2 WSS Paid Budget and Archive Commercial Regression NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-sequence-watermark-qa-20261031
+    paths:
+      - 'tests/vision-v2-sequence-qa/economy-guardrails/wss-paid-budget-qa.cjs'
+      - '.github/workflows/vision-v2-wss-commercial-paid-budget-regression.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  provider-budgets:
+    name: Paid WSS 100-3000 TV budget + preserved guards Node ${{ matrix.node }}
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Reject official credentials and other branches
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - name: Original 26 Free economy + 20 paid scaling + paid overage forecast
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test tests/vision-v2-sequence-qa/economy-guardrails/cost-guardrails.test.cjs \
+           tests/vision-v2-sequence-qa/economy-guardrails/scalable-capacity-policy.test.cjs | tee qa-wss-existing-economy-and-scale.log
+          node tests/vision-v2-sequence-qa/economy-guardrails/wss-paid-budget-qa.cjs | tee qa-wss-paid-budget.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-wss-budget-node-${{ matrix.node }}
+          path: |
+            qa-wss-existing-economy-and-scale.log
+            qa-wss-paid-budget.log
+          retention-days: 14
+  archive-report:
+    name: Original commercial report reconstructed from immutable AES-GCM archives PG17
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Isolated PG17 only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-sequence-watermark-qa-20261031
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+      - run: python -m pip install 'psycopg[binary]==3.2.6' 'cryptography==44.0.3'
+      - name: Preserve unchanged commercial report semantics all 10090 proofs and 200 groups
+        shell: bash
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/economy-guardrails/original-report-archive-bridge.py | tee qa-wss-commercial-preserved.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-wss-commercial-preserved
+          path: qa-wss-commercial-preserved.log
+          retention-days: 14
