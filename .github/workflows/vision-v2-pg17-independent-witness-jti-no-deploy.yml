@@ -1,0 +1,109 @@
+name: Vision V2 PG17 Independent JTI Witness Rollback NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/redis-wss-fault-qa/independent-pg17-witness.py'
+      - '.github/workflows/vision-v2-pg17-independent-witness-jti-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  independent-auth-witness:
+    name: 2 Redis7, main PG17, PG17 witness, two real WSS gateways
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres_main:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      postgres_witness:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-witness-password
+        ports: [5433:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_primary:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_secondary:
+        image: redis:7.4-alpine
+        ports: [6380:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Verify isolated branch and absence of official endpoint variables
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'DISPOSABLE_ONLY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1 PRODUCTION_NO_GO=1'
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
+      - name: Generate localhost CA certificate only inside CI
+        run: |
+          set -euo pipefail
+          mkdir -p qa-witness-certs
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout qa-witness-certs/local.key -out qa-witness-certs/local.pem \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          chmod 600 qa-witness-certs/local.key
+      - name: Check syntax and simulate two PG rollback domains with witness restart
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+          QA_CERT: qa-witness-certs/local.pem
+          QA_KEY: qa-witness-certs/local.key
+          QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
+          QA_WITNESS_CONTAINER: ${{ job.services.postgres_witness.id }}
+        run: |
+          set -euo pipefail
+          python -m py_compile tests/vision-v2-sequence-qa/redis-wss-fault-qa/independent-pg17-witness.py
+          python -u tests/vision-v2-sequence-qa/redis-wss-fault-qa/independent-pg17-witness.py | tee qa-witness.log
+      - name: Reject any false statement of rollback resistance
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open('qa-v2-independent-witness.json'))
+          assert x['production_GO'] is False
+          assert x['dual_Redis_different_processes']['exactly_one_of_two_auths_accepted']
+          assert x['business_PG_and_two_Redis_rollback']['previously_spent_JTI_still_denied']
+          assert x['witness_PG17_real_stop_start']['fresh_login_denied_during_down']
+          assert x['ALL_three_state_domains_rolled_back']['same_old_JTI_accepted_after_witness_record_deleted']
+          assert x['security_verdict']=='NO_GO_NO_INDEPENDENT_ROLLBACK_PROOF'
+          print('WITNESS_LOCAL_PASS=true FULL_ROLLBACK_FAIL=true PRODUCTION_NO_GO=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: independent-pg17-jti-witness-rollback
+          path: |
+            qa-witness.log
+            qa-v2-independent-witness.json
+          retention-days: 14
