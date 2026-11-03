@@ -1,0 +1,129 @@
+name: Vision V2 Fenced WSS 100 300 Slow Subscribers Commands NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/redis-wss-fault-qa/fenced-wss-load-100-300.py'
+      - 'tests/vision-v2-sequence-qa/redis-wss-fault-qa/partition-forwarder.py'
+      - '.github/workflows/vision-v2-wss-fenced-100-300-slow-load-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  witness-adversarial:
+    name: WSS real TLS clients \${{ matrix.tvs }} central PG owner and Redis 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    strategy:
+      fail-fast: false
+      matrix:
+        tvs: [100,300]
+    services:
+      postgres_main:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      postgres_witness:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-witness-password
+        ports: [5433:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      postgres_shadow:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_shadow_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-shadow-password
+        ports: [5435:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_shadow_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_primary:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_secondary:
+        image: redis:7.4-alpine
+        ports: [6380:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refuse official credentials and foreign branches
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
+      - name: Ephemeral localhost TLS only
+        run: |
+          set -euo pipefail
+          mkdir -p qa-restore-certs
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout qa-restore-certs/local.key -out qa-restore-certs/local.pem \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          chmod 600 qa-restore-certs/local.key
+      - name: Syntax and separate PG17/Redis service checks
+        run: |
+          python -m py_compile tests/vision-v2-sequence-qa/redis-wss-fault-qa/fenced-wss-load-100-300.py
+          python -m py_compile tests/vision-v2-sequence-qa/redis-wss-fault-qa/partition-forwarder.py
+      - name: Test central owner, witness heartbeat fail-closed, real restore and dual authority
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+          QA_CERT: qa-restore-certs/local.pem
+          QA_KEY: qa-restore-certs/local.key
+          QA_TVS: \${{ matrix.tvs }}
+          QA_WITNESS_CONTAINER: ${{ job.services.postgres_witness.id }}
+          QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/redis-wss-fault-qa/fenced-wss-load-100-300.py | tee qa-wss-slow-\${{ matrix.tvs }}.log
+      - name: Verify WSS slow reader and command fixtures are real and NO-GO
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open('qa-wss-slow-matrix.json'))
+          assert x['production_GO'] is False
+          assert x['auth']['count']==x['TVs']
+          assert x['heartbeat_wave1']['ack']==x['TVs']
+          assert x['command_concurrency']['ack_count']==x['command_concurrency']['command_count']
+          assert x['slow_transport_readers']['paused_reading_count']>=10
+          assert x['row_lock_ack_fence']['old_ACK_after_commit'] is False
+          assert x['SIGKILL_one_gateway']['surviving_gateway_ACK']
+          print('WSS_BENCH_LOCAL_PASS=true DISTRIBUTED_UNPROVEN=true NO_GO=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: wss-fenced-slow-\${{ matrix.tvs }}-qa
+          path: |
+            qa-wss-slow-\${{ matrix.tvs }}.log
+            qa-wss-slow-matrix.json
+          retention-days: 14
