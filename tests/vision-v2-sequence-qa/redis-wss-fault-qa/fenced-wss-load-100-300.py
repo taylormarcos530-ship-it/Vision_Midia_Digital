@@ -21,7 +21,8 @@ for k in ("DATABASE_URL","PGHOST","PGSERVICE","REDIS_URL","SUPABASE_URL","SUPABA
 def ck(x,why):assert x,why
 def pct(values,p):
  a=sorted(values);z=(len(a)-1)*p;i=int(z);j=min(len(a)-1,i+1)
- return round(a[i]*(1-j+z)+a[j]*(z-i),3)
+ w=z-i
+ return round(a[i]*(1-w)+a[j]*w,3)
 def wal():
  with fenced.wc() as c:
   return str(c.execute("SELECT pg_current_wal_insert_lsn()").fetchone()[0])
@@ -173,6 +174,8 @@ async def main():
    status="PASS_LOCAL_SERIALIZED",old_ACK_before_commit=True,
    old_ACK_after_commit=False,
    real_network_ACK_delivery_after_COMMIT_not_excluded=True)
+  # Sample both child RSS values BEFORE terminating the first gateway.
+  alive_rss_kib=[rss(p.pid) for p in procs]
   # SIGKILL gateway 0 without touching all services, preserving gateway 1.
   p=procs[0];p.send_signal(signal.SIGKILL);p.wait(timeout=6)
   ck(p.returncode==-signal.SIGKILL,"SIGKILL not real")
@@ -190,7 +193,7 @@ async def main():
    witness_SQL_reads_per_2minute_heartbeat_daily={str(n):n*720 for n in (100,300,600,1000)},
    WAL_bytes_witness=wd(before,after),
    witness=stat(),
-   one_process_VmRSS_kib=[rss(p.pid) for p in procs],
+   one_process_VmRSS_kib=alive_rss_kib,
    controller_RSS_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
   report["duration_s"]=round(time.monotonic()-begin,3)
   Path("qa-wss-slow-matrix.json").write_text(json.dumps(report,indent=2,sort_keys=True))
