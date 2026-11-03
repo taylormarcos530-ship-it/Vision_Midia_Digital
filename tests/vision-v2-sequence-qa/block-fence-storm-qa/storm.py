@@ -170,7 +170,7 @@ def run_burst(workers,n,mode):
   for p in pairs:cleanup(p)
 def main():
  started=time.monotonic()
- qa.base.base.setup()
+ qa.base.setup()
  tmp=Path(tempfile.mkdtemp(prefix="vision_v2_storm_qa_"))
  patch_source(tmp/"worker.py")
  previous=qa.HERE;qa.HERE=tmp
@@ -179,7 +179,7 @@ def main():
   workers=[qa.Child(0),qa.Child(1)]
   check(workers[0].proc.pid!=workers[1].proc.pid,"one process only")
   base=run_burst(workers,N,"release_after_commit")
-  qa.base.base.write_gate(True)
+  qa.base.write_gate(True)
   racing=run_burst(workers,N,"writer_races_block_guards")
   report=dict(qa="LOCAL_ADVERSARIAL_STORM",clients=N,chunk_bytes=CHUNK,
    production_GO=False,security_verdict="NO_GO_NOT_FULLY_PROVEN",
