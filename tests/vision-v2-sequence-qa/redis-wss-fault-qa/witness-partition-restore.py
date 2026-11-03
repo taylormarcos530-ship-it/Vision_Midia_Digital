@@ -153,6 +153,10 @@ async def main():
        existing_session_verdict="SECURITY_LIMITATION_NOT_GLOBALLY_FAIL_CLOSED",
        transport_path_cut_without_stopping_PG_container=True)
   forward=await start_forwarder()
+  # Force the independent witness path to be exercised: the prior concurrent
+  # loser already spent this JTI in its own Redis before witness rejected it.
+  # Only remove the synthetic Redis-local spent flag; NEVER touch PG witness.
+  await redis1.delete("qa:spent-jti:"+base.jti(token))
   replay,err=await base.auth(20111,token,ctx)
   check(replay is None and err.get("error")=="JTI_ALREADY_USED",
        ("path recovered but witness did not fence replay",err))
