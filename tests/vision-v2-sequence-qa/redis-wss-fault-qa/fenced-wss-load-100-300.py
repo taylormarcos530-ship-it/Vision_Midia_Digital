@@ -46,8 +46,9 @@ async def main():
  fenced.setup(fenced.previous.WITNESS)
  with fenced.wc() as c:
   # 100 / 300 independently authorized devices, all synthetic.
-  c.executemany("INSERT INTO qa_secure.owner(device,tenant) VALUES(%s,'company-A') ON CONFLICT(device) DO UPDATE SET tenant='company-A'",
-   [(f"tv-{i:04d}",) for i in range(N)])
+  with c.cursor() as cur:
+   cur.executemany("INSERT INTO qa_secure.owner(device,tenant) VALUES(%s,'company-A') ON CONFLICT(device) DO UPDATE SET tenant='company-A'",
+    [(f"tv-{i:04d}",) for i in range(N)])
  r0=Redis(host="127.0.0.1",port=6379,decode_responses=True,socket_timeout=2)
  r1=Redis(host="127.0.0.1",port=6380,decode_responses=True,socket_timeout=2)
  await base.alive(r0);await base.alive(r1)
