@@ -158,6 +158,7 @@ def main():
   finally:rst_socket(s)
   ck(read(ports[1])["status"]==503,"slow reader's peer admitted after close")
   base.write_gate(True)
+  a.cmd("reset_pause")
   # Both writers commit concurrently during already-admitted but paused
   # response. Request MUST NOT pass final SHA after either commit.
   with concurrent.futures.ThreadPoolExecutor(max_workers=3) as exe:
