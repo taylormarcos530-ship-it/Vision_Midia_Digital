@@ -51,7 +51,7 @@ def patch(dsn,redisport,destination):
  check(source.count(old)==1,"original branch assertion changed")
  source=source.replace(old,base.BRANCH)
  check(source.count("SECRET=b'vision-wss")==1,"gateway fixture changed")
- source=source.replace("SECRET=b'vision-wss",f"AUTH_DSN={dsn!r}\nSECRET=b'vision-wss")
+ source=source.replace("SECRET=b'vision-wss",f"AUTH_DSN={dsn!r}\nQA_GAP_DIR={str(destination.parent)!r}\nSECRET=b'vision-wss")
  old="  self.pool=AsyncConnectionPool(DSN,min_size=1,max_size=6,open=False)"
  check(source.count(old)==1,"main pool changed")
  source=source.replace(old,old+"\n  self.authpool=AsyncConnectionPool(AUTH_DSN,min_size=1,max_size=6,open=False)\n  self.auth_reads=0")
@@ -101,7 +101,19 @@ def patch(dsn,redisport,destination):
      await ws.send(json.dumps({'type':'error','error':'GLOBAL_SESSION_REVOKED'}))
      break
 """
- source=source.replace(hook,auth+hook)
+ # QA-only race barrier AFTER central SELECT, BEFORE Redis refresh.
+ # Synthetic seq 77 triggers an adversarial owner change during this gap.
+ gap="""    if x.get('type')=='heartbeat' and x.get('seq')==77:
+     import pathlib
+     ready=pathlib.Path(QA_GAP_DIR)/('ready-'+self.instance)
+     release=pathlib.Path(QA_GAP_DIR)/('release-'+self.instance)
+     ready.write_text('POST_AUTH_CHECK')
+     until=time.monotonic()+6
+     while not release.exists():
+      if time.monotonic()>until:raise TimeoutError('QA_GAP_DEADLINE')
+      await asyncio.sleep(.005)
+"""
+ source=source.replace(hook,auth+gap+hook)
  hook="  await self.pool.open(wait=True)"
  check(source.count(hook)==1,"pool opening hook changed")
  source=source.replace(hook,hook+"\n  await self.authpool.open(wait=True)")
@@ -223,6 +235,28 @@ async def main():
   report["global_device_tenant_reassignment"]=dict(
    status="PASS_LOCAL",old_company_login_denied=True,
    new_company_login_success=True,old_lease_did_not_resurrect=True)
+  # Deterministic TOCTOU negative: central SELECT succeeds, the device owner
+  # changes and invalidates the lease, then the old frame resumes. With no
+  # shared fence through ACK the original checked-once candidate still ACKs.
+  # This intentionally fails the security gate even though local QA exits 0.
+  gap_task=asyncio.create_task(base.heartbeat(updated,answer,77))
+  ready_file=tmp/"ready-central-1"
+  release_file=tmp/"release-central-1"
+  deadline=time.monotonic()+5
+  while time.monotonic()<deadline and not ready_file.exists():
+   await asyncio.sleep(.005)
+  check(ready_file.exists(),"adversarial post-check barrier was never reached")
+  write_owner("company-A")
+  release_file.write_text("RELEASE",encoding="utf-8")
+  gap_response=await gap_task
+  check(gap_response.get("type")=="heartbeat_ack",
+        ("TOCTOU counterexample not reproduced after owner COMMIT",gap_response))
+  report["owner_change_between_witness_check_and_ACK"]=dict(
+     status="SECURITY_FAIL_REPRODUCED",
+     old_company_heartbeat_ACK_after_owner_change_COMMIT=True,
+     application_check_not_transactionally_fenced_through_ACK=True)
+  # Restore B for remaining full-backup rollback counterexamples.
+  write_owner("company-B")
   # Estimate SQL load of 1 central SELECT per heartbeat and per command frame.
   report["projected_witness_reads_per_day_at_2min_heartbeat"]={
    str(tvs):tvs*720 for tvs in (100,300,600,1000)}
