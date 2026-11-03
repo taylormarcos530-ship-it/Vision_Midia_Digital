@@ -136,6 +136,7 @@ def run_burst(workers,n,mode):
   # a pre-COMMIT 200 may be truncated and must never validate as 10000 rows.
   with concurrent.futures.ThreadPoolExecutor(max_workers=72) as pool:
    tails=list(pool.map(receive_rest,pairs))
+  header_latencies=[p[2] for p in pairs]
   pairs=[]
   after=[w.metrics() for w in workers]
   sent_after=sum(x.get("application_write_completed_bytes",0) for x in after)
@@ -153,8 +154,8 @@ def run_burst(workers,n,mode):
    started_while_gate_open=True,all_HTTP_200_headers=True,
    max_worker_RSS_KiB=max_rss,
    header_setup_ms=round(setup_ms,3),
-   header_p95_ms=qa.base.pct([p[2] for p in pairs],.95),
-   header_p99_ms=qa.base.pct([p[2] for p in pairs],.99),
+   header_p95_ms=qa.base.pct(header_latencies,.95),
+   header_p99_ms=qa.base.pct(header_latencies,.99),
    body_cutoff_p95_ms=qa.base.pct([x['total_ms'] for x in tails],.95),
    body_cutoff_p99_ms=qa.base.pct([x['total_ms'] for x in tails],.99),
    close_commit_ms=closed["ms"],within_750ms=closed["ms"]<750,
