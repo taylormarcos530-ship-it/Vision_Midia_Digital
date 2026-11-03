@@ -12,7 +12,7 @@ permissions:
   contents: read
 jobs:
   witness-adversarial:
-    name: WSS real TLS clients \${{ matrix.tvs }} central PG owner and Redis 7
+    name: WSS real TLS clients ${{ matrix.tvs }} central PG owner and Redis 7
     runs-on: ubuntu-latest
     timeout-minutes: 24
     strategy:
@@ -99,12 +99,12 @@ jobs:
           QA_STREAM_GUARD_GROUP: '1'
           QA_CERT: qa-restore-certs/local.pem
           QA_KEY: qa-restore-certs/local.key
-          QA_TVS: \${{ matrix.tvs }}
+          QA_TVS: ${{ matrix.tvs }}
           QA_WITNESS_CONTAINER: ${{ job.services.postgres_witness.id }}
           QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
         run: |
           set -euo pipefail
-          python -u tests/vision-v2-sequence-qa/redis-wss-fault-qa/fenced-wss-load-100-300.py | tee qa-wss-slow-\${{ matrix.tvs }}.log
+          python -u tests/vision-v2-sequence-qa/redis-wss-fault-qa/fenced-wss-load-100-300.py | tee qa-wss-slow-${{ matrix.tvs }}.log
       - name: Verify WSS slow reader and command fixtures are real and NO-GO
         run: |
           python - <<'PY'
@@ -122,8 +122,8 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wss-fenced-slow-\${{ matrix.tvs }}-qa
+          name: wss-fenced-slow-${{ matrix.tvs }}-qa
           path: |
-            qa-wss-slow-\${{ matrix.tvs }}.log
+            qa-wss-slow-${{ matrix.tvs }}.log
             qa-wss-slow-matrix.json
           retention-days: 14
