@@ -1,0 +1,36 @@
+diff --git a/player.js b/player.js
+--- a/player.js
++++ b/player.js
+@@ -85,7 +85,7 @@
+     // Master marks a TV offline after 90s; jittered heartbeat must stay <90s.
+     // 60s average, max 69s, leaves 21s for typical network latency.
+     heartbeat: 60_000,
+-    manifest: 120_000,
++    manifest: 240_000,
+     commands: 45_000,
+   });
+   // A fleet powering up together must not hit the backend at identical moments.
+@@ -100,7 +100,7 @@
+   const QA_BUNDLE_VERSION = '1.5.24-homologacao';
+   const STABLE_BUNDLE_VERSION = '1.5.24-stable';
+   const QA_BUNDLE_INTERVAL_MS = 58_000;
+-  const QA_BUNDLE_MANIFEST_INTERVAL_MS = 120_000;
++  const QA_BUNDLE_MANIFEST_INTERVAL_MS = 240_000;
+   function useQaBundle() {
+     return state.qaBundleSupported && (
+       (nativeAppVersion() === QA_BUNDLE_VERSION &&
+@@ -164,7 +164,13 @@
+       return true;
+     } catch (error) {
+       const status = Number(error?.status || 0);
+-      if (status === 403) {
++      if (status === 402) {
++        // Administrative or quota restriction: keep cache and queued proofs.
++        // Do not confuse 402 with a true 403 access revocation.
++        backgroundPollState.failures = 0;
++        backgroundPollState.retryAt = performance.now() + 30 * 60_000 +
++          Math.floor(Math.random() * 60_000);
++      } else if (status === 403) {
+         // Authorization denial or permission failure: retry only after a
+         // bounded cooldown. The local access gate keeps blocked TVs stopped.
+         // Manual verification still calls syncManifest directly when needed.
