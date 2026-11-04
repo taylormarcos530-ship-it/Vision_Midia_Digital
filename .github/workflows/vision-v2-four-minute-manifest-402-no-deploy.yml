@@ -6,6 +6,7 @@ on:
     paths:
       - 'tests/vision-v2-sequence-qa/poll-four-minutes-qa/**'
       - '.github/workflows/vision-v2-four-minute-manifest-402-no-deploy.yml'
+      - 'docs/vision-v2/homolog-only-4minute-manifest-402-polling-20261104.patch'
   workflow_dispatch:
 permissions:
   contents: read
@@ -39,6 +40,19 @@ jobs:
         run: |
           set -euo pipefail
           node tests/vision-v2-sequence-qa/poll-four-minutes-qa/verify.cjs | tee qa-4minute-poll.log
+      - name: Validate saved patch applies only in disposable checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git apply --check docs/vision-v2/homolog-only-4minute-manifest-402-polling-20261104.patch
+          git apply docs/vision-v2/homolog-only-4minute-manifest-402-polling-20261104.patch
+          node --check player.js
+          grep -Fq 'manifest: 240_000,' player.js
+          grep -Fq 'const QA_BUNDLE_MANIFEST_INTERVAL_MS = 240_000;' player.js
+          grep -Fq 'if (status === 402)' player.js
+          git diff --name-only | grep -Fxq player.js
+          git diff --name-only | grep -Fv -x player.js && exit 1 || :
+          echo 'PATCH_APPLIES_TO_DISPOSABLE_CHECKOUT_ONLY=true NO_DEPLOY=1'
       - name: No false claim that 4min alone solves Edge invocation budget
         run: |
           node - <<'JS'
