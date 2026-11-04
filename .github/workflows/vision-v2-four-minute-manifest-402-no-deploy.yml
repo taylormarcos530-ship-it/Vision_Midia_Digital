@@ -1,0 +1,62 @@
+name: Vision V2 4min Manifest Quota and HTTP402 Cooldown QA No Deploy
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/poll-four-minutes-qa/**'
+      - '.github/workflows/vision-v2-four-minute-manifest-402-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  preview-only:
+    name: Node ${{ matrix.node }} 4min preview quota
+    runs-on: ubuntu-latest
+    timeout-minutes: 7
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Require exact experiment branch and reject production connection
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "$(printenv SUPABASE_URL || true)"
+          test -z "$(printenv DATABASE_URL || true)"
+          test -z "$(printenv SUPABASE_SERVICE_ROLE_KEY || true)"
+          echo "Local player.js read only; all changes in /tmp, NO_DEPLOY=1"
+      - name: Test temporary preview, original player, HTTP402 and arithmetic
+        shell: bash
+        run: |
+          set -euo pipefail
+          node tests/vision-v2-sequence-qa/poll-four-minutes-qa/verify.cjs | tee qa-4minute-poll.log
+      - name: No false claim that 4min alone solves Edge invocation budget
+        run: |
+          node - <<'JS'
+          const fs=require('fs');
+          const p=JSON.parse(fs.readFileSync('qa-v2-4min-manifest-budget.json','utf8'));
+          if(p.production_GO || !p.original_player_unchanged ||
+            p.integrated_bundle_heartbeat_ms!==58000 ||
+            p.heartbeat_ms!==60000 || p.manifest_ms!==240000 ||
+            p.increased_manifest_interval_does_not_reduce_number_of_bundle_Edge_calls!==true ||
+            p.quota_exceed_15_TVs_24h_if_integrated_bundle_every_58s!==true)
+            throw Error('SAFETY GATE: no production claim');
+          console.log('QA_PREVIEW_PASS=true, PRODUCTION_NO_GO=true');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-4min-402-quota-node-${{ matrix.node }}
+          path: |
+            qa-4minute-poll.log
+            qa-v2-4min-manifest-budget.json
+          retention-days: 14
