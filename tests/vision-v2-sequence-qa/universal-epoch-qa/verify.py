@@ -153,7 +153,7 @@ def main():
     old_workers_killed_during_commit=0,
     epoch_writer=result,
     already_started_200_truncated=True,
-    200_length_SHA_oracle_rejected_truncated=not truncated["application_valid"],
+    http200_length_SHA_oracle_rejected_truncated=not truncated["application_valid"],
     wrapped_HTTP_GETs_denied_after_COMMIT=N,
     wrapped_HTTP_P95_ms=base.pct(lat,.95),
     wrapped_HTTP_P99_ms=base.pct(lat,.99),
