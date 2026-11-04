@@ -62,3 +62,8 @@ No SIGKILL was used. This proves that unbounded row-lock holders violate the 750
 7. Stage 4min manifest and 402 cooldown on a non-production homologated TV after backup, tests, and rollback; no code was deployed to existing TVs.
 
 **Verdict: PASS for isolated tests only. SECURITY FAIL for legacy bypass and 750ms persistent same-row holders. PRODUCTION NO-GO.**
+
+
+## Reproducible homologation patch (NOT deployed)
+
+The repository now includes [the exact unified diff for a future non-production homologation](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/blob/experiment/vision-v2-toctou-continuous-guard-qa-20261102/docs/vision-v2/homolog-only-4minute-manifest-402-polling-20261104.patch). The patch changes only the legacy manifest and bundled-manifest intervals from 120s to 240s, adding the 30–31min HTTP402 client retry cooldown; presence remains 60s legacy / 58s bundled. CI [41823341624](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/41823341624) ran Node20 and Node22, **2/2 PASS**, and also validated that the saved diff applies cleanly in a **disposable GitHub Actions checkout** with git apply --check, and that the resulting candidate passes node --check. No original production source file was edited or published. NO-GO until 402 is cleared and safe presence on 15 TVs without per-minute Edge invocations is independently proven.
