@@ -35,9 +35,9 @@ def snapshot():
   rel=c.execute("SELECT 'qa_owner'::regclass::oid").fetchone()[0]
   rows=c.execute("""SELECT count(*),count(DISTINCT a.pid)
     FROM pg_stat_activity a JOIN pg_locks l ON a.pid=l.pid
-    WHERE a.application_name LIKE 'vision-v2-row-holder-%'
+    WHERE a.application_name LIKE 'vision-v2-row-holder-%%'
       AND a.state='idle in transaction'
-      AND a.query LIKE '%FOR SHARE%'
+      AND a.query LIKE '%%FOR SHARE%%'
       AND l.relation=%s AND l.mode='RowShareLock' AND l.granted""",(rel,)).fetchone()
   blocked=c.execute("""SELECT count(*) FROM pg_stat_activity
     WHERE application_name='vision-v2-row-writer' AND wait_event_type='Lock'""").fetchone()[0]
