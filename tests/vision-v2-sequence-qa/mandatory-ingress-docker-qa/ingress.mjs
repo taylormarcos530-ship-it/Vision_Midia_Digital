@@ -113,7 +113,7 @@ async function verifyIsolation(){
   denials.push({target,denied:result});
  }
  const privateIP=process.env.QA_ORIGIN_PRIVATE_IP;
- if(!privateIP||!/^172\\.|^192\\.|^10\\./.test(privateIP))throw Error('explicit private origin address required');
+ if(!privateIP || !['172','192','10'].includes(privateIP.split('.')[0]))throw Error('explicit private origin address required: '+String(privateIP));
  const ipDenied=await new Promise(resolve=>{
   const s=net.createConnection({host:privateIP,port:9100});
   s.setTimeout(450,()=>s.destroy());
