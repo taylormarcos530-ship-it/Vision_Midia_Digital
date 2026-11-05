@@ -1,0 +1,64 @@
+name: Vision V2 Post JWT Guard 15 TV Thirty Day Free Budget Model No Deploy
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/free-15tv-presence-qa/30day-client-budget.test.cjs'
+      - '.github/workflows/vision-v2-post-jwt-guard-15tv-30day-budget-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  simulated-client-budget:
+    name: Synthetic 15 TV 30-day quota and cache Node ${{ matrix.node }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['20','22']
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Strict experiment isolation
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${REDIS_URL:-}"
+      - name: Node 15-player 30-day accelerated cache presence commercial budget
+        run: |
+          set -euo pipefail
+          node tests/vision-v2-sequence-qa/free-15tv-presence-qa/30day-client-budget.test.cjs | tee qa-v2-15tv-30day.log
+      - name: Prevent unsafe Free-production claim
+        run: |
+          node - <<'JS'
+          const fs=require('fs'),q=JSON.parse(fs.readFileSync('qa-v2-15tv-30day-client-model.json','utf8'));
+          if(q.production_GO || q.synthetic_TVS!==15 || q.days_accelerated!==30 ||
+             q.real_TVS_connected_in_this_model!==0 ||
+             q.budget.Edge_manifest_4min!==162000 ||
+             q.budget.Edge_commercial_batch_50!==12960 ||
+             q.budget.Edge_total_if_ONLY_these_channels_use_Edge!==174960 ||
+             q.budget.WSS_60sec_frames_not_Edge!==648000 ||
+             q.budget.old_58sec_Edge_bundle_IF_not_disabled<=500000 ||
+             !q.HTTP403_immediate_revoke ||
+             !q.commercial_batch_50_partial_ACK_retains_proofs ||
+             !q.truncated_HTTP200_SHA_rejected ||
+             !q.offline_expiry_fail_closed) throw Error('model safety gate failed');
+          console.log('LOCAL_MODEL_PASS=true NO_PRODUCTION_CLAIM=true');
+          JS
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-15tv-30day-node-${{ matrix.node }}
+          path: |
+            qa-v2-15tv-30day.log
+            qa-v2-15tv-30day-client-model.json
+          retention-days: 14
