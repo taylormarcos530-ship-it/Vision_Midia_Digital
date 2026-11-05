@@ -31,8 +31,8 @@ def txn(jti,term="epoch7:leaderA",company="company-A",device="tv-0000",host=None
   ]
   response=req(endpoint,"/v3/kv/txn",{"compare":compares,"success":[{
    "requestPut":{"key":key("spent/"+jti),"value":enc("consumed:"+company)}}],"failure":[]})
-  return {"status":"ACK" if response["succeeded"] else "DENY",
-   "reason":"RAFT_LINEARIZABLE_ATOMIC_TXN" if response["succeeded"] else "CAS_DENY",
+  return {"status":"ACK" if response.get("succeeded",False) else "DENY",
+   "reason":"RAFT_LINEARIZABLE_ATOMIC_TXN" if response.get("succeeded",False) else "CAS_DENY",
    "revision":int(response.get("header",{}).get("revision",0)),"ms":round(1000*(time.monotonic()-start),3)}
  except Exception as e:
   return {"status":"DENY","reason":"NO_QUORUM_OR_NETWORK","exception":type(e).__name__,
