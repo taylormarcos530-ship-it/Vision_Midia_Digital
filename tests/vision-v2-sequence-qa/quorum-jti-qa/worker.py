@@ -47,4 +47,12 @@ def authorize(token,leader="leader-A",term=7):
    rss_kib=resource.getrusage(resource.RUSAGE_SELF).ru_maxrss)
 if __name__=="__main__":
  item=json.loads(sys.stdin.read())
+ barrier=os.getenv("QA_BARRIER_DIR")
+ if barrier:
+  ready=Path(barrier)/("ready-"+str(os.getpid()))
+  ready.write_text("READY",encoding="utf-8")
+  until=time.monotonic()+8
+  while not (Path(barrier)/"release").exists():
+   if time.monotonic()>until:raise TimeoutError("QA deterministic two-worker barrier")
+   time.sleep(.006)
  print(json.dumps(authorize(item["token"],item.get("leader","leader-A"),item.get("term",7)),sort_keys=True),flush=True)
