@@ -79,25 +79,31 @@ if(mode==='ingress'){
  }).listen(9200,'0.0.0.0',()=>console.log('QA_INGRESS_READY='+origin));
 }
 async function read(host,route,timeout=6000,token=true){
- return new Promise(resolve=>{
-  const out={status:null,bytes:0,valid:false,aborted:false,error:null};
-  const req=http.get({hostname:host,port:9200,path:route,headers:token?{'X-QA-Token':'qa-signed-device-placeholder'}:{},timeout},res=>{
-   out.status=res.statusCode;
-   let hash=crypto.createHash('sha256');
-   res.on('data',buf=>{out.bytes+=buf.length;hash.update(buf);
-    if(route==='/pause'&&!out.sent) {out.sent=true;console.log('QA_PAUSE_HEADER_RECEIVED=1');}
-   });
-   res.on('end',()=>{
-    out.valid=res.statusCode===200 && out.bytes===Number(res.headers['content-length'])
-      && hash.digest('hex')===res.headers['x-qa-sha256'];
-    resolve(out);
-   });
-   res.on('aborted',()=>{out.aborted=true;resolve(out)});
-   res.on('close',()=>{if(!res.complete){out.aborted=true;resolve(out)}});
+ const out={status:null,bytes:0,valid:false,aborted:false,error:null};
+ let sha=crypto.createHash('sha256');
+ try{
+  const res=await fetch('http://'+host+':9200'+route,{
+   method:'GET',
+   headers:token?{'X-QA-Token':'qa-signed-device-placeholder'}:{},
+   signal:AbortSignal.timeout(timeout),
+   redirect:'error'
   });
-  req.on('error',e=>{out.error=e.code||e.message;resolve(out)});
-  req.on('timeout',()=>req.destroy(new Error('timeout')));
- });
+  out.status=res.status;
+  const expected=Number(res.headers.get('content-length'));
+  const checksum=res.headers.get('x-qa-sha256');
+  for await(const buf of res.body){
+   out.bytes+=buf.length;sha.update(buf);
+   if(route==='/pause'&&!out.sent){
+    out.sent=true;console.log('QA_PAUSE_HEADER_RECEIVED=1');
+   }
+  }
+  out.valid=out.status===200 && out.bytes===expected &&
+      sha.digest('hex')===checksum;
+ }catch(err){
+  out.aborted=out.status===200;
+  out.error=err.name||String(err);
+ }
+ return out;
 }
 async function verifyIsolation(){
  const destinations=['qa-origin-a','qa-origin-b','qa-epoch','qa-redis'];
