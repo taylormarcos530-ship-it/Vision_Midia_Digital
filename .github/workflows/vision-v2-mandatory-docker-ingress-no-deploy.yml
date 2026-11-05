@@ -1,0 +1,105 @@
+name: Vision V2 Mandatory Docker Ingress No Direct Legacy Origin NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/mandatory-ingress-docker-qa/**'
+      - '.github/workflows/vision-v2-mandatory-docker-ingress-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  mandatory-private-ingress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Refuse any official environment or branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${REDIS_URL:-}"
+          node --check tests/vision-v2-sequence-qa/mandatory-ingress-docker-qa/ingress.mjs
+      - name: Two physical Docker bridge networks, two private old origins, two ingress processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create --internal qa-private
+          docker network create --internal qa-public
+          export SRC="$PWD/tests/vision-v2-sequence-qa/mandatory-ingress-docker-qa"
+          docker run -d --name qa-redis --network qa-private redis:7.4-alpine redis-server --save '' --appendonly no
+          for i in $(seq 1 30); do
+            if docker exec qa-redis redis-cli ping | grep -qx PONG; then break; fi
+            sleep .2
+          done
+          docker exec qa-redis redis-cli SET qa:epoch open
+          docker run -d --name qa-epoch --network qa-private -v "$SRC:/qa:ro" -w /qa node:22-alpine node ingress.mjs epoch
+          for origin in a b; do
+            docker run -d --name qa-origin-$origin --network qa-private \
+              -v "$SRC:/qa:ro" -w /qa node:22-alpine node ingress.mjs origin
+          done
+          for origin in a b; do
+            docker run -d --name qa-ingress-$origin --network qa-public \
+              -e QA_ORIGIN=qa-origin-$origin \
+              -v "$SRC:/qa:ro" -w /qa node:22-alpine node ingress.mjs ingress
+            docker network connect qa-private qa-ingress-$origin
+          done
+          docker run -d --name qa-client --network qa-public -v "$SRC:/qa:ro" -w /qa node:22-alpine sleep 240
+          sleep 3
+          for name in qa-epoch qa-origin-a qa-origin-b qa-ingress-a qa-ingress-b; do
+            test "$(docker inspect -f '{{.State.Running}}' "$name")" = true
+            docker logs "$name" | tail -5
+          done
+          echo 'NO DEPLOY, NO HOST-MAPPED PORTS, TWO PRIVATE ORIGINS IN DIFFERENT NETWORK' | tee qa-ingress-proof.log
+      - name: Prove no DNS nor private IP access from independently spawned client
+        shell: bash
+        run: |
+          set -euo pipefail
+          QA_ORIGIN_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "qa-private").IPAddress}}' qa-origin-a)"
+          echo "Private origin IP is internal-only and not published on host" >> qa-ingress-proof.log
+          docker exec -e "QA_ORIGIN_PRIVATE_IP=$QA_ORIGIN_IP" qa-client node /qa/ingress.mjs client pre | tee -a qa-ingress-proof.log
+      - name: Revoke while a real HTTP 200 has already emitted first bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          QA_ORIGIN_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "qa-private").IPAddress}}' qa-origin-a)"
+          docker exec -e "QA_ORIGIN_PRIVATE_IP=$QA_ORIGIN_IP" qa-client node /qa/ingress.mjs client pause > qa-http200-pause.log 2>&1 &
+          CLIENT_PID="$!"
+          READY=0
+          for i in $(seq 1 90); do
+            if grep -q 'QA_PAUSE_HEADER_RECEIVED=1' qa-http200-pause.log; then READY=1; break; fi
+            if ! kill -0 "$CLIENT_PID" 2>/dev/null; then break; fi
+            sleep .02
+          done
+          test "$READY" = 1 || { cat qa-http200-pause.log; exit 1; }
+          docker exec qa-redis redis-cli SET qa:epoch closed
+          wait "$CLIENT_PID"
+          cat qa-http200-pause.log | tee -a qa-ingress-proof.log
+      - name: Verify both independent ingress processes reject after shared epoch closure
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec qa-client node /qa/ingress.mjs client closed | tee -a qa-ingress-proof.log
+      - name: SIGKILL authority => fail closed at both ingress paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker kill qa-epoch
+          docker exec qa-client node /qa/ingress.mjs client authority-down | tee -a qa-ingress-proof.log
+          echo 'QA_GATE=PASS_NETWORK_BOUNDARY_AND_EPOCH; PRIVILEGED_DOCKER_ESCAPE_UNPROVEN=true; RELEASE_NO_GO=1' | tee -a qa-ingress-proof.log
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: qa-v2-private-origin-two-ingress-proof
+          path: |
+            qa-ingress-proof.log
+            qa-http200-pause.log
+          retention-days: 14
