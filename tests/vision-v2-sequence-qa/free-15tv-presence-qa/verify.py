@@ -4,7 +4,7 @@ Application-paused readers are not a fully saturated kernel/TLS backpressure tes
 A per-ACK row lock race is verified, but global rollback remains NO-GO.
 """
 from __future__ import annotations
-import asyncio,concurrent.futures,importlib.util,json,os,resource,signal,ssl,statistics,tempfile,time
+import asyncio,concurrent.futures,importlib.util,json,os,resource,signal,ssl,statistics,tempfile,time,sys
 from pathlib import Path
 import psycopg
 from redis.asyncio import Redis
