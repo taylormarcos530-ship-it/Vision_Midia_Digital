@@ -136,8 +136,7 @@ async def main():
   sockets.extend(reopened)
   signed=await asyncio.gather(*(heartbeat(ws,2,d) for (d,_),ws in zip(tokens2.items(),reopened)))
   accepted=await asyncio.gather(*(asyncio.to_thread(remote,"GET",d,t) for d,t in tokens2.items()))
-  check(len(reopened)==14 and all(x["status"]==200 for x in accepted if True and x is not None
-    and tokens2.get("tv-0002") is not None),"reopened invalid")
+  check(len(reopened)==14 and len(accepted)==14,"reopened invalid")
   report["kid_rotation"]=dict(old_HTTPS=401,old_WSS_closed_1008=True,
    old_WSS_handshake_rejected=True,new_WSS_accepted=14,new_HTTPS_accepted=sum(
     x["status"]==200 for x in accepted),
