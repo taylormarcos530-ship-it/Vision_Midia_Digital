@@ -1,0 +1,133 @@
+name: Vision V2 Post Quorum Real 15 TV WSS TLS Presence No Deploy
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/free-15tv-presence-qa/verify.py'
+      - 'tests/vision-v2-sequence-qa/redis-wss-fault-qa/central-owner-heartbeat-fenced-candidate.py'
+      - 'docs/vision-v2/homolog-only-4minute-manifest-402-polling-20261104.patch'
+      - '.github/workflows/vision-v2-post-quorum-15tv-wss-presence-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  witness-adversarial:
+    name: WSS real TLS clients 15 central PG owner and Redis 7
+    runs-on: ubuntu-latest
+    timeout-minutes: 24
+    services:
+      postgres_main:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      postgres_witness:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-witness-password
+        ports: [5433:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      postgres_shadow:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_shadow_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-shadow-password
+        ports: [5435:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_shadow_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_primary:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis_secondary:
+        image: redis:7.4-alpine
+        ports: [6380:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Refuse official credentials and foreign branches
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
+      - name: Ephemeral localhost TLS only
+        run: |
+          set -euo pipefail
+          mkdir -p qa-restore-certs
+          openssl req -x509 -newkey rsa:2048 -nodes -sha256 -days 1 \
+            -keyout qa-restore-certs/local.key -out qa-restore-certs/local.pem \
+            -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          chmod 600 qa-restore-certs/local.key
+      - name: Syntax and separate PG17/Redis service checks
+        run: |
+          python -m py_compile tests/vision-v2-sequence-qa/free-15tv-presence-qa/verify.py
+          python -m py_compile tests/vision-v2-sequence-qa/redis-wss-fault-qa/partition-forwarder.py
+      - name: Test central owner, witness heartbeat fail-closed, real restore and dual authority
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+          QA_CERT: qa-restore-certs/local.pem
+          QA_KEY: qa-restore-certs/local.key
+          QA_TVS: '15'
+          QA_WITNESS_CONTAINER: ${{ job.services.postgres_witness.id }}
+          QA_REDIS_PRIMARY_CONTAINER: ${{ job.services.redis_primary.id }}
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/free-15tv-presence-qa/verify.py | tee qa-15tv-presence.log
+      - name: Validate 15 WSS liveness, time-to-offline, command ACKs, safety NO-GO
+        run: |
+          python - <<'PY'
+          import json
+          p=json.load(open('qa-15tv-wss-presence.json'))
+          assert p['production_GO'] is False
+          assert p['TVs']==p['auth']['count']==p['online_after_TLShandshake']==15
+          assert p['heartbeat_wave1']['ack']==15
+          assert p['command_concurrency']['ack_count']==p['command_concurrency']['command_count']
+          assert p['slow_transport_readers']['ack_count']==p['slow_transport_readers']['paused_reading_count']
+          assert p['presence_failover']['offline_after_SIGKILL']==8
+          assert p['presence_failover']['live_after_SIGKILL']==7
+          assert p['presence_failover']['offline_detection_wall_ms']<90000
+          assert p['15TV_30day_budget_model']['manifest_every_4min_separate_Edge_calls']==162000
+          assert p['15TV_30day_budget_model']['actual_Edge_HTTP_calls_generated_by_this_local_WSS_fixture']==0
+          assert p['row_lock_ack_fence']['old_ACK_after_commit'] is False
+          assert p['SIGKILL_one_gateway']['surviving_gateway_ACK']
+          assert p['four_minute_manifest_patch_exists_in_repository']
+          assert 'NO_GO' in p['security_verdict']
+          print('15_TV_LOCAL_TLS_PRESENCE_QA_PASS=true JTI_ROLLBACK_AND_SPLIT_BRAIN_NO_GO=true')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-v2-15tv-presence-wss
+          path: |
+            qa-15tv-presence.log
+            qa-15tv-wss-presence.json
+          retention-days: 14
