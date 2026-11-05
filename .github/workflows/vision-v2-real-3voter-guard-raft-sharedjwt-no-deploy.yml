@@ -91,7 +91,7 @@ jobs:
           test -z "${PGSERVICE:-}"
           test -z "${REDIS_URL:-}"
           python -m py_compile tests/vision-v2-sequence-qa/raft-etcd-qa/*.py
-      - run: python -m pip install 'psycopg[binary]==3.2.6' 'websockets==14.2'
+      - run: python -m pip install 'psycopg[binary,pool]==3.2.6' 'redis==5.2.1' 'websockets==14.2'
       - name: Boot actual 3 Raft etcd nodes on disposable internal network
         shell: bash
         run: |
