@@ -22,7 +22,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
  def authorization(self,scope,device):
   header=self.headers.get("Authorization","")
   token=header[7:] if header.startswith("Bearer ") else ""
-  return identity.authenticate(token,scope,device)
+  signed=identity.claims(token,scope,device)
+  if signed is None:return 401
+  return 200 if identity.fenced(signed) else 403
  def target(self):
   parsed=urllib.parse.urlsplit(self.path)
   query=urllib.parse.parse_qs(parsed.query)
@@ -32,7 +34,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
  def do_GET(self):
   path,device=self.target()
   if path not in ("/manifest","/metrics") or not device:return self.respond(404)
-  if not self.authorization("manifest:read",device):return self.respond(401)
+  gate=self.authorization("manifest:read",device)
+  if gate!=200:return self.respond(gate)
   if path=="/metrics":
    with self.lock: report={"posts":self.posts,"proofs":len(self.received)}
    return self.respond(200,json.dumps(report).encode())
@@ -45,7 +48,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
  def do_POST(self):
   path,device=self.target()
   if path!="/proofs" or not device:return self.respond(404)
-  if not self.authorization("proofs:write",device):return self.respond(401)
+  gate=self.authorization("proofs:write",device)
+  if gate!=200:return self.respond(gate)
   size=int(self.headers.get("Content-Length","0"))
   if size<=0 or size>100000:return self.respond(413)
   try:
@@ -69,8 +73,9 @@ async def serve_wss():
  def pre(conn,request):
   raw=request.headers.get("Authorization","")
   token=raw[7:] if raw.startswith("Bearer ") else ""
-  if identity.authenticate(token,"wss:presence") is None:
-   return conn.respond(HTTPStatus.UNAUTHORIZED,"UNAUTHENTICATED")
+  signed=identity.claims(token,"wss:presence")
+  if signed is None:return conn.respond(HTTPStatus.UNAUTHORIZED,"UNAUTHENTICATED")
+  if not identity.fenced(signed):return conn.respond(HTTPStatus.FORBIDDEN,"REVOKED_OR_STALE_FENCE")
  async def handler(ws):
   header=ws.request.headers.get("Authorization","")
   token=header[7:] if header.startswith("Bearer ") else ""
