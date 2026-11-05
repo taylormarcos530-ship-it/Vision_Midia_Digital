@@ -254,7 +254,7 @@ async function run(){
   const actual=[noToken.status,legacy,invalidPath.status,tampered.status,expired.status,
     none.status,future.status,aud.status,scope.status,term.status,wrongTenant.status,
     wrongDevice.status,crossTenant.status,crossDevice.status];
-  const expected=[401,401,404,401,401,401,401,401,401,401,401,401,403,403];
+  const expected=[401,401,404,401,401,401,401,401,401,401,401,403,403,403];
   if(JSON.stringify(actual)!==JSON.stringify(expected))
    throw Error('JWT denial mismatch '+JSON.stringify({actual,expected}));
   console.log('QA_JWT_INGRESS_PRE='+JSON.stringify({valid:15,denied:14,all_negative_status_codes:actual,
