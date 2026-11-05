@@ -128,6 +128,9 @@ async function verifyIsolation(){
 async function run(){
  if(op==='pre'){
   await verifyIsolation();
+  const one=await read('qa-ingress-a','/normal',4000);
+  console.log('QA_ONE_GET='+JSON.stringify(one));
+  if(!one.valid)throw Error('single ingress HTTP stream integrity failed '+JSON.stringify(one));
   const records=await Promise.all(Array.from({length:15},(_,i)=>read(i%2?'qa-ingress-b':'qa-ingress-a','/normal')));
   if(records.some(x=>!x.valid))throw Error('pre-commit 15 GET validation failed '+JSON.stringify(records));
   const unauthorized=await read('qa-ingress-a','/normal',6000,false);
