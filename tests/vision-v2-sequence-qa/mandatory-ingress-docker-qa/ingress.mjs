@@ -148,7 +148,7 @@ async function run(){
   const unauthorized=await read('qa-ingress-a','/normal',6000,false);
   const invalidPath=await read('qa-ingress-a','/forward?url=http://qa-origin-a:9100/normal');
   if(unauthorized.status!==401||invalidPath.status!==404)throw Error('ingress auth/path validation bypass');
-  console.log('QA_INGRESS_PRE='+JSON.stringify({valid:records.length,unauthorized:unauthorized.status,ssrf_rejected:invalidPath.status,private_unreachable:true}));
+  console.log('QA_INGRESS_PRE='+JSON.stringify({valid:records.length,unauthorized:unauthorized.status,ssrf_rejected:invalidPath.status,private_unreachable_not_checked_in_this_process:true}));
  }else if(op==='pause'){
   const x=await read('qa-ingress-a','/pause',5000);
   console.log('QA_PAUSED_HTTP='+JSON.stringify(x));
