@@ -33,7 +33,7 @@ jobs:
         run: |
           set -euo pipefail
           docker network create --internal qa-private
-          docker network create --internal qa-public
+          docker network create qa-public
           export SRC="$PWD/tests/vision-v2-sequence-qa/mandatory-ingress-docker-qa"
           docker run -d --name qa-redis --network qa-private redis:7.4-alpine redis-server --save '' --appendonly no
           for i in $(seq 1 30); do
@@ -107,6 +107,7 @@ jobs:
             docker logs --tail 35 "$n" 2>&1 || true
           done
           docker exec qa-client node -e "const dns=require('node:dns'); for (const x of ['qa-ingress-a','qa-ingress-b']) dns.lookup(x,(err,ip)=>console.log('CLIENT_DNS',x,err?.code||ip))" || true
+          docker exec qa-client node -e "fetch('http://qa-ingress-a:9200/normal',{headers:{'X-QA-Token':'qa-signed-device-placeholder'},signal:AbortSignal.timeout(2000)}).then(r=>console.log('INGRESS_FETCH_REACH',r.status)).catch(e=>console.log('INGRESS_FETCH_ERR',e.message))" || true
           docker exec qa-ingress-a node -e "fetch('http://qa-epoch:9300/check',{signal:AbortSignal.timeout(2000)}).then(async r=>console.log('EPOCH_REACH',r.status,await r.text())).catch(e=>console.log('EPOCH_ERR',e.message))" || true
           docker exec qa-ingress-a node -e "fetch('http://qa-origin-a:9100/normal',{signal:AbortSignal.timeout(2000)}).then(r=>console.log('ORIGIN_REACH',r.status)).catch(e=>console.log('ORIGIN_ERR',e.message))" || true
           echo 'QA_DIAGNOSTICS_END'
