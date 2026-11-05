@@ -106,6 +106,16 @@ async function verifyIsolation(){
   });
   denials.push({target,denied:result});
  }
+ const privateIP=process.env.QA_ORIGIN_PRIVATE_IP;
+ if(!privateIP||!/^172\\.|^192\\.|^10\\./.test(privateIP))throw Error('explicit private origin address required');
+ const ipDenied=await new Promise(resolve=>{
+  const s=net.createConnection({host:privateIP,port:9100});
+  s.setTimeout(450,()=>s.destroy());
+  s.once('connect',()=>{s.destroy();resolve(false)});
+  s.once('error',()=>resolve(true));
+  s.once('close',()=>resolve(true));
+ });
+ denials.push({target:'origin-private-ip',denied:ipDenied});
  if(denials.some(x=>!x.denied))throw Error('private network directly reachable from client '+JSON.stringify(denials));
  console.log('QA_PRIVATE_ORIGIN_NOT_REACHABLE='+JSON.stringify(denials));
 }
