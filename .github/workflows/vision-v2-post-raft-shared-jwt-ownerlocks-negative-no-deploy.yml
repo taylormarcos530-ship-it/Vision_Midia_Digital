@@ -1,0 +1,105 @@
+name: Vision V2 Post Raft Shared JWT Owner Row PG17 100 300 Negative NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/wss-owner-row-300-qa/**'
+      - '.github/workflows/vision-v2-post-raft-shared-jwt-ownerlocks-negative-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-lock-holders:
+    name: PG17 ${{ matrix.tvs }} concurrent same-owner FOR SHARE row locks
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    strategy:
+      fail-fast: false
+      matrix:
+        tvs: [100,300]
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Forbid production credentials and foreign branch
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          echo 'NO_DEPLOY=1 QA_STREAM_GUARD_GROUP=1 DRAIN_DISABLED=1'
+      - name: Reconfigure ONLY disposable PostgreSQL17 service to 450 max backends
+        env:
+          QA_PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          set -euo pipefail
+          test ${#QA_PG_CONTAINER} -ge 12
+          docker exec "$QA_PG_CONTAINER" psql -U postgres -d vision_v2_quarantine_disposable \
+            -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET max_connections = 450"
+          docker restart "$QA_PG_CONTAINER"
+          for i in $(seq 1 60); do
+            if docker exec "$QA_PG_CONTAINER" pg_isready -U postgres -d vision_v2_quarantine_disposable >/dev/null 2>&1; then
+              test "$(docker exec "$QA_PG_CONTAINER" psql -U postgres -d vision_v2_quarantine_disposable -Atc 'SHOW max_connections')" = "450"
+              echo 'QA_REAL_PG_BACKENDS_MAX=450'
+              exit 0
+            fi
+            sleep 1
+          done
+          exit 1
+      - run: python -m pip install 'psycopg[binary]==3.2.6'
+      - name: Parse isolated PG session workers and controller
+        run: |
+          python -m py_compile tests/vision-v2-sequence-qa/wss-owner-row-300-qa/controller.py
+          python -m py_compile tests/vision-v2-sequence-qa/wss-owner-row-300-qa/controller.py
+      - name: Reproduce 750ms starvation and independently test process SIGKILL
+        env:
+          QA_TVS: ${{ matrix.tvs }}
+          QA_POOL: '12'
+          QA_STREAM_GUARD_GROUP: '1'
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/wss-owner-row-300-qa/controller.py \
+            | tee qa-v2-owner-row-stress.log
+      - name: Verify true 100/300 row-sharing, expected 750ms SECURITY FAIL and voluntary release
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open('qa-v2-owner-row-stress.json'))
+          assert x['production_GO'] is False
+          assert x['N_actual_PG17_rowshare_backends'] in (100,300)
+          assert not x['original_owner_update_750ms']['committed']
+          assert x['original_owner_update_750ms']['reason']=='PG_LOCK_TIMEOUT'
+          assert x['independent_epoch_close']['committed']
+          assert x['independent_epoch_close']['elapsed_ms']<750
+          assert x['owner_update_after_voluntary_release']['committed']
+          assert x['SIGKILL_used'] is False
+          assert x['security_verdict']=='NO_GO_OLD_OWNER_LOCKS_CAN_STALL_750MS_AND_LEGACY_BYPASS'
+          print('REAL_ROW_LOCK_TEST_PASS=true 750MS_OLD_AUTHORITY_SECURITY_FAIL=true NO_GO=1')
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: pg17-real-locks-${{ matrix.tvs }}-${{ matrix.chunk }}
+          path: |
+            qa-v2-owner-row-stress.log
+            qa-v2-owner-row-stress.json
+          retention-days: 14
