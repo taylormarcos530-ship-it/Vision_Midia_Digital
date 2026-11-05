@@ -67,3 +67,12 @@ Prior real 15 WSS TLS load [42026646607](https://github.com/taylormarcos530-ship
 7. Preserve all previous source, tests, migrations, historical negative proofs, and maintain NO-GO until every gate passes.
 
 All new files QA-only, no existing player.js or Android source edits; all CI uses synthetic disposable PostgreSQL17, Redis7 and Docker. Experimental PASS != release PASS.
+
+
+## 6. Final post-quorum rerun verification (2026-11-05)
+
+- [42033433870](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/42033433870): **1/1 PASS** real fifteen-client WSS TLS with two OS gateways and central PG17; 15/15 admitted and 15/15 first-heartbeat ACKs. First-heartbeat P95/P99 **21.332/21.417ms**. Real SIGKILL: 8/8 disconnected detected offline with 12-second synthetic TTL in **14,259.035ms**, other 7/7 stayed online. Witness WAL delta **32,664B**. Child process RSS **52,808/52,436 KiB**. Actual real Master/TV behavior and security gates remain unproven.
+- [42033443592](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/42033443592): **1/1 PASS negative tests** with 4 disposable PG17 services, real pg_restore of canonical external anchor **reaccepting a spent JTI** and two independent uncoordinated anchors **both accepting the same JTI**. **SECURITY FAIL REPRODUCED / NO-GO**.
+- The latest passing mandatory ingress workflow is [42033224434](https://github.com/taylormarcos530-ship-it/Vision_Midia_Digital/actions/runs/42033224434); it must be distinguished from earlier incomplete/failing harness iterations. The latest one tests an independent client container unable to reach origins or authority, 15 valid ingress GETs, and the 200-truncation and shared-epoch fail-closed behavior.
+
+**No release approval:** the mandatory ingress has only a static QA header, quorum is not true consensus, 2-of-3 rollback succeeded adversarially, original WSS JTI split-brain persists, full client/auth integration not run on real APK, and no official Supabase traffic or storage was touched.
