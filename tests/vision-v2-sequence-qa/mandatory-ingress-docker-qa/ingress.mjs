@@ -50,7 +50,7 @@ if(mode==='epoch'){
    };
    conn.on('data',z=>{
     v+=z.toString('utf8');
-    if(v.includes('\r\n'))finish(v.includes('\r\n4\r\nopen\r\n'));
+    if(v.includes('\r\n'))finish(v.startsWith('$4\r\nopen\r\n'));
    });
    conn.on('end',()=>finish(false));
    conn.on('error',()=>finish(false));
