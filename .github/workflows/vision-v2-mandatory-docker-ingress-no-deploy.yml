@@ -95,6 +95,21 @@ jobs:
           docker kill qa-epoch
           docker exec qa-client node /qa/ingress.mjs client authority-down | tee -a qa-ingress-proof.log
           echo 'QA_GATE=PASS_NETWORK_BOUNDARY_AND_EPOCH; PRIVILEGED_DOCKER_ESCAPE_UNPROVEN=true; RELEASE_NO_GO=1' | tee -a qa-ingress-proof.log
+      - name: Collect isolated Docker network diagnostics after failed test
+        if: failure()
+        shell: bash
+        run: |
+          echo 'QA_DIAGNOSTICS_START'
+          docker network inspect qa-public --format '{{json .Containers}}' || true
+          docker network inspect qa-private --format '{{json .Containers}}' || true
+          for n in qa-epoch qa-origin-a qa-origin-b qa-ingress-a qa-ingress-b qa-client qa-redis; do
+            echo "QA_DIAGNOSTIC_CONTAINER=$n"
+            docker logs --tail 35 "$n" 2>&1 || true
+          done
+          docker exec qa-client node -e "const dns=require('node:dns'); for (const x of ['qa-ingress-a','qa-ingress-b']) dns.lookup(x,(err,ip)=>console.log('CLIENT_DNS',x,err?.code||ip))" || true
+          docker exec qa-ingress-a node -e "fetch('http://qa-epoch:9300/check',{signal:AbortSignal.timeout(2000)}).then(async r=>console.log('EPOCH_REACH',r.status,await r.text())).catch(e=>console.log('EPOCH_ERR',e.message))" || true
+          docker exec qa-ingress-a node -e "fetch('http://qa-origin-a:9100/normal',{signal:AbortSignal.timeout(2000)}).then(r=>console.log('ORIGIN_REACH',r.status)).catch(e=>console.log('ORIGIN_ERR',e.message))" || true
+          echo 'QA_DIAGNOSTICS_END'
       - uses: actions/upload-artifact@v4
         if: always()
         with:
