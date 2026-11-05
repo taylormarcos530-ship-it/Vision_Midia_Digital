@@ -53,6 +53,7 @@ jobs:
             docker network connect qa-private qa-ingress-$origin
           done
           docker run -d --name qa-client --network qa-public -v "$SRC:/qa:ro" -w /qa node:22-alpine sleep 240
+          docker run -d --name qa-client-iso --network qa-public -v "$SRC:/qa:ro" -w /qa node:22-alpine sleep 240
           sleep 3
           for name in qa-epoch qa-origin-a qa-origin-b qa-ingress-a qa-ingress-b; do
             test "$(docker inspect -f '{{.State.Running}}' "$name")" = true
@@ -65,13 +66,14 @@ jobs:
           set -euo pipefail
           QA_ORIGIN_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "qa-private").IPAddress}}' qa-origin-a)"
           echo "Private origin IP is internal-only and not published on host" >> qa-ingress-proof.log
-          docker exec -e "QA_ORIGIN_PRIVATE_IP=$QA_ORIGIN_IP" qa-client node /qa/ingress.mjs client pre | tee -a qa-ingress-proof.log
+          docker exec -e "QA_ORIGIN_PRIVATE_IP=$QA_ORIGIN_IP" qa-client-iso node /qa/ingress.mjs client isolation | tee -a qa-ingress-proof.log
+          docker exec qa-client node /qa/ingress.mjs client pre | tee -a qa-ingress-proof.log
       - name: Revoke while a real HTTP 200 has already emitted first bytes
         shell: bash
         run: |
           set -euo pipefail
           QA_ORIGIN_IP="$(docker inspect -f '{{(index .NetworkSettings.Networks "qa-private").IPAddress}}' qa-origin-a)"
-          docker exec -e "QA_ORIGIN_PRIVATE_IP=$QA_ORIGIN_IP" qa-client node /qa/ingress.mjs client pause > qa-http200-pause.log 2>&1 &
+          docker exec qa-client node /qa/ingress.mjs client pause > qa-http200-pause.log 2>&1 &
           CLIENT_PID="$!"
           READY=0
           for i in $(seq 1 90); do
