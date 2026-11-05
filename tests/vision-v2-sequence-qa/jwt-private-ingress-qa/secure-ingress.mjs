@@ -78,11 +78,39 @@ function tokenFile(name){
  return fs.readFileSync('/qa-tokens/'+name+'.jwt','utf8').trim();
 }
 async function redisGet(name){
- return new Promise((resolve)=>{
-  let done=false;
-  const finish=(value)=>{if(done)return;done=true;socket.destroy();resolve(value)};
-  const socket=net.createConnection({host:'qa-redis',port:6379},()=>{
-   socket.write('*2\r\n$3\r\nGET\r\n
+ return new Promise(resolve=>{
+  const EOL=String.fromCharCode(13,10),dollar=String.fromCharCode(36);
+  let done=false,received='';
+  const socket=net.createConnection({host:'qa-redis',port:6379});
+  const finish=value=>{
+   if(done)return;
+   done=true;
+   socket.destroy();
+   resolve(value);
+  };
+  socket.once('connect',()=>{
+   const lines=['*2',dollar+'3','GET',dollar+String(Buffer.byteLength(name)),name,''];
+   socket.write(lines.join(EOL));
+  });
+  socket.setTimeout(350,()=>finish(null));
+  socket.on('data',part=>{
+   received+=part.toString('utf8');
+   if(!received.startsWith(dollar)){finish(null);return;}
+   const first=received.indexOf(EOL);
+   if(first<0)return;
+   const n=Number(received.slice(1,first));
+   if(!Number.isInteger(n)||n<0||n>2048){finish(null);return;}
+   const start=first+EOL.length;
+   if(received.length>=start+n+EOL.length){
+    if(received.slice(start+n,start+n+EOL.length)!==EOL){finish(null);return;}
+    finish(received.slice(start,start+n));
+   }
+  });
+  socket.on('error',()=>finish(null));
+  socket.on('close',()=>finish(null));
+ });
+}
+
 function deny(res,status){res.writeHead(status,{'Content-Length':'0','Cache-Control':'no-store'});res.end()}
 async function epoch(claims){
  const query=new URLSearchParams({device:claims.device,company:claims.company,term:String(claims.term)});
