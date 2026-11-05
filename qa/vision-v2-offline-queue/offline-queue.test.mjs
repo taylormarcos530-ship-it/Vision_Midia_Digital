@@ -1,0 +1,11 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {enqueue,nextBatch,acknowledge,retryDelay,validateReceipt} from './offline-queue.mjs';
+const id=n=>`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
+const receipt=n=>({event_id:id(n),media_id:id(999),played_at:'2026-11-05T12:00:00Z',completed:true,duration_seconds:15});
+test('validates receipt',()=>{assert.equal(validateReceipt(receipt(1)),true);assert.equal(validateReceipt({...receipt(1),duration_seconds:-1}),false)});
+test('idempotent enqueue and capacity without silent loss',()=>{let a=enqueue([],receipt(1),1);assert.equal(a.accepted,true);assert.equal(enqueue(a.queue,receipt(1),1).reason,'duplicate');assert.equal(enqueue(a.queue,receipt(2),1).reason,'capacity');assert.equal(a.queue.length,1)});
+test('batch bounded to 50',()=>{let q=Array.from({length:100},(_,i)=>receipt(i));assert.equal(nextBatch(q).length,50);assert.throws(()=>nextBatch(q,51))});
+test('acknowledge only explicitly confirmed ids',()=>{let q=[receipt(1),receipt(2)];assert.deepEqual(acknowledge(q,[id(1)]),[receipt(2)]);assert.throws(()=>acknowledge(q,[id(3)]))});
+test('backoff bounded with jitter',()=>{assert.equal(retryDelay(0,0.5),15000);assert.ok(retryDelay(100,1)<=375000);assert.throws(()=>retryDelay(-1))});
+test('10000 offline receipts retained and ordered',()=>{let q=Array.from({length:10000},(_,i)=>receipt(i));assert.equal(nextBatch(q)[0].event_id,id(0));assert.equal(acknowledge(q,nextBatch(q).map(x=>x.event_id)).length,9950)});
