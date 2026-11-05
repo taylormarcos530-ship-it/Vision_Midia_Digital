@@ -9,9 +9,10 @@ from pathlib import Path
 import psycopg
 from redis.asyncio import Redis
 from websockets.exceptions import ConnectionClosed
-import adversarial as base
 P=Path(__file__).resolve().parent
-s=importlib.util.spec_from_file_location("fenced",P/"central-owner-heartbeat-fenced-candidate.py")
+sys.path.insert(0,str(P.parent/"redis-wss-fault-qa"))
+import adversarial as base
+s=importlib.util.spec_from_file_location("fenced",P.parent/"redis-wss-fault-qa"/"central-owner-heartbeat-fenced-candidate.py")
 fenced=importlib.util.module_from_spec(s);s.loader.exec_module(fenced)
 N=int(os.environ["QA_TVS"])
 assert N==15, '15 TV controlled QA only'
