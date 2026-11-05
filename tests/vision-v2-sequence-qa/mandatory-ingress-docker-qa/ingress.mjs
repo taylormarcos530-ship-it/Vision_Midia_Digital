@@ -132,13 +132,17 @@ async function verifyIsolation(){
  console.log('QA_PRIVATE_ORIGIN_NOT_REACHABLE='+JSON.stringify(denials));
 }
 async function run(){
+ if(op==='isolation'){
+  await verifyIsolation();
+  console.log('QA_ISOLATION_IN_SEPARATE_UNTRUSTED_OS_CONTAINER=PASS');
+  return;
+ }
  if(op==='pre'){
   // Prove baseline before negative DNS/IP probes to avoid poisoning
   // the short-lived container's resolver or undici connection state.
   const one=await read('qa-ingress-a','/normal',4000);
   console.log('QA_ONE_GET='+JSON.stringify(one));
   if(!one.valid)throw Error('single ingress HTTP stream integrity failed '+JSON.stringify(one));
-  await verifyIsolation();
   const records=await Promise.all(Array.from({length:15},(_,i)=>read(i%2?'qa-ingress-b':'qa-ingress-a','/normal')));
   if(records.some(x=>!x.valid))throw Error('pre-commit 15 GET validation failed '+JSON.stringify(records));
   const unauthorized=await read('qa-ingress-a','/normal',6000,false);
