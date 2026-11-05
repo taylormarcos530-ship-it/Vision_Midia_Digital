@@ -1,0 +1,170 @@
+name: Vision V2 REAL 3 Node etcd Raft JTI 4 PG17 Rollback Split Brain NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/raft-etcd-qa/**'
+      - '.github/workflows/vision-v2-raft-etcd-3node-4pg-rollback-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  real-raft-majority:
+    name: 3 Raft etcd + shadow + 4 PostgreSQL17 + Redis7
+    runs-on: ubuntu-latest
+    timeout-minutes: 22
+    services:
+      pg_main:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_quarantine_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-local-password
+        ports: [5432:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_quarantine_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      pg_witness:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-witness-password
+        ports: [5433:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      pg_shadow:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_witness_shadow_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-shadow-password
+        ports: [5435:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_witness_shadow_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      pg_anchor:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_DB: vision_v2_anchor_disposable
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: qa-only-anchor-password
+        ports: [5436:5432]
+        options: >-
+          --health-cmd "pg_isready -U postgres -d vision_v2_anchor_disposable"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+      redis:
+        image: redis:7.4-alpine
+        ports: [6379:6379]
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 2s --health-timeout 3s --health-retries 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Require exact QA branch and no environment credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          test -z "${REDIS_URL:-}"
+          python -m py_compile tests/vision-v2-sequence-qa/raft-etcd-qa/*.py
+      - run: python -m pip install 'psycopg[binary]==3.2.6'
+      - name: Boot actual 3 Raft etcd nodes on disposable internal network
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create qa-raft
+          docker network create qa-shadow
+          image=quay.io/coreos/etcd:v3.5.21
+          docker pull "$image"
+          cluster='qa-etcd-0=http://qa-etcd-0:2380,qa-etcd-1=http://qa-etcd-1:2380,qa-etcd-2=http://qa-etcd-2:2380'
+          for i in 0 1 2; do
+            name="qa-etcd-$i"
+            hostport="$((12379+i))"
+            docker run -d --name "$name" --network qa-raft \
+              -p "127.0.0.1:$hostport:2379" "$image" /usr/local/bin/etcd \
+              --name "$name" --data-dir=/etcd-data \
+              --listen-client-urls=http://0.0.0.0:2379 \
+              --advertise-client-urls="http://$name:2379" \
+              --listen-peer-urls=http://0.0.0.0:2380 \
+              --initial-advertise-peer-urls="http://$name:2380" \
+              --initial-cluster="$cluster" --initial-cluster-state=new \
+              --initial-cluster-token="vision-v2-qa-$GITHUB_RUN_ID" \
+              --heartbeat-interval=100 --election-timeout=1000
+          done
+          docker run -d --name qa-etcd-shadow --network qa-shadow \
+            -p 127.0.0.1:12382:2379 "$image" /usr/local/bin/etcd \
+            --name qa-etcd-shadow --data-dir=/etcd-data \
+            --listen-client-urls=http://0.0.0.0:2379 \
+            --advertise-client-urls=http://qa-etcd-shadow:2379 \
+            --listen-peer-urls=http://0.0.0.0:2380 \
+            --initial-advertise-peer-urls=http://qa-etcd-shadow:2380 \
+            --initial-cluster=qa-etcd-shadow=http://qa-etcd-shadow:2380 \
+            --initial-cluster-state=new --initial-cluster-token="vision-v2-shadow-$GITHUB_RUN_ID"
+          for i in $(seq 1 50); do
+            if docker exec qa-etcd-0 /usr/local/bin/etcdctl \
+              --endpoints=http://qa-etcd-0:2379 endpoint health 2>/dev/null; then break; fi
+            sleep .3
+          done
+          docker exec qa-etcd-0 /usr/local/bin/etcdctl \
+            --endpoints=http://qa-etcd-0:2379,http://qa-etcd-1:2379,http://qa-etcd-2:2379 \
+            endpoint status --write-out=table
+          docker exec qa-etcd-shadow /usr/local/bin/etcdctl \
+            --endpoints=http://qa-etcd-shadow:2379 endpoint health
+          docker exec "${{ job.services.redis.id }}" redis-cli ping
+          echo 'QA_ETCD_ACTUAL_3_MEMBER_CLUSTER_BOOTED=1' | tee qa-raft-integrity.log
+      - name: Real leader Docker partition, 4 PG17 SQL restore, two OS synchronized JWT JTI transactions
+        env:
+          QA_STREAM_GUARD_GROUP: '1'
+          QA_PG_MAIN_ID: ${{ job.services.pg_main.id }}
+          QA_PG_WITNESS_ID: ${{ job.services.pg_witness.id }}
+          QA_PG_SHADOW_ID: ${{ job.services.pg_shadow.id }}
+          QA_PG_ANCHOR_ID: ${{ job.services.pg_anchor.id }}
+        run: |
+          set -euo pipefail
+          python -u tests/vision-v2-sequence-qa/raft-etcd-qa/verify.py | tee -a qa-raft-integrity.log
+      - name: Require Raft 2/3 proof and separate SECURITY FAIL / NO-GO
+        run: |
+          python - <<'PY'
+          import json
+          x=json.load(open('qa-raft-integrity.json'))
+          assert x['production_GO'] is False
+          assert x['etcd_members']==3 and x['PG17_clusters']==4
+          assert x['real_two_OS_workers']['ACK']==1 and x['real_two_OS_workers']['DENY']==1
+          assert x['PG17_restore_Raft_still_consume_JTI']['old_JTI_rejected']
+          assert x['real_Docker_network_partition_old_leader']['majority_committed']
+          assert x['real_Docker_network_partition_old_leader']['isolated_member_denied']
+          assert x['15_TV_JTI']['ACK']==15
+          assert x['Raft_committed_term_fence']['old_leader_DENY']
+          assert x['independent_wrong_membership_split_brain']['unpinned_duplicate_ACCEPTED']
+          assert x['independent_wrong_membership_split_brain']['pinned_foreign_cluster_DENY']
+          assert x['security_verdict'].startswith('NO_GO')
+          print('ACTUAL_RAFT_QUORUM_LOCAL_PASS=1 FULL_CLUSTER_ROLLBACK_UNPROVEN=1 PRODUCTION_NO_GO=1')
+          PY
+      - name: Docker diagnostics only if CI fails
+        if: failure()
+        run: |
+          for i in qa-etcd-0 qa-etcd-1 qa-etcd-2 qa-etcd-shadow; do
+            echo "QA_ETCD_DIAG=$i"
+            docker logs --tail 30 "$i" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-v2-raft3-4pg17-restore-partition
+          path: |
+            qa-raft-integrity.log
+            qa-raft-integrity.json
+          retention-days: 14
