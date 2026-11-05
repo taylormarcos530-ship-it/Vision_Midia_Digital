@@ -1,0 +1,158 @@
+name: Vision V2 Synthetic JWT Private Dual Ingress Tenant Fencing NO DEPLOY
+on:
+  push:
+    branches:
+      - experiment/vision-v2-toctou-continuous-guard-qa-20261102
+    paths:
+      - 'tests/vision-v2-sequence-qa/jwt-private-ingress-qa/**'
+      - '.github/workflows/vision-v2-jwt-private-dual-ingress-no-deploy.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  jwt-private-ingress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 16
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Reject production credentials, exact experiment only
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF" = refs/heads/experiment/vision-v2-toctou-continuous-guard-qa-20261102
+          test -z "${SUPABASE_URL:-}"
+          test -z "${SUPABASE_SERVICE_ROLE_KEY:-}"
+          test -z "${DATABASE_URL:-}"
+          test -z "${REDIS_URL:-}"
+          test -z "${PGHOST:-}"
+          test -z "${PGSERVICE:-}"
+          node --check tests/vision-v2-sequence-qa/jwt-private-ingress-qa/secure-ingress.mjs
+      - name: Generate local 256-bit HMAC key and ephemeral scoped synthetic device JWTs
+        shell: bash
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/qa-jwt-tokens"
+          openssl rand 32 > "$RUNNER_TEMP/qa-jwt-key"
+          QA_KEY_FILE="$RUNNER_TEMP/qa-jwt-key" QA_ISSUE_DIR="$RUNNER_TEMP/qa-jwt-tokens" \
+            node tests/vision-v2-sequence-qa/jwt-private-ingress-qa/secure-ingress.mjs issuer
+          test "$(find "$RUNNER_TEMP/qa-jwt-tokens" -name 'tv-*.jwt' | wc -l)" = 15
+          echo 'QA_SECRETS_GENERATED_INSIDE_DISPOSABLE_RUNNER=1'
+      - name: Two Docker networks, unexposed old HTTP origins and shared fenced authority
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker network create --internal qa-private
+          docker network create qa-public
+          export SRC="$PWD/tests/vision-v2-sequence-qa/jwt-private-ingress-qa"
+          docker run -d --name qa-redis --network qa-private redis:7.4-alpine redis-server --save '' --appendonly no
+          for i in $(seq 1 50); do
+            if docker exec qa-redis redis-cli ping | grep -qx PONG; then break; fi
+            sleep .15
+          done
+          docker exec qa-redis redis-cli SET qa:epoch open >/dev/null
+          docker exec qa-redis redis-cli SET qa:term 7 >/dev/null
+          for n in $(seq -w 0 14); do
+            tv="$(printf 'tv-%04d' "$((10#$n))")"
+            docker exec qa-redis redis-cli SET "qa:owner:$tv" company-A >/dev/null
+          done
+          docker run -d --name qa-epoch --network qa-private -v "$SRC:/qa:ro" -w /qa \
+            node:22-alpine node secure-ingress.mjs epoch
+          for origin in a b; do
+            docker run -d --name qa-origin-$origin --network qa-private \
+              -v "$SRC:/qa:ro" -w /qa node:22-alpine node secure-ingress.mjs origin
+          done
+          for origin in a b; do
+            docker run -d --name qa-ingress-$origin --network qa-public \
+              -e QA_ORIGIN=qa-origin-$origin \
+              -v "$SRC:/qa:ro" -v "$RUNNER_TEMP/qa-jwt-key:/qa-key/hmac.key:ro" \
+              -w /qa node:22-alpine node secure-ingress.mjs ingress
+            docker network connect qa-private qa-ingress-$origin
+          done
+          for client in qa-client qa-client-iso; do
+            docker run -d --name "$client" --network qa-public -v "$SRC:/qa:ro" \
+              -v "$RUNNER_TEMP/qa-jwt-tokens:/qa-tokens:ro" -w /qa \
+              node:22-alpine sleep 240
+          done
+          sleep 3
+          for x in qa-origin-a qa-origin-b qa-epoch qa-ingress-a qa-ingress-b qa-client qa-client-iso; do
+            test "$(docker inspect -f '{{.State.Running}}' "$x")" = true
+          done
+          echo 'QA_JWT_TWO_PRIVATE_ORIGINS_NO_HOST_PORTS=1' | tee qa-jwt-ingress-proof.log
+      - name: Direct old origin DNS and private IP denied; 15 distinct real JWT device claims
+        shell: bash
+        run: |
+          set -euo pipefail
+          ip="$(docker inspect -f '{{(index .NetworkSettings.Networks "qa-private").IPAddress}}' qa-origin-a)"
+          docker exec -e "QA_ORIGIN_PRIVATE_IP=$ip" qa-client-iso \
+            node /qa/secure-ingress.mjs client isolation | tee -a qa-jwt-ingress-proof.log
+          docker exec qa-client node /qa/secure-ingress.mjs client pre | tee -a qa-jwt-ingress-proof.log
+      - name: Change every central tenant owner; old valid JWTs denied until owner restored
+        shell: bash
+        run: |
+          set -euo pipefail
+          for i in $(seq 0 14); do
+            tv="$(printf 'tv-%04d' "$i")"
+            docker exec qa-redis redis-cli SET "qa:owner:$tv" company-B >/dev/null
+          done
+          docker exec qa-client node /qa/secure-ingress.mjs client owner-changed | tee -a qa-jwt-ingress-proof.log
+          for i in $(seq 0 14); do
+            tv="$(printf 'tv-%04d' "$i")"
+            docker exec qa-redis redis-cli SET "qa:owner:$tv" company-A >/dev/null
+          done
+      - name: Change leader term; stale JWT term blocked for both ingress processes
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec qa-redis redis-cli SET qa:term 8 >/dev/null
+          docker exec qa-client node /qa/secure-ingress.mjs client leader-changed | tee -a qa-jwt-ingress-proof.log
+          docker exec qa-redis redis-cli SET qa:term 7 >/dev/null
+      - name: Revoke during streamed 200; reject incomplete report by SHA and exact length
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec qa-client node /qa/secure-ingress.mjs client pause > qa-jwt-http200-pause.log 2>&1 &
+          child="$!"
+          seen=0
+          for i in $(seq 1 120); do
+            if grep -q 'QA_PAUSE_HEADER_RECEIVED=1' qa-jwt-http200-pause.log; then seen=1; break; fi
+            if ! kill -0 "$child" 2>/dev/null; then break; fi
+            sleep .015
+          done
+          test "$seen" = 1 || { cat qa-jwt-http200-pause.log; exit 1; }
+          docker exec qa-redis redis-cli SET qa:epoch closed >/dev/null
+          wait "$child"
+          cat qa-jwt-http200-pause.log | tee -a qa-jwt-ingress-proof.log
+      - name: Thirty denied GETs after COMMIT on two separate ingresses
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker exec qa-client node /qa/secure-ingress.mjs client closed | tee -a qa-jwt-ingress-proof.log
+      - name: Real SIGKILL independent epoch authority; 30/30 fail-closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker kill qa-epoch >/dev/null
+          docker exec qa-client node /qa/secure-ingress.mjs client authority-down | tee -a qa-jwt-ingress-proof.log
+          echo 'QA_JWT_PRIVATE_INGRESS=PASS_LOCAL; GLOBAL_JTI_ROLLBACK=SECURITY_FAIL; NO_GO=1' | tee -a qa-jwt-ingress-proof.log
+      - name: Docker debug on isolated test failure only
+        if: failure()
+        shell: bash
+        run: |
+          for n in qa-epoch qa-ingress-a qa-ingress-b qa-origin-a qa-origin-b qa-redis; do
+            echo "DEBUG=$n"
+            docker logs --tail 28 "$n" 2>&1 || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: vision-v2-jwt-private-ingress-negatives
+          path: |
+            qa-jwt-ingress-proof.log
+            qa-jwt-http200-pause.log
+          retention-days: 14
