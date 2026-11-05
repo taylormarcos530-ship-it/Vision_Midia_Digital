@@ -40,14 +40,20 @@ if(mode==='epoch'){
     conn.write('*2\r\n$3\r\nGET\r\n$8\r\nqa:epoch\r\n');
    });
    conn.setTimeout(150,()=>conn.destroy());
-   let v='';
-   conn.on('data',z=>v+=z.toString('utf8'));
-   conn.on('end',()=>{
-    const ok=v.includes('\r\n4\r\nopen\r\n');
+   let v='',answered=false;
+   const finish=ok=>{
+    if(answered)return;
+    answered=true;
     const body=ok?'open':'closed';
     sock.end('HTTP/1.1 '+(ok?'200 OK':'503 Service Unavailable')+'\r\nContent-Length: '+body.length+'\r\nConnection: close\r\n\r\n'+body);
+    conn.destroy();
+   };
+   conn.on('data',z=>{
+    v+=z.toString('utf8');
+    if(v.includes('\r\n'))finish(v.includes('\r\n4\r\nopen\r\n'));
    });
-   conn.on('error',()=>{if(!sock.destroyed)sock.end('HTTP/1.1 503 Service Unavailable\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')});
+   conn.on('end',()=>finish(false));
+   conn.on('error',()=>finish(false));
   });
  });
  server.listen(9300,'0.0.0.0',()=>console.log('QA_EPOCH_AUTHORITY_READY=1'));
