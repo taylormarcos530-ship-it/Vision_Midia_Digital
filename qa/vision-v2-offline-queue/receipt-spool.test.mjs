@@ -1,0 +1,10 @@
+import test from 'node:test';import assert from 'node:assert/strict';
+import {mkdtemp,rm,writeFile} from 'node:fs/promises';import {tmpdir} from 'node:os';import {join} from 'node:path';import {spawn} from 'node:child_process';
+import {appendReceipt,readReceipts} from './receipt-spool.mjs';
+const receipt=n=>({event_id:`00000000-0000-4000-8000-${String(n).padStart(12,'0')}`,media_id:'00000000-0000-4000-8000-000000000999',played_at:'2026-11-05T12:00:00Z',completed:true,duration_seconds:15});
+async function sandbox(fn){const d=await mkdtemp(join(tmpdir(),'vision-spool-'));try{await fn(d)}finally{await rm(d,{recursive:true,force:true})}}
+test('60 concurrent writes preserve all',()=>sandbox(async d=>{await Promise.all(Array.from({length:60},(_,i)=>appendReceipt(d,receipt(i))));assert.equal((await readReceipts(d)).length,60)}));
+test('duplicate is not overwritten',()=>sandbox(async d=>{assert.equal(await appendReceipt(d,receipt(1)),true);assert.equal(await appendReceipt(d,{...receipt(1),duration_seconds:8}),false);assert.equal((await readReceipts(d))[0].duration_seconds,15)}));
+test('tampering is detected',()=>sandbox(async d=>{await appendReceipt(d,receipt(1));await writeFile(join(d,receipt(1).event_id+'.json'),'{}');await assert.rejects(readReceipts(d),/corrupt_receipt/)}));
+test('8 independent processes preserve all',()=>sandbox(async d=>new Promise((resolve,reject)=>{let n=0;for(let i=0;i<8;i++){const code=`import {appendReceipt} from ${JSON.stringify(new URL('./receipt-spool.mjs',import.meta.url).href)};await appendReceipt(process.argv[1],JSON.parse(process.argv[2]));`;const p=spawn(process.execPath,['--input-type=module','-e',code,d,JSON.stringify(receipt(i))]);let err='';p.stderr.on('data',b=>err+=b);p.on('error',reject);p.on('exit',c=>{if(c!==0)return reject(Error(err));if(++n===8)readReceipts(d).then(q=>{try{assert.equal(q.length,8);resolve()}catch(e){reject(e)}},reject)})}})));
+test('1000 receipts survive reload',()=>sandbox(async d=>{for(let i=0;i<1000;i++)await appendReceipt(d,receipt(i));assert.equal((await readReceipts(d)).length,1000)}));
